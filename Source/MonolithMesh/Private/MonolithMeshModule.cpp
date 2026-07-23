@@ -12,6 +12,7 @@
 #include "MonolithMeshTemplateActions.h"
 #include "MonolithMeshLevelDesignActions.h"
 #include "MonolithMeshLightActions.h"
+#include "MonolithMeshAtmosphereActions.h"
 #include "MonolithMeshVolumeActions.h"
 #include "MonolithMeshTechArtActions.h"
 #include "MonolithMeshHorrorDesignActions.h"
@@ -67,6 +68,7 @@ void FMonolithMeshModule::StartupModule()
 	FMonolithMeshTemplateActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithMeshLevelDesignActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithMeshLightActions::RegisterActions(FMonolithToolRegistry::Get());
+	FMonolithMeshAtmosphereActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithMeshVolumeActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithMeshTechArtActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithMeshHorrorDesignActions::RegisterActions(FMonolithToolRegistry::Get());

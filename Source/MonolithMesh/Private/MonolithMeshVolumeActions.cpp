@@ -175,10 +175,13 @@ void FMonolithMeshVolumeActions::RegisterActions(FMonolithToolRegistry& Registry
 {
 	// 1. spawn_volume
 	Registry.RegisterAction(TEXT("mesh"), TEXT("spawn_volume"),
-		TEXT("Spawn a volume actor (trigger, blocking, kill, pain, nav_modifier, audio, post_process) with proper brush geometry."),
+		TEXT("Spawn a volume actor (trigger, blocking, kill, pain, nav_modifier, audio, post_process) with proper brush geometry. "
+			 "NOTE: the post_process type here only exposes the actor-level knobs (unbound, blend_radius, blend_weight, priority) "
+			 "and CANNOT touch APostProcessVolume::Settings — use mesh.spawn_atmosphere type=post_process for exposure, bloom, "
+			 "colour grading and Lumen."),
 		FMonolithActionHandler::CreateStatic(&FMonolithMeshVolumeActions::SpawnVolume),
 		FParamSchemaBuilder()
-			.Required(TEXT("type"), TEXT("string"), TEXT("Volume type: trigger, blocking, kill, pain, nav_modifier, audio, post_process"))
+			.Required(TEXT("type"), TEXT("string"), TEXT("Volume type: trigger, blocking, kill, pain, nav_modifier, audio, post_process (for post-process settings/Lumen use mesh.spawn_atmosphere instead)"))
 			.Required(TEXT("location"), TEXT("array"), TEXT("World location [x, y, z]"))
 			.Optional(TEXT("extent"), TEXT("array"), TEXT("Half-extents [x, y, z]"), TEXT("[500,500,300]"))
 			.Optional(TEXT("rotation"), TEXT("array"), TEXT("Rotation [pitch, yaw, roll]"), TEXT("[0,0,0]"))
