@@ -284,3 +284,25 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Ek: Görev 6'nın modül kararı emsal gösterildi — yeni modül maliyeti `Monolith.uplugin` çakışması, gerekçelendirilmeden şablondan sapma yok.
 - Commit: -
 - Sıradaki: Görev 12 raporu.
+
+## [02:31] Görev 12 TAMAM — Faz 2 ışık dilimi (209/209)
+- Durum: done
+- Ne oldu: **Roadmap yine yanlışmış** — "ışık yerleştirme yok" doğru değil: `mesh.place_light` (point/spot/rect/directional), `mesh.set_light_properties`, genel `mesh.spawn_actor`, genel reflection okuma ve altı ışık ANALİZ aksiyonu (`sample_light_levels`, `get_light_coverage`, `suggest_light_placement`, `analyze_light_transitions`, `find_dark_corners`, `analyze_lightmap_density`) zaten varmış. İşçi ikinci bir spawner YAZMADI. Gerçek boşluklar şunlarmış: (a) **SkyLight erişilemezdi** — `USkyLightComponent` `ULightComponent`'ten değil `ULightComponentBase`'ten türüyor, mevcut yolların hepsi `FindComponentByClass<ULightComponent>()` ile onu atlıyordu; (b) küratörlü ~12 property dışına çıkılamıyordu; (c) tipli geri-okuma yoktu; (d) preset kavramı yoktu. Dördü de kapatıldı: `place_light` artık `sky` tipini, `preset` ve serbest `properties` alanlarını alıyor; yeni `mesh.get_light_properties` ve `mesh.list_light_presets` eklendi. 8 yeni test, 201→209.
+- Karar: Kabul. Kontrol ajanı **verified**: HEAD=baf19a3, ağaç temiz, 9 dosya beyanla birebir, **`Monolith.uplugin` HAYIR, `MonolithSettings.h` HAYIR** (ikisi de dokunulmamış), kendi koşusunda 209/0/0 ve 209 "Test Completed", 8 ışık testi + 19 job testi + 4 PoseSearch testi + FullyLoad regresyon testi hepsi `{Success}`, build yeşil. **Data-driven şartı teyit edildi**: `Config/MonolithLightPresets.json` geçerli JSON, 16 preset (sun_midday, sun_golden_hour, sun_overcast, moonlight, bulb_warm_60w …), tip başına `readback` bölümü var; **.cpp içinde gömülü değer tablosu YOK**. **Reflection yeniden kullanımı teyit edildi**: `FMonolithReflectionWalker` (satır 559/592/601/733/775), `InspectTree` (559), `WriteTree` (601), `FMonolithReflectionReader::PropertyToJsonValue` (743/766/784).
+- Commit: baf19a3
+- Sıradaki: Görev 13 — Faz 2 ikinci dilim (PostProcessVolume + ExponentialHeightFog + Lumen).
+
+### notes_for_next_worker (görev 12 işçisinden)
+- Yazma deseni (kopyala): `InspectTree` (katı doğrulama, scratch tampon) → herhangi bir hatada çık → anahtar başına `Modify` + `PreEditChange` → `WriteTree` → anahtar başına `PostEditChangeProperty` → `MarkRenderStateDirty` + `MarkPackageDirty`. "Kısmi yazma yok" bedavaya geliyor.
+- Preset verisi `Config/MonolithLightPresets.json` (repo'da, eklentiyle dağıtılıyor): `presets{}` + `readback{common,directional,point,spot,rect,sky}`. Kullanıcı ezmesi: `Plugins/Monolith/Saved/Monolith/LightPresets/` altında aynı şekilli herhangi bir `*.json` — `FMonolithMeshPresetActions`'ın zaten kullandığı yerleşik+kullanıcı mekanizması. Dosya seçilmesinin sebebi: preset kitaplığı skaler bir toggle değil çok alanlı kayıt kümesi; böylece yeniden derleme olmadan preset eklenebiliyor.
+- `Monolith.Mesh.Lights.PresetDataIsValid` gönderilen JSON'daki her property adının gerçek motor sınıfında çözüldüğünü doğruluyor — gelecekte UE bir ışık property'sini yeniden adlandırırsa kullanıcı çarpmadan önce test kırmızıya döner. Korunsun.
+- **Jobs kasten kullanılmadı**: ışık spawn'ı + birkaç property yazımı mikrosaniye; hiçbir şey bloke etmiyor. Toplu yerleştirme (yüzlerce ışık) veya ışık BAKE gelirse aday odur — bake gerçekten bloke eder.
+- **Faz 2'den kalan**: PostProcessVolume + ExponentialHeightFog (dikkat: `mesh.spawn_volume` zaten bir `post_process` tipine sahip, önce ona bak), Lumen ayarları, canlı editör viewport ekran görüntüsü, data-driven level yerleşim sistemi.
+- Kasten bırakılan iki takip işi: görev 9'dan `HandleGetDatabaseStats`/`HandleValidatePoseSearchDatabase` hâlâ bloke ediyor; görev 2'den `MonolithUIActions.cpp:763` allowlist token hatası.
+
+## [02:34] Görev 13 gönderildi — Faz 2 ikinci dilim: PostProcess + Fog + Lumen
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı.
+- Karar: Promptta "önce yer gerçeğini kur" şartı sertleştirildi — roadmap bu gece İKİ kez yanıldı (ışık yerleştirme vardı; `build_search_index` diye bir aksiyon yoktu), bu yüzden `mesh.spawn_volume`'un mevcut `post_process` tipi ve varsa fog/atmosfer aksiyonları önce incelenecek. Lumen için ayrıca "en kolay yüzeyi yapıp tamam deme, kapsadığın alt kümeyi adıyla söyle" şartı kondu.
+- Commit: -
+- Sıradaki: Görev 13 raporu.
