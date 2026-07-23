@@ -12,7 +12,7 @@
 - Ana Claude Code oturumu, **Fable modeli** — asla işçi modeline devredilmez.
 - **Bağlamını temiz tutar:** Kaynak dosya okumaz, derleme çıktısı görmez, kod yazmaz, küçük doğrulama okumalarını bile yapmaz (onlar kontrol ajanının işi — sabaha kadar bağlam şişmemeli). Sadece: LOG okur → karar verir → işçi görevlendirir → rapor + kontrol hükmü alır → LOG günceller → commit/push → sıradaki karar.
 - Yoldan çıkma durumlarında yönlendirme kararları orkestratöründür (bkz. §5).
-- Bekleme mekanizması: işçi Agent çağrısı senkron dönüyorsa ek bekleme gerekmez (gece tek uzun turn olarak akar); arka plan davranışı görülürse ScheduleWakeup uzun yedek aralık (~1800s) + bildirimle uyanma. Hangisinin geçerli olduğu provada (§8) doğrulanır ve buraya işlenir.
+- Bekleme mekanizması (2026-07-23 provasında doğrulandı): Agent çağrıları SENKRON DEĞİL — işçi arka planda başlar, orkestratörün turn'ü biter; işçi tamamlanınca task-notification orkestratörü otomatik uyandırır. Birincil sinyal bu bildirimdir; ek polling yapılmaz. Her işçi gönderiminde ScheduleWakeup ile ~1800 sn'lik yedek uyanma kurulur (bildirim kaybolur/işçi asılı kalırsa güvenlik ağı); gece kapanışında iptal edilir. Provada 6/6 ajan bildirimi sorunsuz geldi, yedek hiç tetiklenmedi.
 
 ### İşçi ajanlar
 - Agent tool ile, **`model: "opus"`** ile başlatılır. Her işçi taze bağlamla doğar.
@@ -178,5 +178,5 @@ Not: Editör açılışı + indeksleme gecede iterasyon başına dakikalar alır
 
 - Görevler önemsizdir ve **editör/derleme GEREKTİRMEZ** — bu yüzden Faz 0 düzeneği şartı provada aranmaz.
 - Tam akış aynen işletilir: dal açma (`night/<tarih>-prova`), GOAL ilk commit, işçi (Opus) → kontrol ajanı (haiku) → LOG-commit-push zinciri, kasıtlı bir başarısızlık göreviyle blocked→alternatif→park yolu, MORNING_REPORT + PushNotification.
-- Prova ayrıca **zamanlama mekanizmasını ölçer**: Agent çağrıları senkron mu dönüyor, ScheduleWakeup gerekli/kullanılabilir mi. Gözlem MORNING_REPORT'a yazılır ve §1'deki bekleme talimatı buna göre netleştirilir.
+- Prova ayrıca **zamanlama mekanizmasını ölçer**: Agent çağrıları senkron mu dönüyor, ScheduleWakeup gerekli/kullanılabilir mi. Gözlem MORNING_REPORT'a yazılır ve §1'deki bekleme talimatı buna göre netleştirilir. (2026-07-23 provasında ölçüldü ve §1'e işlendi: asenkron + bildirim birincil + 1800 sn yedek. Kayıt: `Docs/nightruns/2026-07-23-prova/MORNING_REPORT.md`.)
 - Prova dalı kabulden sonra merge edilmez; incelenip silinir (kayıt `Docs/nightruns/<tarih>-prova/` klasöründe yaşar).
