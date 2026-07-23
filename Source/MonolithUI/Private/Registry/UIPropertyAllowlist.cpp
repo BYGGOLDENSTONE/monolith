@@ -13,6 +13,46 @@
 #include "Registry/UIPropertyAllowlist.h"
 #include "Registry/UITypeRegistry.h"
 
+#include "Components/Widget.h"
+#include "UObject/Class.h"
+#include "UObject/UObjectGlobals.h"
+
+namespace
+{
+    /**
+     * True when `WidgetToken` names a loaded UClass that derives from UWidget.
+     *
+     * Needed because "no registry entry" is NOT the same as "not a widget":
+     * `UMonolithUIRegistrySubsystem::PopulateFromReflectionWalk` deliberately
+     * skips Blueprint-generated widget classes (WBP_*_C), yet those are real
+     * widgets whose UWidget base properties must stay writable. A token that
+     * resolves to no widget class at all is genuinely unknown and gets nothing.
+     *
+     * Tokens are class names with the leading `U` stripped
+     * (`MonolithUI::MakeTokenFromClassName`), so both spellings are probed —
+     * callers such as the set_widget_property diagnostics pass the raw class
+     * name. The Safe variant never logs and is GC/async-load tolerant; the
+     * result is cached per token by the caller, so this runs once per type.
+     */
+    bool TokenNamesWidgetClass(const FName& WidgetToken)
+    {
+        const UClass* const WidgetBase = UWidget::StaticClass();
+        if (!WidgetBase)
+        {
+            return false;
+        }
+
+        const FString TokenStr = WidgetToken.ToString();
+        const UClass* Found = FindFirstObjectSafe<UClass>(*TokenStr, EFindFirstObjectOptions::NativeFirst);
+        if (!Found)
+        {
+            Found = FindFirstObjectSafe<UClass>(*(FString(TEXT("U")) + TokenStr), EFindFirstObjectOptions::NativeFirst);
+        }
+
+        return Found != nullptr && Found->IsChildOf(WidgetBase);
+    }
+}
+
 FUIPropertyAllowlist::FUIPropertyAllowlist(const FUITypeRegistry& InRegistry)
     : Registry(InRegistry)
 {
@@ -75,11 +115,24 @@ void FUIPropertyAllowlist::BuildCacheFor(const FName& WidgetToken) const
         }
     };
 
-    // Common UWidget base-class property paths — allowlisted for EVERY widget
-    // token, registered or not. They live on UWidget itself, so any subclass
-    // carries them; the per-type registry below only maps the type-specific
-    // surface. Injected BEFORE the unregistered-token early-return so tokens
-    // with no FUITypeRegistryEntry still accept the base props.
+    const FUITypeRegistryEntry* Entry = Registry.FindByToken(WidgetToken);
+
+    // Safe default: a token that names neither a registry entry nor a loaded
+    // UWidget subclass is unknown, and unknown types get NO writes at all —
+    // not even the common base props below. This is the contract documented on
+    // `IsAllowed`/`GetAllowedPaths` and is what gates the reflection helper.
+    // The empty set/list stay cached, so repeated probes short-circuit here.
+    if (!Entry && !TokenNamesWidgetClass(WidgetToken))
+    {
+        return;
+    }
+
+    // Common UWidget base-class property paths — allowlisted for every widget
+    // token that resolves to a real widget type, registered or not. They live
+    // on UWidget itself, so any subclass carries them; the per-type registry
+    // below only maps the type-specific surface. Injected before the
+    // unregistered-token early-return so Blueprint widget classes (kept out of
+    // the registry on purpose) still accept the base props.
     static const TCHAR* const CommonWidgetPaths[] = {
         TEXT("Visibility"),
         TEXT("RenderOpacity"),
@@ -94,11 +147,11 @@ void FUIPropertyAllowlist::BuildCacheFor(const FName& WidgetToken) const
         AddPath(CommonPath);
     }
 
-    const FUITypeRegistryEntry* Entry = Registry.FindByToken(WidgetToken);
     if (!Entry)
     {
-        // Base props are cached above; no type-specific surface to add. The
-        // populated set short-circuits repeated calls.
+        // Real widget class, but outside the curated registry (e.g. a
+        // Blueprint widget class). Base props are cached above; there is no
+        // type-specific surface to add.
         return;
     }
 
