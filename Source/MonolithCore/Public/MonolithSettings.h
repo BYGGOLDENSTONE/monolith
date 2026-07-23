@@ -317,6 +317,18 @@ public:
 			  ToolTip="How often the single shared job ticker runs. 0 = every frame. The pump uninstalls itself when no jobs remain."))
 	float JobPumpIntervalSeconds = 1.0f;
 
+	/** Interval in seconds between slices of a tick-sliced job. 0 = one slice every frame. Faster than the plain pump interval because a sliced job only progresses when the pump runs. */
+	UPROPERTY(config, EditAnywhere, Category="Jobs", DisplayName="Job Slice Interval (seconds)",
+		meta=(ClampMin="0.0", ClampMax="60.0",
+			  ToolTip="Cadence the single shared job ticker switches to while at least one tick-sliced (game-thread) job is registered. 0 = advance one slice every frame. No second ticker is created; the one pump is re-installed at this rate."))
+	float JobSliceIntervalSeconds = 0.0f;
+
+	/** Seconds the job manager waits for a background job body to return during shutdown before detaching (leaking) its thread. */
+	UPROPERTY(config, EditAnywhere, Category="Jobs", DisplayName="Job Shutdown Wait (seconds)",
+		meta=(ClampMin="0.0", ClampMax="60.0",
+			  ToolTip="How long editor shutdown waits for each in-flight background job to notice cancellation and return. A body that overruns is detached, never force-killed: its memory is kept alive forever so nothing dangles, at the cost of a leak. 0 = never wait (detach immediately)."))
+	float JobShutdownWaitSeconds = 5.0f;
+
 	// --- Logging ---
 
 	/** Log verbosity for Monolith systems */

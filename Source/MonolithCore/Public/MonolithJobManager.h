@@ -14,7 +14,15 @@
 // registry is guarded by an FCriticalSection — the same primitive FMonolithToolRegistry
 // uses — and every accessor copies data OUT rather than handing out pointers into the map.
 //
-// SCOPE: core only. No action bindings / `jobs` namespace here (separate step).
+// SCOPE: core + execution layer. The `jobs` MCP namespace lives in Private/MonolithJobActions.*.
+//
+// EXECUTION LAYER (Faz 1, roadmap item 5) — two shapes, one registry, one pump:
+//   1. BACKGROUND jobs (StartBackgroundJob): CPU-bound work with NO UObject access. The body
+//      runs on its own FRunnableThread; progress and the final outcome are marshalled back to
+//      the game thread (AsyncTask(ENamedThreads::GameThread, ...) + the shared pump) so every
+//      observer of CompleteJob/FailJob/UpdateProgress sees a consistent registry.
+//   2. SLICED jobs (StartSlicedJob): UObject-safe work cut into slices. Each slice is invoked
+//      from the SAME FTSTicker pump that does retention — no second ticker is ever installed.
 
 #pragma once
 
@@ -22,6 +30,11 @@
 #include "Containers/Ticker.h"
 #include "Dom/JsonValue.h"
 #include "HAL/CriticalSection.h"
+#include "HAL/ThreadSafeBool.h"
+#include "Templates/Function.h"
+
+/** Background worker runnable. Defined in Private/MonolithJobManager.cpp; never exposed. */
+class FMonolithJobWorker;
 
 /** Lifecycle state of a job. Terminal states are Complete / Error / Cancelled. */
 enum class EMonolithJobState : uint8
@@ -85,6 +98,126 @@ struct FMonolithJob
 	bool IsFinished() const { return State != EMonolithJobState::Running; }
 };
 
+// =============================================================================
+// Execution layer — what a unit of submitted work reports back.
+// =============================================================================
+
+/** What a job body (background) or one slice (sliced) reports back to the manager. */
+enum class EMonolithJobOutcomeKind : uint8
+{
+	/**
+	 * SLICED JOBS ONLY: this slice did part of the work, call me again on the next pump.
+	 * A background body that returns Pending is a programming error and fails its job —
+	 * a background body runs to completion, it is not resumed.
+	 */
+	Pending,
+
+	/** Work finished successfully; Result carries the payload (may be null). */
+	Complete,
+
+	/** Work failed; ErrorMessage / ErrorCode carry the reason. */
+	Error,
+
+	/** Work observed a cancellation request and bailed out cooperatively. */
+	Cancelled
+};
+
+/**
+ * Return value of a job body / slice. Deliberately a value type: it is copied across the
+ * thread boundary into the game-thread apply queue, so it must own everything it carries.
+ */
+struct FMonolithJobOutcome
+{
+	EMonolithJobOutcomeKind Kind = EMonolithJobOutcomeKind::Complete;
+
+	/** Complete only. Handed straight to CompleteJob, so the write-once contract applies. */
+	TSharedPtr<FJsonValue> Result;
+
+	/** Error only. */
+	FString ErrorMessage;
+	int32 ErrorCode = -32603;
+
+	/** SLICED only — "more to do, call me again". */
+	static FMonolithJobOutcome Pending()
+	{
+		FMonolithJobOutcome Out;
+		Out.Kind = EMonolithJobOutcomeKind::Pending;
+		return Out;
+	}
+
+	static FMonolithJobOutcome Complete(const TSharedPtr<FJsonValue>& InResult = nullptr)
+	{
+		FMonolithJobOutcome Out;
+		Out.Kind = EMonolithJobOutcomeKind::Complete;
+		Out.Result = InResult;
+		return Out;
+	}
+
+	/** Named Failure (not Error) so it cannot be confused with EMonolithJobOutcomeKind::Error. */
+	static FMonolithJobOutcome Failure(const FString& InMessage, int32 InErrorCode = -32603)
+	{
+		FMonolithJobOutcome Out;
+		Out.Kind = EMonolithJobOutcomeKind::Error;
+		Out.ErrorMessage = InMessage;
+		Out.ErrorCode = InErrorCode;
+		return Out;
+	}
+
+	static FMonolithJobOutcome Cancelled()
+	{
+		FMonolithJobOutcome Out;
+		Out.Kind = EMonolithJobOutcomeKind::Cancelled;
+		return Out;
+	}
+};
+
+/**
+ * Handed to every job body and every slice. It is the ONLY thing the submitted work needs
+ * to know about the manager: it hides both the job id bookkeeping and the marshalling rule.
+ *
+ * Copyable and cheap; never outlives the call it was passed to.
+ */
+struct MONOLITHCORE_API FMonolithJobContext
+{
+	explicit FMonolithJobContext(const FString& InJobId)
+		: JobId(InJobId)
+	{
+	}
+
+	/** The job this work belongs to. Useful for logging; the helpers below cover the rest. */
+	FString JobId;
+
+	/**
+	 * Any thread. True once cancellation has been requested (jobs_cancel, or shutdown).
+	 * Background bodies must poll this between chunks; sliced steps get it checked for them
+	 * between slices but may also poll it inside a long slice.
+	 */
+	bool IsCancelRequested() const;
+
+	/**
+	 * Any thread. Publish a human-readable progress message.
+	 * Called ON the game thread  -> applied immediately.
+	 * Called from a worker thread -> queued and applied on the game thread, so a poller
+	 * never observes a half-updated job. Progress on a finished job is silently dropped.
+	 */
+	void ReportProgress(const FString& Message) const;
+};
+
+/**
+ * Body of a BACKGROUND job. Runs once, on its own FRunnableThread, to completion.
+ * MUST NOT touch UObjects, the asset registry, or anything else that is game-thread-only.
+ * Must return Complete / Error / Cancelled — never Pending.
+ */
+using FMonolithBackgroundJobBody = TFunction<FMonolithJobOutcome(const FMonolithJobContext&)>;
+
+/**
+ * One slice of a SLICED job. Invoked on the GAME THREAD from the shared pump, so UObject
+ * access is safe. Do a bounded amount of work and return Pending to be called again, or a
+ * terminal outcome to finish. Not called again after any terminal outcome, and not called
+ * again once the job has been cancelled.
+ */
+using FMonolithSlicedJobStep = TFunction<FMonolithJobOutcome(const FMonolithJobContext&)>;
+
 /**
  * Process-lifetime registry of jobs plus the single shared FTSTicker pump.
  * Meyers singleton, mirroring FPieSmokeSessionManager::Get().
@@ -110,6 +243,67 @@ public:
 	 * fires on the game thread).
 	 */
 	FString CreateJob(const FString& Namespace, const FString& Action, const FString& InitialMessage = FString());
+
+	/**
+	 * GAME THREAD. Register a job AND start `Body` on a dedicated FRunnableThread.
+	 * Returns the new job id, or an EMPTY string if the job could not be started
+	 * (null body, or the manager is shutting down) — callers must check.
+	 *
+	 * The body runs off the game thread and MUST NOT touch UObjects. Its progress and its
+	 * final outcome are marshalled back to the game thread before they are applied, so the
+	 * registry only ever mutates from Running -> terminal on the game thread.
+	 *
+	 * Single-threaded platforms / `-nothreading`: FRunnableThread::Create returns a fake
+	 * thread that is driven from the main tick, so a body that blocks would block the editor.
+	 * Bodies must be written to make progress without waiting on the game thread.
+	 *
+	 * Cancellation is cooperative: jobs_cancel flips the job to Cancelled immediately and the
+	 * body sees FMonolithJobContext::IsCancelRequested() at its next checkpoint. A late
+	 * outcome from a cancelled body is rejected by the write-once terminal rule.
+	 */
+	FString StartBackgroundJob(
+		const FString& Namespace,
+		const FString& Action,
+		FMonolithBackgroundJobBody Body,
+		const FString& InitialMessage = FString());
+
+	/**
+	 * GAME THREAD. Register a job whose `Step` is invoked once per pump iteration ON THE
+	 * GAME THREAD until it returns a terminal outcome. UObject access is safe inside a slice.
+	 * Returns the new job id, or an EMPTY string when the step is null / the manager is
+	 * shutting down.
+	 *
+	 * The first slice runs on the NEXT pump iteration, never inline — so the caller can
+	 * return a job id to its client before any work happens.
+	 *
+	 * This reuses the manager's single shared pump; no extra ticker is created. Slice cadence
+	 * comes from UMonolithSettings::JobSliceIntervalSeconds (0 = every frame) and is applied
+	 * by upgrading the one installed ticker, never by adding a second one.
+	 */
+	FString StartSlicedJob(
+		const FString& Namespace,
+		const FString& Action,
+		FMonolithSlicedJobStep Step,
+		const FString& InitialMessage = FString());
+
+	/**
+	 * Any thread EXCEPT the job's own worker thread. Blocks until the background body of
+	 * JobId has RETURNED and queued its outcome. Returns false only on timeout; an id with
+	 * no live background worker (unknown, sliced, or already reaped) returns true at once.
+	 *
+	 * This does NOT run the game-thread apply step: after it returns, call PumpOnce() (or let
+	 * the pump tick) before reading the terminal state. Exists so automation can synchronise
+	 * on a real event instead of sleeping; production code should poll the job instead.
+	 *
+	 * Do not call this from the game thread while the body is waiting on the game thread.
+	 */
+	bool WaitForBackgroundJob(const FString& JobId, double TimeoutSeconds);
+
+	/** Any thread. Number of background worker threads the manager is currently tracking. */
+	int32 GetBackgroundWorkerCount() const;
+
+	/** Any thread. Number of tick-sliced jobs still registered with the pump. */
+	int32 GetSlicedJobCount() const;
 
 	/**
 	 * Any thread. Replace the progress message of a Running job.
@@ -185,30 +379,51 @@ public:
 	int32 EnforceRetention(double NowSecondsOverride = -1.0);
 
 	/**
-	 * Any thread. Run one pump iteration synchronously (retention sweep). Exists so
-	 * headless automation can drive the pump deterministically instead of waiting for
-	 * engine ticks. Unlike the ticker callback it never uninstalls the pump, so calling it
-	 * can never desynchronise the installed ticker. Returns true while jobs remain.
+	 * GAME THREAD. Run one pump iteration synchronously: apply queued worker results, advance
+	 * every tick-sliced job by one slice, reap finished worker threads, sweep retention.
+	 * Exists so headless automation can drive the pump deterministically instead of waiting
+	 * for engine ticks. Unlike the ticker callback it never uninstalls the pump, so calling it
+	 * can never desynchronise the installed ticker. Returns true while work remains.
 	 */
 	bool PumpOnce();
 
 	/**
-	 * Game thread. Drop every job and uninstall the pump. Called from module shutdown and
-	 * by tests that need a clean registry.
+	 * GAME THREAD. Full teardown: stop handing out slices, request cancellation of every
+	 * running job, WAIT (bounded by UMonolithSettings::JobShutdownWaitSeconds) for every
+	 * in-flight background body to return, join and delete its thread, discard queued
+	 * game-thread work, drop every job and uninstall the pump.
+	 *
+	 * A body that ignores cancellation and outlives the wait is DETACHED, never force-killed:
+	 * its FRunnable is moved to a list that is intentionally never freed, so the still-running
+	 * thread can never touch freed memory, and editor shutdown is never blocked indefinitely.
+	 *
+	 * Called from FMonolithCoreModule::ShutdownModule. Tests must NOT call it — the registry
+	 * is shared, and Reset() would drop jobs owned by everything else in the session.
 	 */
 	void Reset();
 
 private:
 	FMonolithJobManager() = default;
-	~FMonolithJobManager() = default;
+	~FMonolithJobManager();
 	FMonolithJobManager(const FMonolithJobManager&) = delete;
 	FMonolithJobManager& operator=(const FMonolithJobManager&) = delete;
 
-	/** FTSTicker callback. Enforces retention and self-unregisters once the registry empties. */
+	/** The background worker runnable — defined in the .cpp, never exposed. */
+	friend class FMonolithJobWorker;
+
+	/** The context needs the game-thread hand-off queue to marshal worker progress. */
+	friend struct FMonolithJobContext;
+
+	/** FTSTicker callback. Runs one pump iteration and self-unregisters once idle. */
 	bool OnPump(float DeltaTime);
 
-	/** Installs the pump if not already installed. MUST be called with JobsLock NOT held. */
-	void EnsurePump();
+	/**
+	 * Installs the pump if not already installed, or upgrades the installed ticker to the
+	 * faster slice cadence when bWantsSliceCadence is set. Exactly ONE ticker exists at any
+	 * moment: the upgrade removes the old handle before adding the new one.
+	 * MUST be called with JobsLock NOT held, and never from inside OnPump.
+	 */
+	void EnsurePump(bool bWantsSliceCadence);
 
 	/** Shared helper: finish transition under an already-held lock. */
 	bool FinishJobInternal(
@@ -218,11 +433,60 @@ private:
 		const FString& ErrorMessage,
 		int32 ErrorCode);
 
+	/** Any thread. Queue work for the game thread and ask the task graph to drain it. */
+	void EnqueueGameThreadWork(TFunction<void()>&& Work);
+
+	/** GAME THREAD. Run everything queued by EnqueueGameThreadWork. Re-entrancy safe. */
+	void DrainGameThreadWork();
+
+	/** GAME THREAD. Turn a body/slice outcome into the matching registry transition. */
+	void ApplyOutcome(const FString& JobId, const FMonolithJobOutcome& Outcome);
+
+	/** GAME THREAD. Invoke one slice of every registered sliced job, in registration order. */
+	void AdvanceSlicedJobs();
+
+	/** GAME THREAD. Join + delete the threads of workers whose body has returned. */
+	void ReapFinishedWorkers();
+
+	/** GAME THREAD. Bounded wait for every worker, then join or detach. Used by Reset(). */
+	void ShutdownWorkers();
+
+	/** Any thread. True while jobs, sliced steps, workers or queued results remain. */
+	bool HasWorkRemaining() const;
+
 	TMap<FString, FMonolithJob> Jobs;
 	uint64 NextJobSerial = 1;
 
 	FTSTicker::FDelegateHandle PumpHandle;
 	bool bPumpActive = false;
+	/** Interval the currently installed ticker was created with; < 0 when none is installed. */
+	float InstalledPumpInterval = -1.0f;
 
 	mutable FCriticalSection JobsLock;
+
+	/** One registered sliced job. An array (not a map) so slices run in registration order. */
+	struct FSlicedJobEntry
+	{
+		FString JobId;
+		/** Shared so a snapshot can outlive concurrent registry edits while the slice runs. */
+		TSharedPtr<FMonolithSlicedJobStep> Step;
+	};
+	TArray<FSlicedJobEntry> SlicedJobs;
+	mutable FCriticalSection SlicedLock;
+
+	/** Live background workers, and the ones deliberately leaked at shutdown (see Reset). */
+	TArray<TSharedPtr<FMonolithJobWorker>> Workers;
+	TArray<TSharedPtr<FMonolithJobWorker>> DetachedWorkers;
+	mutable FCriticalSection WorkersLock;
+
+	/** Worker -> game thread hand-off queue. */
+	TArray<TFunction<void()>> PendingGameThreadWork;
+	bool bDrainingGameThreadWork = false;
+	mutable FCriticalSection GameThreadWorkLock;
+
+	/** Set for the duration of Reset(): refuses new work and stops task-graph scheduling. */
+	FThreadSafeBool bShuttingDown;
+
+	/** True while OnPump is executing, so EnsurePump never re-installs from inside the tick. */
+	FThreadSafeBool bInPump;
 };
