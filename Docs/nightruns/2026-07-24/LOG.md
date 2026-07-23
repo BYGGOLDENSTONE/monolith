@@ -192,3 +192,25 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Ek şart: kapanış güvenliği (uçuştaki arka plan işi `Reset()`'i geçip serbest belleğe dokunmamalı veya editör kapanışını asmamalı) ve testlerde determinizm — `Sleep` ile senkronizasyon yasak, dilimli işler `PumpOnce()` ile elle sürülecek. Deterministik yapılamayan iddia yazılmayacak, rapora not düşülecek.
 - Commit: -
 - Sıradaki: Görev 8 raporu.
+
+## [01:16] Görev 8 TAMAM — job çalıştırma katmanı ayakta (196/196)
+- Durum: done
+- Ne oldu: İki çalıştırma şekli de eklendi. (1) Arka plan işleri: `FMonolithJobWorker` (FRunnable), ilerleme ve tamamlanma oyun iş parçacığına marshal ediliyor. (2) Tick-dilimli oyun-iş-parçacığı işleri: mevcut paylaşımlı pompadan sürülüyor. Yeni tip aile: `FMonolithJobOutcome` (Complete/Failure/Cancelled/Pending) + `FMonolithJobContext` (`IsCancelRequested()`, `ReportProgress()`). İki yeni ayar (`JobSliceIntervalSeconds`=0.0, `JobShutdownWaitSeconds`=5.0). 7 yeni test, toplam 189→196.
+- **Kapanış güvenliği** (asıl tehlikeydi, işçinin uyguladığı sıra): (1) `bShuttingDown` — yeni iş kabul edilmez, (2) dilimli adımlar temizlenir, (3) beklemeden ÖNCE tüm çalışan işlere iptal bayrağı, (4) her işçi için `Stop()` + kendi `DoneEvent`'inde `JobShutdownWaitSeconds` kadar bekleme; başarılıysa `WaitForCompletion()` + `delete`, zaman aşımında **ayır** — `TSharedPtr` `DetachedWorkers`'a taşınır ve hiç serbest bırakılmaz (sınırlı sızıntı; asla zorla öldürme, asla süresiz asılma), (5) kuyruktaki oyun-iş-parçacığı işi çalıştırılmadan atılır, (6) kayıt defteri boşaltılır, ticker kaldırılır. Bekleme sırasında kilit tutulmuyor. İşçi lambda'ları yalnız değer kopyası + süreç ömürlü singleton yakalıyor; `Reset()` sonrası gelen bir sonuç bilinmeyen id'ye çarpıp false dönüyor.
+- Karar: Kabul. Kontrol ajanı **verified** ve bu sefer kararlılığı kendi ölçtü: paketi İKİ KEZ koştu, ikisi de 196/0/0 ve 196 "Test Completed" — threading testleri kararsız değil. HEAD=77301f8, ağaç temiz, 4 dosya beyanla birebir, 7 `JobExecution.*` + 7 `JobManager.*` + 5 `JobActions.*` testinin hepsi `{Success}`, build yeşil. **Tek-ticker özelliği korunmuş**: `EnsurePump` önce eski handle'ı `RemoveTicker` edip sonra `AddTicker` yapıyor (satır 891/932/936), kilitle korunuyor — araya `RemoveTicker` girmeden iki `AddTicker` yolu yok.
+- Commit: 77301f8
+- Sıradaki: Görev 9 — PoseSearch `build_search_index`'in job'a çevrilmesi (Faz 1 madde 3, ilk gerçek dönüşüm).
+
+### notes_for_next_worker (görev 8 işçisinden — API görev 9 promptuna aktarıldı; ek notlar)
+- `StartBackgroundJob`/`StartSlicedJob` reddederse **boş dize** dönüyor (null gövde veya kapanış hâli) — çağıran mutlaka kontrol etmeli.
+- Dilim aralığı 0.0 = her karede bir ilerleme; bu aynı zamanda kayıt defteri boşalana kadar paylaşımlı pompayı her kare çalıştırır (maliyet: saklanan iş sayısı kadar mikrosaniyelik süpürme).
+- **Kasten yazılmayan iddia**: arka plan sonucunun `WaitForBackgroundJob()` ile `PumpOnce()` arasında henüz UYGULANMAMIŞ olduğu doğrulanmıyor — bu, task graph'ın `AsyncTask(GameThread)`'i henüz boşaltmadığını iddia etmek olurdu; zamanlama detayı, sözleşme değil. Testler yalnız sözleşmeyi ("bekle, pompala, oku") doğruluyor. Sonuç: marshalling'in gözlemlenebilir SONUCU kaplı, mekanizmanın `AsyncTask` olduğu değil.
+- `Reset()` testten hiç çağrılmıyor (yasak, paylaşımlı kayıt defteri). `OrphanedWorkerIsSafe` aynı "kayıt defteri canlı işçinin altından çekildi" yolunu kaplıyor ama sınırlı-bekleme/ayırma mantığının kendisinin otomatik kapsaması YOK.
+
+## [01:18] Görev 9 gönderildi — build_search_index → arka plan job (Faz 1 madde 3)
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. İlk gerçek dönüşüm: `MonolithPoseSearchActions.cpp:594` `WaitForCompletion` ile editörü (ve dolayısıyla tüm MCP sunucusunu) donduruyor.
+- Karar: **Sözleşme kararı orkestratör tarafından verildi, işçi tartışmayacak**: aksiyon VARSAYILAN OLARAK async olacak, hemen `{job_id}` dönecek. Gerekçe: Faz 1'in bütün amacı bu — mevcut varsayılan zaten fiilen bozuk, proxy 30 sn'de zaman aşımına uğrarken iş görünmez şekilde devam ediyor ve sonucu çöpe gidiyor. Ama senkron yol açık bir bayrakla erişilebilir kalacak ve job başlatılamazsa (boş id) senkron yola düşülecek — geri çekilme yolu olmadan varsayılan değiştirilmez. İlerleme mesajları gerçek olacak (tek sabit metin değil), iptal işbirlikçi biçimde onurlandırılacak.
+- Ek: Bu KULLANICIYA GÖRÜNÜR bir sözleşme değişikliği — aksiyonun davranışını tanımlayan `Docs/` dosyası aynı commit'te güncellenecek ve MORNING_REPORT'ta kabul testi maddesi olarak işaretlenecek.
+- Commit: -
+- Sıradaki: Görev 9 raporu.
