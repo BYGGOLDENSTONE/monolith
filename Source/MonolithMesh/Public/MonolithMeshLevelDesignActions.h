@@ -15,7 +15,7 @@ public:
 	static void RegisterActions(FMonolithToolRegistry& Registry);
 
 private:
-	/** Spawn point/spot/rect/directional light with full properties */
+	/** Spawn point/spot/rect/directional/sky light with full properties */
 	static FMonolithActionResult PlaceLight(const TSharedPtr<FJsonObject>& Params);
 
 	/** Modify properties on an existing light actor */
@@ -44,6 +44,16 @@ private:
 
 	// --- Helpers ---
 
-	/** Apply light properties from JSON to a light component. Returns list of properties set. */
-	static TArray<FString> ApplyLightProperties(class ULightComponent* LightComp, const TSharedPtr<FJsonObject>& Params);
+	/**
+	 * Apply the curated light params (intensity, color, cone angles, ...) from JSON to a
+	 * light component. Returns the list of properties set.
+	 *
+	 * Takes ULightComponentBase, NOT ULightComponent — USkyLightComponent derives from the
+	 * base only, so a ULightComponent parameter silently excluded every sky light. Params
+	 * that only exist on ULightComponent / ULocalLightComponent stay cast-guarded inside.
+	 *
+	 * The open-ended `preset` / `properties` channel is handled separately by
+	 * FMonolithMeshLightActions::ApplyPropertyTree (UE reflection, no per-property C++).
+	 */
+	static TArray<FString> ApplyLightProperties(class ULightComponentBase* LightComp, const TSharedPtr<FJsonObject>& Params);
 };

@@ -1,4 +1,5 @@
 #include "MonolithMeshLevelDesignActions.h"
+#include "MonolithMeshLightActions.h"
 #include "MonolithMeshUtils.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
@@ -11,6 +12,7 @@
 #include "Engine/SpotLight.h"
 #include "Engine/RectLight.h"
 #include "Engine/DirectionalLight.h"
+#include "Engine/SkyLight.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
@@ -21,6 +23,8 @@
 #include "Components/RectLightComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/LightComponent.h"
+#include "Components/LightComponentBase.h"
+#include "Components/SkyLightComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Dom/JsonObject.h"
@@ -195,10 +199,15 @@ namespace LevelDesignHelpers
 void FMonolithMeshLevelDesignActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	Registry.RegisterAction(TEXT("mesh"), TEXT("place_light"),
-		TEXT("Spawn a light actor (point/spot/rect/directional) with full property configuration"),
+		TEXT("Spawn a light actor (directional/point/spot/rect/sky) with full property configuration. "
+			 "Use 'preset' for a named data-driven recipe (mesh.list_light_presets) and 'properties' to set "
+			 "ANY UPROPERTY on the light component by name via reflection. Read the result back with "
+			 "mesh.get_light_properties."),
 		FMonolithActionHandler::CreateStatic(&FMonolithMeshLevelDesignActions::PlaceLight),
 		FParamSchemaBuilder()
-			.Required(TEXT("type"), TEXT("string"), TEXT("Light type: point, spot, rect, directional"))
+			.Required(TEXT("type"), TEXT("string"), TEXT("Light type: directional, point, spot, rect, sky"))
+			.Optional(TEXT("preset"), TEXT("string"), TEXT("Named data-driven preset applied before 'properties' (see mesh.list_light_presets)"))
+			.Optional(TEXT("properties"), TEXT("object"), TEXT("UPROPERTY name -> value on the light component, e.g. {\"Intensity\": 1700, \"AttenuationRadius\": 600}. Unknown/mistyped names fail the whole call with no partial write."))
 			.Required(TEXT("location"), TEXT("array"), TEXT("World location [x, y, z]"))
 			.Optional(TEXT("rotation"), TEXT("array"), TEXT("Rotation [pitch, yaw, roll]"), TEXT("[0,0,0]"))
 			.Optional(TEXT("intensity"), TEXT("number"), TEXT("Light intensity (candelas for point/spot, lux for directional)"), TEXT("5000"))
@@ -218,10 +227,14 @@ void FMonolithMeshLevelDesignActions::RegisterActions(FMonolithToolRegistry& Reg
 			.Build());
 
 	Registry.RegisterAction(TEXT("mesh"), TEXT("set_light_properties"),
-		TEXT("Modify properties on an existing light actor (intensity, color, shadows, temperature, cone angles, etc.)"),
+		TEXT("Modify properties on an existing light actor of any type incl. SkyLight (intensity, color, shadows, "
+			 "temperature, cone angles, ...). 'preset' applies a data-driven recipe; 'properties' sets ANY UPROPERTY "
+			 "on the light component by name via reflection."),
 		FMonolithActionHandler::CreateStatic(&FMonolithMeshLevelDesignActions::SetLightProperties),
 		FParamSchemaBuilder()
 			.Required(TEXT("actor_name"), TEXT("string"), TEXT("Light actor name or label"))
+			.Optional(TEXT("preset"), TEXT("string"), TEXT("Named data-driven preset applied before 'properties' (see mesh.list_light_presets)"))
+			.Optional(TEXT("properties"), TEXT("object"), TEXT("UPROPERTY name -> value on the light component. Unknown/mistyped names fail the whole call with no partial write."))
 			.Optional(TEXT("intensity"), TEXT("number"), TEXT("Light intensity"))
 			.Optional(TEXT("color"), TEXT("array"), TEXT("Light color [r, g, b] normalized 0-1"))
 			.Optional(TEXT("attenuation_radius"), TEXT("number"), TEXT("Attenuation radius"))
@@ -312,9 +325,19 @@ void FMonolithMeshLevelDesignActions::RegisterActions(FMonolithToolRegistry& Reg
 // Helper: Apply light properties from JSON
 // ============================================================================
 
-TArray<FString> FMonolithMeshLevelDesignActions::ApplyLightProperties(ULightComponent* LightComp, const TSharedPtr<FJsonObject>& Params)
+TArray<FString> FMonolithMeshLevelDesignActions::ApplyLightProperties(ULightComponentBase* LightComp, const TSharedPtr<FJsonObject>& Params)
 {
 	TArray<FString> PropsSet;
+
+	if (!LightComp)
+	{
+		return PropsSet;
+	}
+
+	// Sky lights are ULightComponentBase but NOT ULightComponent, so every
+	// ULightComponent-only setter below stays behind this cast.
+	ULightComponent* FullLight = Cast<ULightComponent>(LightComp);
+	USkyLightComponent* SkyLight = Cast<USkyLightComponent>(LightComp);
 
 	// Mobility MUST be applied first — SetAttenuationRadius, SetInnerConeAngle, etc.
 	// silently no-op on non-Movable lights via AreDynamicDataChangesAllowed()
@@ -332,7 +355,11 @@ TArray<FString> FMonolithMeshLevelDesignActions::ApplyLightProperties(ULightComp
 	double Intensity;
 	if (Params->TryGetNumberField(TEXT("intensity"), Intensity))
 	{
-		LightComp->SetIntensity(static_cast<float>(Intensity));
+		// Each class has its own setter with its own side effects
+		// (UpdateColorAndBrightness vs. a sky recapture); use the right one.
+		if (FullLight)      { FullLight->SetIntensity(static_cast<float>(Intensity)); }
+		else if (SkyLight)  { SkyLight->SetIntensity(static_cast<float>(Intensity)); }
+		else                { LightComp->Modify(); LightComp->Intensity = static_cast<float>(Intensity); LightComp->MarkRenderStateDirty(); }
 		PropsSet.Add(TEXT("intensity"));
 	}
 
@@ -344,7 +371,9 @@ TArray<FString> FMonolithMeshLevelDesignActions::ApplyLightProperties(ULightComp
 			static_cast<float>((*ColorArr)[1]->AsNumber()),
 			static_cast<float>((*ColorArr)[2]->AsNumber())
 		);
-		LightComp->SetLightColor(Color);
+		if (FullLight)      { FullLight->SetLightColor(Color); }
+		else if (SkyLight)  { SkyLight->SetLightColor(Color); }
+		else                { LightComp->Modify(); LightComp->LightColor = Color.ToFColor(true); LightComp->MarkRenderStateDirty(); }
 		PropsSet.Add(TEXT("color"));
 	}
 
@@ -372,19 +401,20 @@ TArray<FString> FMonolithMeshLevelDesignActions::ApplyLightProperties(ULightComp
 		PropsSet.Add(TEXT("cast_shadows"));
 	}
 
+	// Temperature lives on ULightComponent — sky lights have no colour temperature.
 	double Temperature;
-	if (Params->TryGetNumberField(TEXT("temperature"), Temperature))
+	if (FullLight && Params->TryGetNumberField(TEXT("temperature"), Temperature))
 	{
-		LightComp->Modify();
-		LightComp->Temperature = static_cast<float>(Temperature);
+		FullLight->Modify();
+		FullLight->Temperature = static_cast<float>(Temperature);
 		PropsSet.Add(TEXT("temperature"));
 	}
 
 	bool bUseTemperature;
-	if (Params->TryGetBoolField(TEXT("use_temperature"), bUseTemperature))
+	if (FullLight && Params->TryGetBoolField(TEXT("use_temperature"), bUseTemperature))
 	{
-		LightComp->Modify();
-		LightComp->bUseTemperature = bUseTemperature;
+		FullLight->Modify();
+		FullLight->bUseTemperature = bUseTemperature;
 		PropsSet.Add(TEXT("use_temperature"));
 	}
 
@@ -461,38 +491,21 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::PlaceLight(const TSharedP
 	MonolithMeshUtils::ParseRotator(Params, TEXT("rotation"), Rotation);
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
-	if (!World)
+	FString WorldError;
+	if (!FMonolithMeshLightActions::RequireEditorWorld(World, WorldError))
 	{
-		return FMonolithActionResult::Error(TEXT("No editor world available"));
+		return FMonolithActionResult::Error(WorldError);
 	}
 
-	// Determine actor class
-	UClass* LightClass = nullptr;
-	FString ClassName;
-	if (TypeStr == TEXT("point"))
+	// Determine actor class — shared table (covers sky lights, which the old
+	// if-chain here did not).
+	FString TypeError;
+	UClass* LightClass = FMonolithMeshLightActions::ResolveLightActorClass(TypeStr, TypeError);
+	if (!LightClass)
 	{
-		LightClass = APointLight::StaticClass();
-		ClassName = TEXT("PointLight");
+		return FMonolithActionResult::Error(TypeError);
 	}
-	else if (TypeStr == TEXT("spot"))
-	{
-		LightClass = ASpotLight::StaticClass();
-		ClassName = TEXT("SpotLight");
-	}
-	else if (TypeStr == TEXT("rect"))
-	{
-		LightClass = ARectLight::StaticClass();
-		ClassName = TEXT("RectLight");
-	}
-	else if (TypeStr == TEXT("directional"))
-	{
-		LightClass = ADirectionalLight::StaticClass();
-		ClassName = TEXT("DirectionalLight");
-	}
-	else
-	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Invalid light type: '%s'. Use point, spot, rect, or directional."), *TypeStr));
-	}
+	const FString ClassName = LightClass->GetName();
 
 	LevelDesignHelpers::FScopedMeshTransaction Transaction(FText::FromString(TEXT("Monolith: Place Light")));
 
@@ -506,16 +519,31 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::PlaceLight(const TSharedP
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to spawn %s"), *ClassName));
 	}
 
-	// Get the light component
-	ULightComponent* LightComp = SpawnedActor->FindComponentByClass<ULightComponent>();
+	// Get the light component (base class — sky lights are not ULightComponent)
+	FString CompError;
+	ULightComponentBase* LightComp = FMonolithMeshLightActions::ResolveLightComponent(SpawnedActor, CompError);
 	if (!LightComp)
 	{
 		Transaction.Cancel();
-		return FMonolithActionResult::Error(TEXT("Spawned light actor has no ULightComponent"));
+		return FMonolithActionResult::Error(CompError);
 	}
 
-	// Apply all properties
+	// Apply the curated params, then the data-driven preset + reflection channel.
 	TArray<FString> PropsSet = ApplyLightProperties(LightComp, Params);
+
+	TArray<FString> ReflectedProps;
+	FString ReflectError;
+	if (!FMonolithMeshLightActions::ApplyPropertyTree(LightComp, Params, ReflectedProps, ReflectError))
+	{
+		// Roll the spawn back — a light that only half-matches the request is worse
+		// than no light: the caller cannot tell which half landed. Destroy first,
+		// then cancel, so the undo buffer never keeps a reference to a half-configured
+		// actor regardless of which side actually rolls it back.
+		World->DestroyActor(SpawnedActor);
+		Transaction.Cancel();
+		return FMonolithActionResult::Error(ReflectError);
+	}
+	PropsSet.Append(ReflectedProps);
 
 	// Name and folder
 	FString OptionalName;
@@ -538,6 +566,8 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::PlaceLight(const TSharedP
 	auto Result = MakeShared<FJsonObject>();
 	Result->SetStringField(TEXT("actor_name"), SpawnedActor->GetActorNameOrLabel());
 	Result->SetStringField(TEXT("class"), ClassName);
+	Result->SetStringField(TEXT("light_type"), FMonolithMeshLightActions::TokenForLightComponent(LightComp));
+	Result->SetStringField(TEXT("component_class"), LightComp->GetClass()->GetName());
 	Result->SetArrayField(TEXT("location"), LevelDesignHelpers::VectorToJsonArray(SpawnedActor->GetActorLocation()));
 
 	TArray<TSharedPtr<FJsonValue>> PropsArr;
@@ -563,31 +593,50 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::SetLightProperties(const 
 	}
 
 	FString Error;
+	if (!FMonolithMeshLightActions::RequireEditorWorld(MonolithMeshUtils::GetEditorWorld(), Error))
+	{
+		return FMonolithActionResult::Error(Error);
+	}
+
 	AActor* Actor = MonolithMeshUtils::FindActorByName(ActorName, Error);
 	if (!Actor)
 	{
 		return FMonolithActionResult::Error(Error);
 	}
 
-	ULightComponent* LightComp = Actor->FindComponentByClass<ULightComponent>();
+	ULightComponentBase* LightComp = FMonolithMeshLightActions::ResolveLightComponent(Actor, Error);
 	if (!LightComp)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Actor '%s' has no ULightComponent"), *ActorName));
+		return FMonolithActionResult::Error(Error);
 	}
 
 	LevelDesignHelpers::FScopedMeshTransaction Transaction(FText::FromString(TEXT("Monolith: Set Light Properties")));
 
 	TArray<FString> PropsSet = ApplyLightProperties(LightComp, Params);
 
+	TArray<FString> ReflectedProps;
+	FString ReflectError;
+	if (!FMonolithMeshLightActions::ApplyPropertyTree(LightComp, Params, ReflectedProps, ReflectError))
+	{
+		Transaction.Cancel();
+		return FMonolithActionResult::Error(ReflectError);
+	}
+	PropsSet.Append(ReflectedProps);
+
 	if (PropsSet.Num() == 0)
 	{
 		Transaction.Cancel();
-		return FMonolithActionResult::Error(TEXT("No valid light properties provided"));
+		return FMonolithActionResult::Error(FString::Printf(
+			TEXT("No light properties provided for '%s' (%s). Pass any of the named params "
+				 "(intensity, color, cast_shadows, ...), a data-driven 'preset', or a 'properties' "
+				 "object of UPROPERTY names. mesh.get_light_properties lists what this light supports."),
+			*Actor->GetActorNameOrLabel(), *LightComp->GetClass()->GetName()));
 	}
 
 	auto Result = MakeShared<FJsonObject>();
 	Result->SetStringField(TEXT("actor_name"), Actor->GetActorNameOrLabel());
 	Result->SetStringField(TEXT("light_class"), LightComp->GetClass()->GetName());
+	Result->SetStringField(TEXT("light_type"), FMonolithMeshLightActions::TokenForLightComponent(LightComp));
 
 	TArray<TSharedPtr<FJsonValue>> PropsArr;
 	for (const FString& P : PropsSet)

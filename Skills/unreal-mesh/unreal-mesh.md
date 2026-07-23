@@ -184,12 +184,14 @@ monolith_discover({ namespace: "mesh" })
 | `analyze_prop_density` | `volume_name`, `target_density`? | Grid-cell density vs target |
 | `place_storytelling_scene` | `location`, `pattern`, `intensity`? | 5 horror presets (violence/abandoned/dragged/medical/corruption) |
 
-### Level Design (9)
+### Level Design (11)
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
-| `place_light` | `type`, `location`, `intensity`?, `color`? | Spawn point/spot/rect/directional |
-| `set_light_properties` | `actor_name`, properties... | Modify existing light |
+| `place_light` | `type`, `location`, `preset`?, `properties`?, `intensity`?, `color`? | Spawn directional/point/spot/rect/**sky** light |
+| `set_light_properties` | `actor_name`, `preset`?, `properties`?, named params... | Modify existing light (any type incl. sky) |
+| `get_light_properties` | `actor_name`, `properties`?, `all`? | Read a light's settings back (typed, errors on unknown names) |
+| `list_light_presets` | `type`?, `include_properties`? | List data-driven light presets |
 | `set_actor_material` | `actor_name`, `material`, `slot`? | Assign material |
 | `swap_material_in_level` | `source_material`, `target_material` | Bulk replace material |
 | `find_replace_mesh` | `source_mesh`, `target_mesh` | Swap all instances |
@@ -197,6 +199,19 @@ monolith_discover({ namespace: "mesh" })
 | `find_instancing_candidates` | `min_count`? | Find repeated meshes for HISM |
 | `convert_to_hism` | `mesh`, `actors` | Convert to HISM |
 | `get_actor_component_properties` | `actor_name`, `component_class`? | Read UPROPERTYs |
+
+**Lights — how to drive them well.** The named params (`intensity`, `color`, `cast_shadows`,
+`inner_cone_angle`, ...) are a convenience shortlist. For anything else, pass `properties` — a
+`{UPROPERTY name: value}` object written straight through UE reflection, so every setting the
+Details panel shows is reachable (`SourceLength`, `IntensityUnits`, `SpecularScale`,
+`bAtmosphereSunLight`, `SkyDistanceThreshold`, ...). Unknown or mistyped names fail the whole
+call with a did-you-mean hint and apply **nothing** — there is never a half-configured light.
+Use `get_light_properties` to discover the exact names (`all: true` lists them all).
+
+`preset` applies a named recipe first, then `properties` overrides it. Presets are data, not
+code: built-ins live in `Plugins/Monolith/Config/MonolithLightPresets.json`; add or override
+them by dropping JSON of the same shape into `Plugins/Monolith/Saved/Monolith/LightPresets/`
+— no rebuild. `list_light_presets` enumerates what is loaded.
 
 ### Volumes & Properties (7)
 
