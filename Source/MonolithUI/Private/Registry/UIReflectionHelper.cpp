@@ -114,28 +114,33 @@ namespace
     }
 
     // FLinearColor — "#RRGGBBAA" OR array[r,g,b,a] OR object{r,g,b,a}.
-    // Routes hex-string parses through MonolithUI::ParseColor (degamma path).
+    // Hex strings are validated by MonolithUI::TryParseColor and converted by
+    // MonolithUI::ParseColor (degamma path) — see the note inside.
     bool ParseLinearColor(const TSharedPtr<FJsonValue>& Value, FLinearColor& Out)
     {
         if (!Value.IsValid()) return false;
 
         if (Value->Type == EJson::String)
         {
-            FLinearColor Parsed;
-            if (MonolithUI::TryParseColor(Value->AsString(), Parsed))
-            {
-                Out = Parsed;
-                return true;
-            }
-            // Fall back to legacy ParseColor (degamma path) for # forms only —
-            // it returns White silently on garbage so we wrap it explicitly.
+            // Validation first: TryParseColor owns the accepted-form rules
+            // (hex digit counts, comma-float arity) and reports malformed
+            // input instead of silently defaulting to White like ParseColor.
             const FString S = Value->AsString().TrimStartAndEnd();
-            if (S.StartsWith(TEXT("#")))
+            FLinearColor Parsed;
+            if (!MonolithUI::TryParseColor(S, Parsed))
             {
-                Out = MonolithUI::ParseColor(S);
-                return true;
+                return false;
             }
-            return false;
+
+            // A "#RRGGBB" literal is an sRGB value, while engine widget
+            // FLinearColor UPROPERTYs store LINEAR values (that is what the
+            // editor colour picker writes and what ToFColor(true) inverts).
+            // So hex forms take the degamma path (ParseColor); the sRGB
+            // pass-through TryParseColor result is for MD_UI material
+            // parameters, not for property writes. Comma-float forms are
+            // already linear components — use them verbatim.
+            Out = S.StartsWith(TEXT("#")) ? MonolithUI::ParseColor(S) : Parsed;
+            return true;
         }
         if (Value->Type == EJson::Array)
         {
