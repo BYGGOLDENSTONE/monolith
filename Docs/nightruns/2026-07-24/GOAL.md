@@ -23,6 +23,8 @@ Isınma gecesi: 4 önceden var olan kırmızı testi yeşile çevir ve Faz 1 iş
 
 6. **`jobs` namespace'i** — `list`, `poll`, `cancel`, `clear` aksiyonları. Genişletme şablonu: `Source/MonolithConfig/` desenini izle (Modules[] kaydı gerekiyorsa `Monolith.uplugin`, `MonolithSettings.h`'e toggle, `Registry.RegisterAction()`, `Private/Tests/` altına aksiyon testi). Görev 5'in çekirdeğini kullanır; gerçek uzun iş bağlanmaz (o Faz 1'in sonraki adımı).
 
+7. **[Gece içinde eklendi — 00:12] Test fixture kaydetme hatası** — `CreateScratchWBP` (`Source/MonolithUI/Private/Tests/UIErrorFormattingTests.cpp`) ve `UISpecRoundtripTests.cpp` / `UISpecBuilderTests.cpp` içindeki aynı biçimli yerel yardımcılar `CreatePackage()` + `SavePackage()` çağırırken `Package->FullyLoad()` yapmıyor; diskte fixture varsa paket kısmen yüklü kalıyor ve SavePackage fatal veriyor. Sonuç: **tam test paketi ikinci koşuda çöküyor** (`passed=0 failed=-1`), her koşudan önce elle fixture silmek gerekiyor. Doğru desen zaten var: `Private/Tests/Hoisted/MonolithUITestFixtureUtils.h::CreateOrReuseTestWidgetBlueprint` (satır ~112 `FullyLoad()` + `FindObject` geri kazanımı). Üç yardımcıyı bu desene taşı. Gerekçe: her gece işçisini yavaşlatan ve yanlış alarm üreten altyapı hatası — erken düzeltilirse geri kalan gece hızlanır.
+
 **Stretch (5 ve 6 erken biterse):** Proxy dürüstlük düzeltmesi — 30 sn aşan işte "editör kapalı" yerine "iş sürüyor, job_id ile sorgula". Dosyalar: `Tools/MonolithProxy/monolith_proxy.cpp` ve `Scripts/monolith_proxy.py` (TIMEOUT=30, satır ~37). Yinelenen istek tuzağını da kapat.
 
 ## Kurallar
