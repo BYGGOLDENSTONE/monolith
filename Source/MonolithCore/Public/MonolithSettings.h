@@ -286,6 +286,29 @@ public:
 		Meta=(EditCondition="bEnableMesh"))
 	FString SurfaceAcousticsTablePath = TEXT("/Game/Data/DT_SurfaceAcoustics");
 
+	// --- Jobs ---
+	// Retention policy for FMonolithJobManager (Faz 1 job system). Finished jobs
+	// (complete / error / cancelled) are held so callers can still poll their result,
+	// then evicted by the shared job pump. Running jobs are never evicted.
+
+	/** Maximum number of FINISHED jobs kept in the job registry. The oldest finished job is evicted first once the cap is exceeded. 0 = keep none (a finished job is dropped on the next pump). */
+	UPROPERTY(config, EditAnywhere, Category="Jobs", DisplayName="Finished Job Retention Count",
+		meta=(ClampMin="0", ClampMax="4096",
+			  ToolTip="Maximum number of finished (complete/error/cancelled) jobs kept for polling. Oldest finished evicted first. Running jobs are never evicted."))
+	int32 JobRetentionCount = 64;
+
+	/** Age in seconds after which a FINISHED job is evicted, measured from when it finished. 0 = never evict by age (count cap only). */
+	UPROPERTY(config, EditAnywhere, Category="Jobs", DisplayName="Finished Job Retention (seconds)",
+		meta=(ClampMin="0.0", ClampMax="86400.0",
+			  ToolTip="Seconds a finished job stays pollable after it finished. 0 disables age-based eviction (the count cap still applies)."))
+	float JobRetentionSeconds = 900.0f;
+
+	/** Interval in seconds between job-pump iterations (retention sweep + registry upkeep). 0 = every frame. */
+	UPROPERTY(config, EditAnywhere, Category="Jobs", DisplayName="Job Pump Interval (seconds)",
+		meta=(ClampMin="0.0", ClampMax="60.0",
+			  ToolTip="How often the single shared job ticker runs. 0 = every frame. The pump uninstalls itself when no jobs remain."))
+	float JobPumpIntervalSeconds = 1.0f;
+
 	// --- Logging ---
 
 	/** Log verbosity for Monolith systems */

@@ -2,6 +2,7 @@
 #include "MonolithHttpServer.h"
 #include "MonolithSettings.h"
 #include "MonolithJsonUtils.h"
+#include "MonolithJobManager.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithCoreTools.h"
 #include "Actions/MonolithBulkFillActions.h"
@@ -75,6 +76,10 @@ void FMonolithCoreModule::ShutdownModule()
 
 	FMonolithToolRegistry::Get().UnregisterNamespace(TEXT("monolith"));
 	FMonolithBulkFillActions::UnregisterAll();
+
+	// Faz 1 — drop every job and uninstall the shared job pump before the module unloads,
+	// so no ticker callback survives into a world without this module's code.
+	FMonolithJobManager::Get().Reset();
 
 	UE_LOG(LogMonolith, Log, TEXT("Monolith — Core module shut down"));
 }
