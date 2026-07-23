@@ -46,3 +46,31 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Karar: Regresyon eşiği 175/177 olarak belirlendi.
 - Commit: -
 - Sıradaki: Görev 2 raporu.
+
+## [00:17] Görev 2 TAMAM — Allowlist.UnknownTypeDenied yeşil
+- Durum: done
+- Ne oldu: Yine implementasyon hatalıydı. `UIPropertyAllowlist.cpp::BuildCacheFor`, kayıtlı olsun olmasın HER token için 7 ortak `UWidget` taban property'sini enjekte ediyordu; bu yüzden bilinmeyen tip için `GetAllowedPaths` 0 yerine 7 döndürüyordu. Testi doğrulayan üç bağımsız kaynak: `UIPropertyAllowlist.h` ("Returns false for unknown types", "empty array for unknown tokens"), `MonolithUIRegistryActions.cpp:634` (`ui_describe_widget_type` zaten boş liste + "not in registry" döndürüyor) ve testin kendi yorumu. İşçi özelliği SİLMEDİ — `da2bd31`'in niyeti meşru, sadece token-kör uygulanmış; token'ın gerçek bir widget tipini adlandırmasına bağladı (`TokenNamesWidgetClass()`: önce registry, sonra `FindFirstObjectSafe<UClass>`). Düz `if (!Entry) return;` yapılmadı çünkü `PopulateFromReflectionWalk` Blueprint widget sınıflarını (`WBP_*_C`) kasten dışlıyor — o durumda BP widget'larda `Visibility`/`RenderOpacity` yazımı sessizce kırılırdı. Test 174→175.
+- Karar: Kabul. Kontrol ajanı **verified**: HEAD=0078aeb, ağaç temiz, tek dosya (`UIPropertyAllowlist.cpp`, +69/-8), run_tests.json 175/2/0, logda 177 "Test Completed" (yani 22 sn'lik hızlı koşu gerçekten tam paketti), hedef test `Result={Success}`, build yeşil (exitCode 0).
+- Commit: 0078aeb
+- Sıradaki: Görev 3 (CursorPagination.QueryMismatchRejection).
+
+### notes_for_next_worker (görev 2 işçisinden, AYNEN)
+- Fixture temizleme geçici çözümü gerçek ve işe yaradı; çökme yaşanmadı. Paket duvar süresi bu sefer sadece ~22 sn (sıcak DDC / `-nullrhi`), 6 dk değil — hızlı dönmesi koşmadı anlamına GELMEZ; `grep -c "Test Completed"` ile `results/run_tests.log` içinde 177 olmalı.
+- `results/run_tests.json`, `results/testreport/` ve `results/build.json` **paylaşımlı, tek slotlu** dosyalar; `run_tests.ps1` `Stop-MonolithProcesses` ile başlıyor. İki işçi harness'ı aynı anda koşarsa birbirinin editörünü öldürür ve hükmünün üzerine yazar. Harness koşuları SIRALI olmalı.
+- Kasten düzeltilmeyen mevcut gizli hata (kapsam dışı, ayrı görevlik): `MonolithUIActions.cpp:763` allowlist token'ını `MakeTokenFromClassName(...)` yerine `FName(*Widget->GetClass()->GetName())` ile kuruyor; bu yüzden `NotInAllowlist` hatasının `valid_options` alanı tipin küratörlü eşlemelerini değil sadece ortak taban property'lerini listeliyor.
+- `Scripts/nightrun/README.md` "Known issues" bu testi hâlâ kırmızı listeliyor; dört test bitince orkestratör listeyi tazelemek isteyebilir.
+- needs_human: Editörde göz kontrolü isteğe bağlı — `set_widget_property` (raw olmayan), sınıfı ne native ne yüklü olan bir widget'ta artık `NotInAllowlist` dönüyor (önce 7 taban property'yi kabul ediyordu). Kasıtlı ama kullanıcıya görünür bir sıkılaştırma.
+
+## [00:18] Görev 3 gönderildi — Monolith.CursorPagination.QueryMismatchRejection
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. Görev 1-2'nin harness notları ve "her iki işçi de implementasyonu hatalı buldu, aynı tür teyit ara" yönlendirmesi promptuna eklendi. Regresyon eşiği ≥176/177.
+- Karar: Kontrol ajanı doğrulaması bitene kadar bu işçi kasten bekletildi — harness sonuç dosyaları tek slotlu, eşzamanlı koşu hükmü bozardı.
+- Commit: -
+- Sıradaki: Görev 3 raporu.
+
+## [00:18] Sıraya alınan ek işler (gece sonu boşluk olursa)
+- Durum: parked (bilgi amaçlı)
+- Ne oldu: İşçilerin bulduğu, kapsam dışı bırakılan iki küçük iş: (a) `MonolithUIActions.cpp:763` token kurma hatası — `NotInAllowlist` hatasının `valid_options` alanı eksik listeliyor; (b) `Scripts/nightrun/README.md` "Known issues" listesinin 4 test yeşile dönünce tazelenmesi.
+- Karar: Ana görev listesinin arkasına alındı; Faz 1'den önce yapılmayacak.
+- Commit: -
+- Sıradaki: -
