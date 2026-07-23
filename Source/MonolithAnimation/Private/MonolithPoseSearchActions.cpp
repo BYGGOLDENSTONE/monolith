@@ -27,6 +27,12 @@
 #include "UObject/UnrealType.h"
 #include "Editor.h"
 
+// Faz 1 job system — rebuild_pose_search_index dispatches its work as a tick-sliced job
+// instead of blocking the editor game thread (and therefore the whole MCP server).
+#include "MonolithJobManager.h"
+#include "MonolithSettings.h"
+#include "HAL/PlatformTime.h"
+
 // ---------------------------------------------------------------------------
 // File-local static handlers (Motion Matching Pack — no header decl)
 // ---------------------------------------------------------------------------
@@ -148,11 +154,11 @@ void FMonolithPoseSearchActions::RegisterActions(FMonolithToolRegistry& Registry
 			.Build());
 
 	Registry.RegisterAction(TEXT("animation"), TEXT("rebuild_pose_search_index"),
-		TEXT("Trigger async rebuild of a PoseSearch database search index"),
+		TEXT("Rebuild a PoseSearch database search index as a BACKGROUND JOB (default): returns a job_id immediately, poll it with jobs_query(action=\"poll\"). Pass wait=true for the old blocking behaviour, which freezes the editor and the MCP server until the build finishes."),
 		FMonolithActionHandler::CreateStatic(&HandleRebuildPoseSearchIndex),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("PoseSearchDatabase asset path"))
-			.Optional(TEXT("wait"), TEXT("boolean"), TEXT("Block until rebuild completes (default false)"))
+			.Optional(TEXT("wait"), TEXT("boolean"), TEXT("Run synchronously and block until the rebuild completes, instead of returning a job_id (default false). Blocks the whole MCP server for the duration."), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("animation"), TEXT("set_database_search_mode"),
@@ -1085,50 +1091,276 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleSetChannelWeight(const T
 
 // ---------------------------------------------------------------------------
 // rebuild_pose_search_index — Wave 14
+//
+// Faz 1 (2026-07-24, Docs/GOLDENSTONE_ROADMAP.md "Faz 1" item 3): ASYNC BY DEFAULT.
+//
+// WHY. Indexing a real motion-matching database takes minutes. The old default fired
+// `NewRequest` and returned "InProgress" with no handle, so a caller had no way to learn
+// when the index was ready; the documented way to actually wait — `wait: true` — pinned
+// the editor game thread inside ERequestAsyncBuildFlag::WaitForCompletion, and because the
+// MCP HTTP server is serviced from that same thread the WHOLE server froze for the duration
+// (the proxy then times out at 30 s and reports "editor closed" while the work continues
+// invisibly). Both defaults were broken in opposite directions.
+//
+// NOW. The default dispatches a job and returns `{job_id, ...}` at once; the caller polls
+// `jobs_query(action="poll", job_id=...)`. `wait: true` keeps the old blocking path
+// verbatim for scripts that want a single synchronous call.
+//
+// SLICED, NOT BACKGROUND. The work CANNOT run off the game thread:
+// FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex takes a UPoseSearchDatabase*,
+// composes its DDC key only on the game thread (PoseSearchDerivedData.cpp:1477 — off-thread
+// it refuses and logs "Delaying DDC until on the game thread"), asserts
+// check(IsInGameThread()) in StartNewRequestIfNeeded/Update/Cancel, and finishes by calling
+// Database->SetSearchIndex() on the UObject. The heavy CPU work is ALREADY asynchronous
+// inside the engine (a DDC FRequestOwner task); only the WAIT was synchronous. So the job is
+// tick-sliced: each slice is a cheap game-thread POLL (ContinueRequest, which never re-keys)
+// that returns Pending until the engine's own task settles. Nothing is copied to a worker
+// thread because nothing needs to be.
 // ---------------------------------------------------------------------------
+
+#if WITH_EDITOR
+namespace MonolithPoseSearchIndexJob
+{
+	/** Descriptive namespace/action stamped on the job; `jobs_query("list")` surfaces both. */
+	static const TCHAR* const JobNamespace = TEXT("animation");
+	static const TCHAR* const JobAction = TEXT("rebuild_pose_search_index");
+
+	static FString LexBuildResult(UE::PoseSearch::EAsyncBuildIndexResult Result)
+	{
+		using namespace UE::PoseSearch;
+		switch (Result)
+		{
+		case EAsyncBuildIndexResult::InProgress: return TEXT("InProgress");
+		case EAsyncBuildIndexResult::Success:    return TEXT("Success");
+		case EAsyncBuildIndexResult::Failed:     return TEXT("Failed");
+		default:                                 return TEXT("Unknown");
+		}
+	}
+
+	/**
+	 * GAME THREAD. One report shape shared by the synchronous response and the job's result
+	 * payload, so a caller reads the same fields whichever path produced them.
+	 *
+	 * `total_poses` is only read on Success: UPoseSearchDatabase::GetSearchIndex()
+	 * check()-asserts on a database that was never indexed (PoseSearchDatabase.cpp:1135), and
+	 * the pre-Faz-1 code read it unconditionally — i.e. the old `wait:false` default could
+	 * crash the editor on a first-ever build. Null now means "not built", never a crash.
+	 */
+	static TSharedPtr<FJsonObject> BuildIndexReport(
+		const FString& AssetPath,
+		UPoseSearchDatabase* Database,
+		UE::PoseSearch::EAsyncBuildIndexResult Result,
+		bool bWaited)
+	{
+		using namespace UE::PoseSearch;
+
+		TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+		Root->SetStringField(TEXT("asset_path"), AssetPath);
+		Root->SetStringField(TEXT("result"), LexBuildResult(Result));
+		Root->SetBoolField(TEXT("waited"), bWaited);
+
+		const bool bIndexBuilt = (Result == EAsyncBuildIndexResult::Success) && Database != nullptr;
+		Root->SetBoolField(TEXT("index_built"), bIndexBuilt);
+		if (bIndexBuilt)
+		{
+			Root->SetNumberField(TEXT("total_poses"), Database->GetSearchIndex().GetNumPoses());
+		}
+		else
+		{
+			Root->SetField(TEXT("total_poses"), MakeShared<FJsonValueNull>());
+		}
+		return Root;
+	}
+
+	/**
+	 * Per-job state, shared by value (TSharedRef) into the slice. Only ever touched from the
+	 * game thread — the slice IS the game thread — so it needs no synchronisation.
+	 *
+	 * The database is held WEAKLY on purpose: a job can outlive the asset if the user closes
+	 * or reimports it mid-build, and a raw pointer would dangle between slices.
+	 */
+	struct FIndexJobState
+	{
+		TWeakObjectPtr<UPoseSearchDatabase> Database;
+		FString AssetPath;
+		FString DatabaseName;
+		int32 EntryCount = 0;
+		int32 Polls = 0;
+		double StartSeconds = 0.0;
+		bool bRequested = false;
+	};
+
+	/**
+	 * GAME THREAD. Register the rebuild as a tick-sliced job.
+	 * Returns the job id, or an EMPTY string when the manager refuses the submission — the
+	 * caller MUST fall back to running inline in that case.
+	 */
+	static FString StartRebuildJob(const FString& AssetPath, UPoseSearchDatabase* Database)
+	{
+		using namespace UE::PoseSearch;
+
+		TSharedRef<FIndexJobState> State = MakeShared<FIndexJobState>();
+		State->Database = Database;
+		State->AssetPath = AssetPath;
+		State->DatabaseName = Database->GetName();
+		State->EntryCount = Database->GetNumAnimationAssets();
+		State->StartSeconds = FPlatformTime::Seconds();
+
+		const FString InitialMessage = FString::Printf(
+			TEXT("Queued: rebuild search index for '%s' (%d animation assets)."),
+			*State->DatabaseName, State->EntryCount);
+
+		return FMonolithJobManager::Get().StartSlicedJob(JobNamespace, JobAction,
+			[State](const FMonolithJobContext& Context) -> FMonolithJobOutcome
+			{
+				// GAME THREAD (invoked by the shared job pump) — UObject access is safe here.
+
+				// Cooperative cancellation, checked once per slice i.e. once per pump tick.
+				// Cancelling BEFORE the first slice means no build is ever kicked at all.
+				if (Context.IsCancelRequested())
+				{
+					return FMonolithJobOutcome::Cancelled();
+				}
+
+				UPoseSearchDatabase* Db = State->Database.Get();
+				if (!Db)
+				{
+					return FMonolithJobOutcome::Failure(FString::Printf(
+						TEXT("PoseSearchDatabase '%s' was unloaded or garbage collected before the rebuild finished."),
+						*State->AssetPath));
+				}
+
+				// First slice kicks a NEW build (fresh DDC key). Every later slice is a pure
+				// POLL: ContinueRequest only ensures data exists, it never re-keys or restarts,
+				// so repeated slices cannot livelock the build by continuously reindexing.
+				const ERequestAsyncBuildFlag Flag = State->bRequested
+					? ERequestAsyncBuildFlag::ContinueRequest
+					: ERequestAsyncBuildFlag::NewRequest;
+				State->bRequested = true;
+				++State->Polls;
+
+				const EAsyncBuildIndexResult Result =
+					FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(Db, Flag);
+				const double Elapsed = FPlatformTime::Seconds() - State->StartSeconds;
+
+				if (Result == EAsyncBuildIndexResult::Success)
+				{
+					TSharedPtr<FJsonObject> Report = BuildIndexReport(State->AssetPath, Db, Result, /*bWaited=*/false);
+					Report->SetNumberField(TEXT("elapsed_seconds"), Elapsed);
+					Report->SetNumberField(TEXT("polls"), State->Polls);
+					Report->SetNumberField(TEXT("entry_count"), State->EntryCount);
+
+					Context.ReportProgress(FString::Printf(
+						TEXT("Search index built for '%s': %d poses from %d animation assets in %.1f s."),
+						*State->DatabaseName, Db->GetSearchIndex().GetNumPoses(), State->EntryCount, Elapsed));
+
+					return FMonolithJobOutcome::Complete(MakeShared<FJsonValueObject>(Report));
+				}
+
+				if (Result == EAsyncBuildIndexResult::Failed)
+				{
+					return FMonolithJobOutcome::Failure(FString::Printf(
+						TEXT("PoseSearch index build failed for '%s' after %.1f s (%d animation assets). ")
+						TEXT("Check the schema/skeleton compatibility of its entries."),
+						*State->AssetPath, Elapsed, State->EntryCount));
+				}
+
+				// InProgress — report a message that actually MOVES so a poller can see the
+				// build is alive and how long it has been running.
+				Context.ReportProgress(State->Polls == 1
+					? FString::Printf(TEXT("Build requested for '%s' (%d animation assets); waiting for the PoseSearch DDC task."),
+						*State->DatabaseName, State->EntryCount)
+					: FString::Printf(TEXT("Indexing '%s' (%d animation assets): in progress, %.1f s elapsed, %d polls."),
+						*State->DatabaseName, State->EntryCount, Elapsed, State->Polls));
+
+				return FMonolithJobOutcome::Pending();
+			},
+			InitialMessage);
+	}
+}
+#endif // WITH_EDITOR
 
 FMonolithActionResult FMonolithPoseSearchActions::HandleRebuildPoseSearchIndex(const TSharedPtr<FJsonObject>& Params)
 {
 #if WITH_EDITOR
-	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
+	using namespace UE::PoseSearch;
+	using namespace MonolithPoseSearchIndexJob;
+
+	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(AssetPath);
 	if (!Database)
 		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
 
+	// `wait` is the codebase's existing spelling for "block until this finishes"
+	// (see also editor `compile_blueprint`). Default false == the new async contract.
 	bool bWait = false;
 	if (Params->HasField(TEXT("wait")))
 	{
 		bWait = Params->GetBoolField(TEXT("wait"));
 	}
 
-	using namespace UE::PoseSearch;
+	// -------------------------------------------------------------------------
+	// ASYNC (default): hand the rebuild to the job system and return a job id.
+	// -------------------------------------------------------------------------
+	FString FallbackReason;
+	if (!bWait)
+	{
+		// Handing back a job id the caller cannot poll would be a worse contract than
+		// running inline, so honour the jobs-namespace toggle rather than ignoring it.
+		const UMonolithSettings* Settings = UMonolithSettings::Get();
+		const bool bJobsQueryable = (Settings == nullptr) || Settings->bEnableJobs;
+
+		if (!bJobsQueryable)
+		{
+			FallbackReason = TEXT("The `jobs` namespace is disabled (Project Settings > Plugins > Monolith > Jobs), so a job id would not be pollable.");
+		}
+		else
+		{
+			const FString JobId = StartRebuildJob(AssetPath, Database);
+			if (!JobId.IsEmpty())
+			{
+				TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+				Root->SetStringField(TEXT("asset_path"), AssetPath);
+				Root->SetStringField(TEXT("mode"), TEXT("async"));
+				Root->SetStringField(TEXT("job_id"), JobId);
+				Root->SetStringField(TEXT("job_namespace"), JobNamespace);
+				Root->SetStringField(TEXT("job_action"), JobAction);
+				Root->SetBoolField(TEXT("waited"), false);
+				Root->SetNumberField(TEXT("entry_count"), Database->GetNumAnimationAssets());
+				Root->SetStringField(TEXT("message"), FString::Printf(
+					TEXT("Search index rebuild dispatched as job '%s'. Poll it with ")
+					TEXT("jobs_query(action=\"poll\", job_id=\"%s\"); cancel with jobs_query(action=\"cancel\", job_id=\"%s\"). ")
+					TEXT("Pass wait=true to block instead."),
+					*JobId, *JobId, *JobId));
+				return FMonolithActionResult::Success(Root);
+			}
+
+			FallbackReason = TEXT("The job manager refused the submission (editor shutting down); the rebuild was requested inline instead.");
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// SYNCHRONOUS: the pre-Faz-1 path, reached by wait=true or by job fallback.
+	// `wait=true` blocks this thread — and therefore the MCP server — until the
+	// engine's index build settles. That is exactly the old behaviour, by request.
+	// -------------------------------------------------------------------------
 	ERequestAsyncBuildFlag Flag = ERequestAsyncBuildFlag::NewRequest;
 	if (bWait)
 	{
 		Flag |= ERequestAsyncBuildFlag::WaitForCompletion;
 	}
 
-	EAsyncBuildIndexResult Result = FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(Database, Flag);
+	const EAsyncBuildIndexResult Result = FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(Database, Flag);
 
-	FString ResultStr;
-	switch (Result)
+	TSharedPtr<FJsonObject> Root = BuildIndexReport(AssetPath, Database, Result, bWait);
+	Root->SetStringField(TEXT("mode"), TEXT("sync"));
+	Root->SetNumberField(TEXT("entry_count"), Database->GetNumAnimationAssets());
+	if (!FallbackReason.IsEmpty())
 	{
-	case EAsyncBuildIndexResult::InProgress: ResultStr = TEXT("InProgress"); break;
-	case EAsyncBuildIndexResult::Success:    ResultStr = TEXT("Success"); break;
-	case EAsyncBuildIndexResult::Failed:     ResultStr = TEXT("Failed"); break;
-	default:                                 ResultStr = TEXT("Unknown"); break;
+		Root->SetBoolField(TEXT("job_started"), false);
+		Root->SetStringField(TEXT("job_fallback_reason"), FallbackReason);
 	}
-
-	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetStringField(TEXT("asset_path"), AssetPath);
-	Root->SetStringField(TEXT("result"), ResultStr);
-	Root->SetBoolField(TEXT("waited"), bWait);
-
-	// Report current index stats
-	const FSearchIndex& SearchIndex = Database->GetSearchIndex();
-	Root->SetNumberField(TEXT("total_poses"), SearchIndex.GetNumPoses());
-
 	return FMonolithActionResult::Success(Root);
 #else
 	return FMonolithActionResult::Error(TEXT("rebuild_pose_search_index is only available in editor builds"));

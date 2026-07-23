@@ -181,8 +181,35 @@ Wraps `USkeleton::CompatibleSkeletons` — the canonical UE5 mechanism that lets
 | `add_schema_channel` | Add a channel to a PoseSearch schema |
 | `remove_schema_channel` | Remove a channel from a PoseSearch schema |
 | `set_channel_weight` | Set the weight on a PoseSearch schema channel |
-| `rebuild_pose_search_index` | Rebuild a PoseSearch database's search index |
+| `rebuild_pose_search_index` | Rebuild a PoseSearch database's search index. **(2026-07-24 — BREAKING) now ASYNCHRONOUS BY DEFAULT**: returns a `job_id` immediately, see below. |
 | `set_database_search_mode` | Set a PoseSearch database's search mode |
+
+> **`rebuild_pose_search_index` is a background job as of 2026-07-24 (Faz 1).** *Contract change, user-visible.*
+>
+> **Why.** Indexing a real motion-matching database takes minutes. The old default (`wait: false`) fired the build and returned `"InProgress"` with **no handle**, so a caller could never learn when the index was ready; the only way to actually wait — `wait: true` — pinned the editor game thread inside `ERequestAsyncBuildFlag::WaitForCompletion`, and because the MCP HTTP server is serviced from that same thread the **whole server froze** for the duration (the proxy then timed out at 30 s and reported "editor closed" while the work continued invisibly).
+>
+> **Default (`wait` absent or `false`) — async.** The rebuild is dispatched to the Faz 1 job system and the call returns at once:
+> ```json
+> { "asset_path": "/Game/MM/PSDB_Locomotion",
+>   "mode": "async",
+>   "job_id": "job_7",
+>   "job_namespace": "animation",
+>   "job_action": "rebuild_pose_search_index",
+>   "waited": false,
+>   "entry_count": 42,
+>   "message": "Search index rebuild dispatched as job 'job_7'. Poll it with jobs_query(action=\"poll\", job_id=\"job_7\"); cancel with jobs_query(action=\"cancel\", job_id=\"job_7\"). Pass wait=true to block instead." }
+> ```
+> Poll with `jobs_query(action="poll", job_id=…)`. While running, `progress` reports live text that advances (`Queued: …` → `Build requested for '<db>' …` → `Indexing '<db>' (N animation assets): in progress, 12.4 s elapsed, 47 polls.`). On success the job's `result` payload is `{asset_path, result:"Success", waited:false, index_built:true, total_poses, elapsed_seconds, polls, entry_count}`. A failed build lands the job in `error`; a cancelled one in `cancelled`.
+>
+> **Sync opt-out — `wait: true`.** Unchanged pre-Faz-1 behaviour: blocks the calling thread (and therefore the MCP server) until the engine's build settles, and answers on the old shape plus `mode:"sync"` and `index_built`. No job is created.
+>
+> **Fallback.** If a job id would not be pollable — the `jobs` namespace is disabled in *Project Settings → Plugins → Monolith → Jobs*, or the job manager is shutting down — the action does **not** fail: it runs the request inline (non-blocking, `NewRequest` only) and returns the synchronous shape plus `job_started: false` and a `job_fallback_reason` string.
+>
+> **Cancellation is cooperative and Monolith-side.** `jobs_query(action="cancel")` stops Monolith tracking the build; the engine's own DDC task, once kicked, runs to completion. Cancelling *before the first slice* (i.e. within the same frame the job was created) means the build is never requested at all.
+>
+> **Implementation note — sliced, not background-threaded.** `FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex` is game-thread-only (it composes its DDC key on the game thread, `check(IsInGameThread())`s in its task methods, and finishes by calling `UPoseSearchDatabase::SetSearchIndex`). The heavy CPU work is *already* async inside the engine; only the wait was synchronous. So the job uses `FMonolithJobManager::StartSlicedJob`: each slice is a cheap game-thread poll (`ContinueRequest`, which never re-keys) that returns `Pending` until the engine's task settles.
+>
+> **Crash fix, same change.** The old code read `Database->GetSearchIndex()` unconditionally; `GetSearchIndex()` `check()`-asserts on a database that has never been indexed, so the old `wait: false` default could take the editor down on a first-ever build. `total_poses` is now `null` unless `index_built` is `true`.
 
 **Note:** `get_database_stats` is hardened against unbuilt databases (it previously asserted on a PoseSearch database with no built search index — see Fixes below). `get_database_stats` and `get_pose_search_schema` also gained read-back fields surfacing additional database/schema state (enhancement, no count delta).
 
