@@ -165,3 +165,30 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Karar: Modül kararı işçiye bırakıldı ama gerekçelendirme zorunlu tutuldu — 4 aksiyonluk yüzey kendi modülünü hak ediyor mu, yoksa mevcut bir modüle mi girmeli; ölçüt: kodun benzer küçük yüzeylerde ne yaptığı + roadmap'in upstream-merge-çakışması ilkesi. Şablondan sessizce sapmak yasak.
 - Commit: -
 - Sıradaki: Görev 6 raporu.
+
+## [00:58] Görev 6 TAMAM — `jobs` namespace canlı (189/189). GOAL'ın 7 görevi bitti.
+- Durum: done
+- Ne oldu: `jobs` namespace'i dört aksiyonla (`list`/`poll`/`cancel`/`clear`) MonolithCore içinde yayında; 5 yeni test (toplam 184→189). **Modül kararı: yeni modül AÇILMADI**, gerekçesi sağlam: roadmap'in "yeni namespace = yeni modül" şablonu yaygın hal, değişmez kural değil — MonolithCore zaten `monolith` namespace'ini aynen böyle sahipleniyor, MonolithReflectionIntel tek modülde sekiz namespace tutuyor. Ayrıca `FMonolithJobManager` MonolithCore singleton'ı olduğu için ayrı modül saf kaplama olurdu; MonolithCore'un `ShutdownModule`'ü zaten `Reset()` çağırıyor, bölmek aynı nesne üzerinde iki bağımsız sıralı kapanış demekti; ve asıl ölçüt olan upstream-merge güvenliğinde bu seçenek DAHA iyi: her şey yeni dosyalarda, ortak dosyada yalnız 2 satır + ayar toggle'ı, oysa yeni modül repo'nun en çakışmaya açık dosyası olan `Monolith.uplugin` Modules[] dizisini de düzenlemeyi gerektirirdi. Şablonun geri kalanı harfiyen izlendi.
+- Karar: Kabul, sapma gerekçelendirilmiş ve ikna edici. Kontrol ajanı **verified**: HEAD=3707ee3, ağaç temiz, 5 dosya beyanla birebir, **`Monolith.uplugin` dokunulmamış** (iddia doğrulandı), 189/0/0, logda 189 "Test Completed", 5 `JobActions.*` + görev 5'ten kalan 7 `JobManager.*` testinin hepsi `{Success}`, build yeşil. **Kritik güvenlik kontrolü geçti**: `MonolithJobActions.cpp` içinde `Reset(` HİÇ geçmiyor, `clear` yalnız `ClearFinishedJobs()` çağırıyor (satır 389) ve satır 387'deki yorum sebebini doğru açıklıyor. `bEnableJobs` varsayılan `true`.
+- Commit: 3707ee3
+- Sıradaki: Devam yetkisi devrede — Faz 1 sürüyor.
+
+### notes_for_next_worker (görev 6 işçisinden, AYNEN — önemli olanlar)
+- **Tel biçimi**: tek serileştirici (`JobToJson`) list/poll/cancel'ı besliyor, bu yüzden asla birbiriyle çelişemezler. İş nesnesi: `job_id, serial, namespace, action, state, finished, progress, cancel_requested, elapsed_seconds`; bitmişse `finished_seconds_ago`, hata ise `error_message`+`error_code`, tamamsa `result`. Ham `FPlatformTime` damgaları KASTEN yayınlanmıyor (sürece göreli, istemci için anlamsız) — süreler yayınlanıyor.
+  - `list` → `{"jobs":[...],"count":N,"total_count":N,"running_count":N}`; parametreler `state`, `namespace`, `include_result` (varsayılan false, bastırılan payload `result_omitted:true` ile işaretli).
+  - `poll` → iş nesnesi üst seviyeye düzleştirilmiş, `result` her zaman var. Parametre `job_id` (takma adlar `id`, `jobid`).
+  - `cancel` → iş nesnesi düzleştirilmiş. `CancelJob` false dönerse işi yeniden okuyup bilinmeyen-id ile zaten-bitmiş durumunu ayırt ediyor — bu aynı zamanda iş çağrı ortasında biterse oluşan yarışı da kapatıyor.
+  - `clear` → `{"cleared":N,"remaining":N,"running":N}`; `ClearFinishedJobs()`, asla `Reset()`.
+  - Hatalar: `ErrInvalidParams (-32602)` + `error.data.error_code` ∈ `UNKNOWN_JOB`, `JOB_NOT_RUNNING`, `MISSING_JOB_ID`, `INVALID_STATE_FILTER`.
+- **Discover: evet.** Canlı doğrulandı — `monolith_discover(namespace="jobs")` dört aksiyonu `total: 4` ile listeliyor, dispatcher aracı `jobs_query`.
+- **Bulunan tuzak — `error.data` MCP `tools/call` zarfından SAĞ ÇIKMIYOR.** HTTP üzerinden yanıt `{"result":{"isError":true,"content":[{"text":"<mesaj>"}]}}` biçiminde; yapısal `error_code` etiketi yalnız süreç-içi çağıranlara ve testlere görünüyor. Bu jobs'a özgü değil, `INVALID_CURSOR` ile paylaşılan mevcut taşıma davranışı — ama insan okur mesajın eyleme dönük bilgiyi taşıması ŞART.
+- Commandlet'lerde kayıt atlanıyor (`IsRunningCommandlet()` `RegisterCoreTools`'tan önce dönüyor); bu yüzden `Registration` testi namespace yoksa talep üzerine kaydediyor. Gelecekteki registry seviyesi testler bu deseni kopyalasın.
+- needs_human: HTTP tarafını işçi kendisi canlı görüntüsüz editörde doğruladı (list/clear/poll/cancel + `id`→`job_id` takma adı). Otomatik kontrolün kanıtlayamadığı üç şey: (a) arkasında GERÇEK çalışan bir iş varken aksiyonlar (üretimde henüz kimse iş yaratmıyor), (b) `bEnableJobs=false` yolu (editör yeniden başlatması gerekir), (c) ayarların editör arayüzündeki görünümü.
+
+## [00:59] Görev 8 gönderildi — job çalıştırma katmanı (Faz 1, roadmap madde 5)
+- Durum: in-progress
+- Ne oldu: GOAL'ın 7 görevi bittiği için devam yetkisi devreye girdi. Sıradaki iş roadmap Faz 1 madde 5 seçildi: arka plan iş parçacığı (`FRunnableThread` + `AsyncTask(GameThread)`) ve tick-dilimli oyun-iş-parçacığı çalıştırma katmanı.
+- Karar: **Roadmap sırası kasten değiştirildi.** Roadmap madde 3 (PoseSearch `build_search_index`'in job'a çevrilmesi) madde 5'ten önce yazılmış ama teknik olarak imkânsız: görev 5 işçisinin kendi notuna göre pompa şimdilik yalnız saklama yapıyor, iş başına çalıştırma mekanizması YOK — görev 6 işçisi de "üretimde henüz kimse iş yaratmıyor" dedi. Yani bugün job sistemi hiçbir şey çalıştıramayan bir kayıt defteri. Önce mekanizma, sonra ilk gerçek dönüşüm. GOAL'daki stretch (proxy dürüstlük düzeltmesi) de bunun arkasına alındı — proxy'nin "job_id ile sorgula" diyebilmesi için ortada gerçekten çalışan bir iş olması gerek.
+- Ek şart: kapanış güvenliği (uçuştaki arka plan işi `Reset()`'i geçip serbest belleğe dokunmamalı veya editör kapanışını asmamalı) ve testlerde determinizm — `Sleep` ile senkronizasyon yasak, dilimli işler `PumpOnce()` ile elle sürülecek. Deterministik yapılamayan iddia yazılmayacak, rapora not düşülecek.
+- Commit: -
+- Sıradaki: Görev 8 raporu.
