@@ -43,6 +43,9 @@ TrainingMemory/
 .claude/agent-memory/
 .claude/scheduled_tasks.lock
 
+# Nightrun harness transient outputs (logs + JSON verdicts, regenerated every run)
+Scripts/nightrun/results/
+
 # Release housekeeping — internal planning scrolls + transient release-rite debris (never shipped)
 Docs/pcg/
 release_body*.md
