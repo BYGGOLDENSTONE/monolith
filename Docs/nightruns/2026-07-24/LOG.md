@@ -74,3 +74,24 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Karar: Ana görev listesinin arkasına alındı; Faz 1'den önce yapılmayacak.
 - Commit: -
 - Sıradaki: -
+
+## [00:22] Görev 3 TAMAM — CursorPagination.QueryMismatchRejection yeşil
+- Durum: done
+- Ne oldu: **README'nin teşhisi yanlışmış.** "Hata ErrorData taşımıyor" değil — reddetme hiç üretilmiyormuş: görüntüsüz (`-nullrhi`) koşuda motor kaynak DB'si açık olmadığı için `HandleSearchSource` en baştaki `GetDB()/IsOpen()` guard'ında "Engine source DB not available." ile dönüyor, `INVALID_CURSOR` dalına hiç ulaşmıyordu (o dal zaten doğru payload'ı kuruyor). İşçi guard'ı cursor çözme/query-hash doğrulama bloğunun ARKASINA taşıdı. Testi doğrulayan kaynaklar: `Docs/SPEC_CORE.md:847,851` (bozuk cursor koşulsuz "clean INVALID_CURSOR" döner — backend durumuna istisna yok), `MonolithCursorCodec.h:37-45` (hash karşılaştırma ve mismatch'te INVALID_CURSOR üretmek dispatcher'ın görevi). Gerekçe ayrıca ilkesel: cursor geçerliliği saf parametre doğrulaması (JSON-RPC -32602), DB'siz karar verilebilir; "DB yok" ise geçici kaynak hatası ve çağıranı kalıcı ölü bir cursor'ı tekrar denemeye davet ediyordu. Komşu testler (`HardCap` vb.) index yoksa kendini atlıyor ama bu test kasten atlamıyor — tek kapsama o sözleşmede. Test 175→176.
+- Karar: Kabul. Kontrol ajanı **verified**: HEAD=b59c4ca (ebeveyn 0078aeb), ağaç temiz, tek dosya `MonolithSourceActions.cpp`, run_tests.json 176/1/0, logda 177 "Test Completed", beş `CursorPagination.*` testinin HEPSİ `{Success}`, build yeşil.
+- Commit: b59c4ca
+- Sıradaki: Görev 4 (ReflectionIntel.Decision.HeuristicAccuracy) — son kırmızı.
+
+### notes_for_next_worker (görev 3 işçisinden, AYNEN)
+- **Bash-tool tuzağı**: `pwsh -NoProfile -File D:\yol\script.ps1` Bash tool üzerinden çağrılırsa ters bölü işaretlerini sessizce yutuyor (`D:htmlprojectsmcp...`, exit 64). PowerShell tool'unu tek tırnaklı yollarla kullan.
+- Fixture silme geçici çözümü işe yaradı; paket ~90 sn'de koştu, `passed=0/failed=-1` ile ölmedi.
+- **Bir tur kazandıran teşhis ipucu**: `Scripts/nightrun/README.md` "Known issues" ifadesine gerçek hata diye güvenme. Bir önceki `results/run_tests.log` içinde `Test Completed.*<TestinAdı>` ara ve hemen ardındaki `BeginEvents…EndEvents` bloğunu oku — tam assertion + satır numarası orada. Komşu testlerin uyarıları ("Skipping: source index not available") burada gerçek kök sebebi ele verdi.
+- **Akılda tutulacak ortam gerçeği**: motor kaynak DB'si (`EngineSource.db`) görüntüsüz test koşularında AÇIK DEĞİL. `GetDB()/IsOpen()` ile korunan her aksiyon (yalnız `MonolithSourceActions.cpp` içinde 15 yer, ayrıca tüm `FDecisionQueryAdapter`/`FRiskQueryAdapter`/`FNetworkQueryAdapter`/`FCppReflectQueryAdapter` handler'ları) orada erken dönüyor. Bu aksiyonların testleri ya atlamalı ya da yalnız DB-öncesi davranışı doğrulamalı.
+- **Aynı hata biçiminin kalan örneği (kasten bırakıldı, kapsam dışı)**: `FMonolithSourceActions::HandleFindExampleUsage` (~satır 2126) DB kontrolünü hâlâ `INVALID_CURSOR` dalından önce yapıyor; onun cursor reddi de görüntüsüz koşuda ulaşılamaz. Kapsama eklenirse tek satırlık sıra değişikliği.
+
+## [00:23] Görev 4 gönderildi — Monolith.ReflectionIntel.Decision.HeuristicAccuracy (son kırmızı)
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. Promptta özel uyarı: görev 3'te README teşhisi YANLIŞ çıktı, bu yüzden "heuristik fazla geniş" ifadesine güvenme, önce logdaki `BeginEvents…EndEvents` bloğundan kanıtla teşhis et. Görev 3'ün keşfettiği "görüntüsüz koşuda EngineSource.db kapalı" ortam gerçeği de aktarıldı — hata bunun yan etkisi olabilir.
+- Karar: Bu son kırmızı olduğu için eşik 177/177; altı regresyon sayılır.
+- Commit: -
+- Sıradaki: Görev 4 raporu.
