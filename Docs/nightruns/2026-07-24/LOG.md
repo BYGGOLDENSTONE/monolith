@@ -214,3 +214,24 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Ek: Bu KULLANICIYA GÖRÜNÜR bir sözleşme değişikliği — aksiyonun davranışını tanımlayan `Docs/` dosyası aynı commit'te güncellenecek ve MORNING_REPORT'ta kabul testi maddesi olarak işaretlenecek.
 - Commit: -
 - Sıradaki: Görev 9 raporu.
+
+## [01:32] Görev 9 TAMAM — ilk gerçek job dönüşümü (200/200)
+- Durum: done
+- Ne oldu: **Roadmap'in hedefi yanlış adlandırılmış.** `build_search_index` diye bir aksiyon yok; satır 594 aslında `get_database_stats` içinde (bloke eden bir OKUMA). İndeksi kuran aksiyon `animation.rebuild_pose_search_index` (eski satır 1090) — dönüştürülen bu. Aksiyon artık varsayılan async: hemen `{job_id, job_namespace, job_action, mode:"async", ...}` dönüyor; `wait:true` eski bloke eden yolu veriyor; job başlatılamazsa satır içi (inline) çalışıyor ve `job_started:false` + `job_fallback_reason` bildiriyor. `bEnableJobs=false` ise de inline'a düşüyor (poll edilemeyecek bir job id vermektense inline çalışmak daha doğru). Ayrıca gizli bir `GetSearchIndex()` çökme riski guard'landı. Spec (`Docs/specs/SPEC_MonolithAnimation.md`) ve `Docs/API_REFERENCE.md` aynı commit'te güncellendi. 4 yeni test, 196→200.
+- **Arka plan DEĞİL, dilimli — ve bu zorunlu, tercih değil**: `FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex` DDC anahtarını yalnız oyun iş parçacığında kuruyor, ilgili metotlar `check(IsInGameThread())` içeriyor ve sonunda `Database->SetSearchIndex()` çağrılıyor. Ağır CPU işi zaten motor içinde async; senkron olan yalnızca BEKLEME idi. Yani her dilim ucuz bir oyun-iş-parçacığı yoklaması. Bu dosyada `StartBackgroundJob` kullanılamaz.
+- Karar: Kabul. Kontrol ajanı **verified**: HEAD=6a9da0b, ağaç temiz, 4 dosya beyanla birebir (iki doküman dosyası da commit'te), kendi koşusunda 200/0/0 ve 200 "Test Completed", 4 yeni test + 19 mevcut job testinin hepsi `{Success}`, build yeşil. Sözleşme noktaları satır satır teyit edildi: `StartSlicedJob` satır 1213 (`StartBackgroundJob` dosyada YOK), `wait` parametresi satır 1298-1301 ve varsayılanı `false` (satır 1297), `bEnableJobs` kapısı satır 1312.
+- Commit: 6a9da0b
+- Sıradaki: Görev 10 — proxy dürüstlük düzeltmesi (Faz 1 madde 4, son madde).
+
+### notes_for_next_worker (görev 9 işçisinden — kritik olanlar)
+- **Hâlâ bloke eden iki yer KASTEN dokunulmadı**: `HandleGetDatabaseStats` (~satır 594) ve `HandleValidatePoseSearchDatabase` (~satır 1895); ikisi de koşulsuz bekliyor. İkisi de OKUMA — bir okumayı varsayılan-async yapmak yanlış sözleşme olurdu; farklı bir çözüm gerekiyor (ör. beklemeyen `ContinueRequest` + `index_built:false`).
+- **Headless kanıtlanamayan**: gerçek indeks kurulumu uçtan uca. `FAsyncPoseSearchDatabasesManagement`'ı `Prestarted`'dan `Ended`'e ilerletmek editörün kendi `FTickableGameObject` tick'ini gerektiriyor; otomasyon testi TEK bir oyun-iş-parçacığı çağrısı içinde bitiyor, yani iki `PumpOnce()` arasında motor tick'i olamıyor ve "başarıya kadar yokla" döngüsü sonsuza dönerdi. Dolayısıyla ilk dilimden sonraki ilerleme mesajı içeriği, Complete payload'ı, gerçek bir kurulumun hata yolu ve süre/yoklama sayaçları otomasyonla doğrulanmadı. Kanıtlanan: async varsayılan ve sıfır dilim koşmadan job id dönüyor, job doğru namespace/action ile dilimli olarak kaydoluyor, ilk dilimden önce iptal motora hiç dokunmadan `Cancelled`'a düşüyor, `wait:true` job yaratmayıp eski biçimde yanıtlıyor, başlatılamayan durum gerekçesiyle inline'a düşüyor.
+- Test fixture'ları yalnız bellekte (`/Game/Tests/Monolith/PoseSearchIndexJob/`), diske hiçbir şey yazılmıyor.
+
+## [01:34] Görev 10 gönderildi — proxy dürüstlük düzeltmesi (Faz 1 madde 4, son madde)
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. Hem C++ (`Tools/MonolithProxy/monolith_proxy.cpp`) hem Python (`Scripts/monolith_proxy.py`) proxy'si düzeltilecek: zaman aşımında "editör kapalı" yalanı yerine "istek zaman aşımına uğradı, editör muhtemelen hâlâ çalışıyor" + `jobs_query` ile yoklama yönlendirmesi; gerçek bağlantı hatası ise AYRI mesaj vermeye devam edecek (ikisi tek mesaja çökertilmeyecek).
+- Karar: Yinelenen istek tuzağı açıkça kapsama alındı — zaman aşımına uğrayan istek proxy tarafından sessizce yeniden denenmeyecek; işçiden önce/sonra davranışı raporlaması istendi. Zaman aşımı süresinin uzatılıp uzatılmayacağı işçinin gerekçeli kararına bırakıldı (Faz 1 mantığı: uzun iş için doğru çözüm daha uzun bekleme değil async job).
+- Doğrulama şartı: Python proxy'si editörsüz test edilebilir — zaman aşımı ve bağlantı reddi mesajlarının GERÇEK metni rapora girecek. C++ proxy derlenebiliyorsa derlenecek, derlenemiyorsa "derlenemedi" diye dürüstçe yazılacak.
+- Commit: -
+- Sıradaki: Görev 10 raporu.
