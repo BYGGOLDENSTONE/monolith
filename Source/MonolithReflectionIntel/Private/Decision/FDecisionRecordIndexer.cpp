@@ -83,13 +83,35 @@ namespace
 		return Out;
 	}
 
-	/** Look ahead from HeaderLineIdx for rationale markers within WindowLines. */
+	/**
+	 * Look ahead from HeaderLineIdx for rationale markers within WindowLines.
+	 *
+	 * The scan is additionally bounded by the owning header's own SECTION: it stops
+	 * at the first following header whose level is same-or-higher (`## ` closes a
+	 * `## ` section, `# ` closes it too, a nested `### ` does not). Without that
+	 * bound a rationale paragraph belonging to the NEXT section leaks backwards and
+	 * promotes an unrelated header into a decision row — spec §3.2 says the marker
+	 * paragraph must FOLLOW the header, i.e. live inside its section. Pass
+	 * OwnerHeaderLevel = 0 for the whole-file (frontmatter) sweep, which is not
+	 * section-scoped.
+	 */
 	bool FindRationaleWithin(const TArray<FString>& Lines, int32 HeaderLineIdx,
-		int32 WindowLines, FString& OutRationale)
+		int32 OwnerHeaderLevel, int32 WindowLines, FString& OutRationale)
 	{
 		const int32 End = FMath::Min(Lines.Num(), HeaderLineIdx + 1 + WindowLines);
 		for (int32 i = HeaderLineIdx + 1; i < End; ++i)
 		{
+			if (OwnerHeaderLevel > 0)
+			{
+				FString NextHeaderText;
+				int32 NextLevel = 0;
+				if (IsMarkdownHeader(Lines[i], NextHeaderText, NextLevel) && NextLevel <= OwnerHeaderLevel)
+				{
+					// Section closed — anything past here belongs to another header.
+					return false;
+				}
+			}
+
 			const FString Lower = Lines[i].ToLower();
 			if (Lower.Contains(TEXT("because")) ||
 				Lower.Contains(TEXT("rationale")) ||
@@ -355,8 +377,9 @@ bool FDecisionRecordIndexer::ExtractRecordsFromFile(const FString& AbsPath,
 		Row.SourceMtimeUnix = MtimeUnix;
 		Row.DecisionId = MakeDecisionId(RelPath, TEXT("frontmatter"));
 
-		// Look for inline rationale anywhere in the first 30 lines.
-		FindRationaleWithin(Lines, 0, 30, Row.Rationale);
+		// Look for inline rationale anywhere in the first 30 lines. Whole-file
+		// path — no section scoping (OwnerHeaderLevel = 0).
+		FindRationaleWithin(Lines, 0, /*OwnerHeaderLevel=*/0, 30, Row.Rationale);
 
 		// Frontmatter `supersedes:` accepts a single id or a comma-separated list.
 		if (Frontmatter.Contains(TEXT("supersedes")))
@@ -388,7 +411,8 @@ bool FDecisionRecordIndexer::ExtractRecordsFromFile(const FString& AbsPath,
 		if (Level == 1 && !bIsAdrHeader) { continue; }
 
 		FString Rationale;
-		const bool bFoundRationale = FindRationaleWithin(Lines, i, /*WindowLines=*/8, Rationale);
+		const bool bFoundRationale =
+			FindRationaleWithin(Lines, i, /*OwnerHeaderLevel=*/Level, /*WindowLines=*/8, Rationale);
 
 		// Heuristic gate: emit a row only if ADR-header OR rationale-followed.
 		if (!bIsAdrHeader && !bFoundRationale) { continue; }

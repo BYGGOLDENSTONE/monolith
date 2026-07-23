@@ -88,6 +88,10 @@ The indexer emits at most one row per markdown header (or one per file in the fr
 
 Files matching neither tier contribute zero rows. Headers without rationale markers and without ADR shape are skipped — the indexer is conservative by design.
 
+The 8-line lookahead is additionally **bounded by the header's own section**: the scan stops at the first following header of the same or higher level (a nested `###` under a `##` does not close the section, a sibling `##` or a parent `#` does). Without that bound a rationale paragraph belonging to the *next* section leaks backwards and promotes the preceding, unrelated header into a decision row. The whole-file frontmatter sweep (first 30 lines) is not section-scoped.
+
+Marker matching is plain case-insensitive substring matching — it makes no use/mention distinction, so prose that merely *names* a marker word counts as a hit. That is deliberate (the tier is only `0.65` confidence and is filtered at query time), but it means documents discussing the heuristic itself will self-classify.
+
 The `UMonolithReflectionIntelSettings::DecisionMinConfidence` floor (default `0.6`) is applied at **query time** by `decision_query("list_decisions")`, not at extraction time — every detected record is stored, then filtered on read so callers can override the floor per call.
 
 ### 3.3 SQLite schema
