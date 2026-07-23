@@ -21,9 +21,17 @@ Bu doküman, fork'un kendi ihtiyaçlarımıza göre geliştirme planıdır. Ama�
 
 **Kapsam boşlukları:** Landscape/Foliage/ışık yerleştirme/PostProcess/World Partition yok; Sequencer salt-okunur (authoring yok); Functional Test/Gauntlet/cooked-build test yolu yok; canlı editör viewport ekran görüntüsü yok (sadece preview-scene/PIE); cooked-build'de 3 runtime sınıfı sessizce devre dışı (`Docs/COOKED_BUILD_TODO.md` — Steam öncesi çözülmeli).
 
+## Çalışma Modeli — Gece Protokolü
+
+İterasyon ağırlıklı işler (crash testi gerektiren her şey) **gece otonom çalışmasıyla** yürür: kullanıcı akşam hedefi tanımlar, orkestratör (Fable, ana oturum) sabaha kadar sıralı Opus işçi ajanlarla iterasyon yapar, sabah kullanıcı kabul testini yapar. Tam kurallar: `Docs/NIGHT_PROTOCOL.md`; başlatma: `/gece` skill'i (`.claude/skills/gece/`). Bağlam taşmasına karşı tüm durum `Docs/nightruns/<tarih>/LOG.md` + commit'lerde tutulur — konuşma bağlamı her an ölebilirmiş gibi çalışılır.
+
 ## Fazlar
 
-### Faz 1 — İş Yöneticisi (Job System) ← SONRAKİ OTURUM BURADAN BAŞLA
+### Faz 0 — İnsansız Test Düzeneği ← SONRAKİ OTURUM BURADAN BAŞLA
+
+Gece protokolünün ön koşulu. `Scripts/nightrun/` altına: `build.ps1` (UBT sarmalayıcı, yeşil/kırmızı + hata özeti), `launch_editor.ps1` (insansız editör başlatma + port 9316 health check), `smoke.ps1` (HTTP üzerinden standart aksiyon serisi, JSON sonuç), çökme yakalama (exit code + `Saved/Crashes/` + log kuyruğu), `teardown.ps1` (temiz kapatma). Detay: NIGHT_PROTOCOL §6. Gündüz oturumunda kurulur ve elle doğrulanır; ilk gece denemesi kasıtlı KÜÇÜK bir hedefle yapılır (protokolün kendisini test etmek için).
+
+### Faz 1 — İş Yöneticisi (Job System)
 
 Multitasking'in temeli. Plan kullanıcıya sunuldu ve onay bekliyor durumda değil — kullanıcı yönü onayladı, uygulama sonraki oturumda.
 
