@@ -306,3 +306,25 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Karar: Promptta "önce yer gerçeğini kur" şartı sertleştirildi — roadmap bu gece İKİ kez yanıldı (ışık yerleştirme vardı; `build_search_index` diye bir aksiyon yoktu), bu yüzden `mesh.spawn_volume`'un mevcut `post_process` tipi ve varsa fog/atmosfer aksiyonları önce incelenecek. Lumen için ayrıca "en kolay yüzeyi yapıp tamam deme, kapsadığın alt kümeyi adıyla söyle" şartı kondu.
 - Commit: -
 - Sıradaki: Görev 13 raporu.
+
+## [02:53] Görev 13 TAMAM — Faz 2 atmosfer + Lumen dilimi (217/217)
+- Durum: done
+- Ne oldu: Altı yeni aksiyon: `mesh.spawn_atmosphere`, `set_atmosphere_properties`, `get_atmosphere_properties`, `list_atmosphere_presets`, `get_lumen_settings`, `set_lumen_settings`. Yer gerçeği: `mesh.spawn_volume type=post_process` gerçekten varmış ama yalnız dört aktör-seviyesi anahtarı destekliyormuş (`unbound`, `blend_radius`, `blend_weight`, `priority`) ve **`APostProcessVolume::Settings`'e hiç dokunamıyormuş** — pozlama, bloom, grading, Lumen yok. Fog/SkyAtmosphere/Lumen kodu ise repoda hiç yokmuş. `spawn_volume` işlevsel olarak değiştirilmedi, yalnız açıklaması "bunu yapamam, `spawn_atmosphere`'a bak" diyecek şekilde güncellendi. 8 yeni test, 209→217.
+- **Gecenin en kritik bulgusu**: `FPostProcessSettings`'in HER alanı, kardeşi `bOverride_<Alan>` biti set edilmedikçe ETKİSİZ. Yani düz bir reflection yazımı "başarılı" der ve ekranda hiçbir şey değişmez — bu özelliğin bozuk çıkabileceği en olası yol tam olarak buydu. `ApplyPropertyTree` eksik `bOverride_` anahtarlarını AYNI JSON ağacına enjekte ediyor, böylece aynı yürüyüşte doğrulanıp yazılıyorlar; çağıranın açıkça verdiği `bOverride_X` her zaman kazanıyor. Açılan bitler `overrides_enabled` ile geri dönüyor. Varsayım testle korunuyor: `PresetDataIsValid` her Lumen anahtarının `bOverride_` kardeşi olduğunu doğruluyor.
+- **Lumen kapsamı dürüstçe bildirildi**: (a) volume başına `FPostProcessSettings` — okuma VE yazma, KAPSANDI; (b) proje `URendererSettings` — YALNIZ OKUMA (bunlar `DefaultEngine.ini`'ye kalıcı yazılan `config` property'leri, bazıları yeniden başlatma gerektiriyor; kullanıcının proje ayarını bir level-tasarım çağrısından yeniden yazmak yanlış sözleşme olurdu); (c) `r.Lumen.*` cvar/ölçeklenebilirlik — HİÇ kapsanmadı.
+- Karar: Kabul. Kontrol ajanı **verified**: HEAD=7b456ad, ağaç temiz, 8 dosya, **`Monolith.uplugin` dokunulmamış**, `MonolithMeshVolumeActions.cpp` diff'i gerçekten yalnız dize/yorum (çalıştırılabilir kod değişikliği yok — ayrıca kontrol edildi), kendi koşusunda 217/0/0 ve 217 "Test Completed", 8 atmosfer + 8 ışık + 19 job + 4 PoseSearch testi hepsi `{Success}`, build yeşil. `bOverride_` mekanizması kodda 10 yerde görüldü (enjektör yardımcısı, iki guard, açıklamalar). `Config/MonolithAtmospherePresets.json` geçerli JSON: 16 preset (post_process 3, lumen 5, height_fog 5, sky_atmosphere 3) + `readback` bölümü.
+- Commit: 7b456ad
+- Sıradaki: Görev 14 — canlı editör viewport ekran görüntüsü.
+
+### notes_for_next_worker (görev 13 işçisinden)
+- **Motor adı tuzakları** (D:\UE_5.7 kaynağına bakarak doğrulandı): sis `FogInscatteringLuminance` kullanıyor (`FogInscatteringColor` `_DEPRECATED`); sky-atmosphere'da Epic'in yazım hatası `AerialPespectiveViewDistanceScale` ("r" eksik) aynen taşınmalı; `ASkyAtmosphere` `Components/SkyAtmosphereComponent.h` içinde, `SkyAtmosphere.h` diye bir dosya yok.
+- Preset yükleyici `FMonolithMeshJsonPresets` olarak genelleştirildi. Işık dilimi (`FMonolithMeshLightActions`) kasten BUNA TAŞINMADI — az önce yeşil doğrulanmış bir dosyayı düzenlilik uğruna sarsmak yanlış takas. Taşıma mekanik, notu `MonolithMeshJsonPresets.h` içinde.
+- **Faz 2'den kalan**: `AVolumetricCloud` (tek satır tablo + readback bölümü + preset; property adları zaten taranmış), canlı viewport ekran görüntüsü, data-driven level yerleşim sistemi, ve artık ucuzlayan bir "ışık senaryosu" aksiyonu (güneş + sky light + sky atmosphere + fog + PPV tek çağrıda).
+
+## [02:54] Görev 14 gönderildi — canlı editör viewport ekran görüntüsü
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı.
+- Karar: Bu dilim sıraya geçirildi çünkü **görsel geri besleme halkasını kapatıyor**. Bu gece üretilen ışık ve atmosfer işinin tamamı "görünüş hiçbir şekilde makine tarafından doğrulanmadı" notuyla geldi — açık haritaya bakmanın yolu yok. Level yerleşim sistemi bundan sonra gelecek; önce görebilmek, sonra çok şey yerleştirmek.
+- Ek şartlar: mevcut `capture_*` ailesinin envanteri önce çıkarılacak (roadmap bu gece ÜÇ kez yanıldı, körü körüne "yok" kabul edilmeyecek); görüntüsüz/RHI'siz durumda boş ya da çöp görüntü DÖNDÜRÜLMEYECEK, dürüst hata verilecek; pratikse `launch_editor.ps1` ile pencereli modda gerçek bir yakalama denenip gözlem raporlanacak.
+- Commit: -
+- Sıradaki: Görev 14 raporu.
