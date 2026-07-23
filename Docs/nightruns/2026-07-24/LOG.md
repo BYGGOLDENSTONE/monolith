@@ -235,3 +235,27 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Doğrulama şartı: Python proxy'si editörsüz test edilebilir — zaman aşımı ve bağlantı reddi mesajlarının GERÇEK metni rapora girecek. C++ proxy derlenebiliyorsa derlenecek, derlenemiyorsa "derlenemedi" diye dürüstçe yazılacak.
 - Commit: -
 - Sıradaki: Görev 10 raporu.
+
+## [01:47] Görev 10 TAMAM — proxy artık zaman aşımında doğruyu söylüyor. **FAZ 1 TAMAMLANDI.**
+- Durum: done
+- Ne oldu: Her iki proxy de (C++ ve Python) düzeltildi. Zaman aşımı ile bağlantı hatası artık AYRI sınıflandırılıyor ve ayrı mesaj veriyor. Zaman aşımı mesajı: "bu bir TIMEOUT, kopukluk değil; editör muhtemelen hâlâ çalışıyor ve sonucu bitince çöpe gidecek" + "bu çağrıyı TEKRARLAMA, sunucu tek şeritli, tekrar aynı işin ikinci kopyasını kuyruğa sokar" + `jobs_query` `list`/`poll` yönlendirmesi. Uydurma job_id verilmiyor — proxy bilmiyorsa `list` ile bulmayı söylüyor. Ek olarak C++ proxy'de yanıt okuma döngüsü artık gövde ortasındaki hatayı yakalıyor (eskiden sessizce kırpılmış payload dönüyordu).
+- **Yinelenen istek tuzağı**: Aslında hiçbir proxy zaten yeniden denemiyormuş — tuzak proxy'nin YALAN söylemesiydi, tekrar denemeyi istemci yapıyordu. Buna karşı dar kapsamlı bir "resend guard" eklendi: zaman aşımından sonra aynı `(ad, argümanlar)` imzalı çağrı `MONOLITH_TIMEOUT_RESEND_GUARD` (varsayılan 60 sn) içinde gelirse iletilmiyor, açıklamayla reddediliyor.
+- **Zaman aşımı 30 sn olarak KALDI**, gerekçesi sağlam: süreyi uzatmak tek şeritli işi hızlandırmaz, sadece diğer çağıranları daha uzun bloke eder; uzun iş için doğru çözüm artık job sistemi. Ama her uzun aksiyon henüz dönüştürülmediği için değer artık çıplak sabit değil: `MONOLITH_TIMEOUT` ile bilinçli yükseltilebiliyor.
+- Karar: Kabul. Kontrol ajanı işçinin verdiği metinlere güvenmedi, **iki hata yolunu da kendi üretti** (sahte soketlerle, scratchpad'de): zaman aşımı ve bağlantı reddi mesajları FARKLI; zaman aşımı mesajı editörün hâlâ çalıştığını söylüyor, tekrar denemeyi yasaklıyor ve `jobs_query`'den bahsediyor; bağlantı reddi mesajı aracın çalışmadığını açıkça söylüyor. **verified**: HEAD=d76a3a4, ağaç temiz, 3 dosya, **`Source/` altında hiçbir dosya dokunulmamış**, kendi koşusunda 200/0/0 ve 200 "Test Completed", env değişkenleri her iki dilde de aynı varsayılanlarla mevcut (30.0 / 60.0).
+- Commit: d76a3a4
+- Sıradaki: Görev 11 — `CreatePackage`/`SavePackage` taraması.
+
+### notes_for_next_worker (görev 10 işçisinden — kullanıcıyı ilgilendirenler)
+- **Dağıtımdaki C++ ikili dosyası kullanıcı tarafından yeniden derlenmeli** yoksa düzeltme etkili olmaz. İşçi `monolith_proxy.cpp`'yi yalnız scratchpad'e derledi (derleme başarılı, exit 0). `Binaries/` gitignore'da ve içinde `monolith_proxy.exe` yok. Komut: `Tools\MonolithProxy\build.bat`. **UYARI: `Tools\MonolithProxy\build_proxy.bat` bu makinede ÇALIŞMAZ** — VS2022 Community yolunu hardcoded arıyor, makinede yalnız VS2019 BuildTools kurulu. İşçi derleme scriptlerini değiştirmedi.
+- Python proxy'sinde (`Scripts/monolith_proxy.py`) düzeltme derleme gerektirmeden hazır.
+- Şu an `~/.claude.json` içinde yapılandırılmış bir `monolith` MCP sunucusu YOK, yani şu an hiçbir proxy çalışmıyor. (Bilgi notu; kullanıcının kararı.)
+- Kasten değiştirilmeyen mevcut fark: editörden gelen HTTP 2xx-dışı yanıt Python'da `unreachable` sayılıyor, C++ proxy ise gövdeyi olduğu gibi iletiyor. Ayrı bir sapma, kapsam dışı.
+- `git add Tools/**` "The following paths are ignored… Tools" uyarısı verip exit 1 dönüyor AMA dosyalar izleniyor ve stage'e giriyor — bunu başarısızlık sanma, `-f` ekleme.
+
+## [01:50] Görev 11 gönderildi — CreatePackage/SavePackage FullyLoad taraması
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. Görev 7'nin bulduğu hata biçimi (`SavePackage` öncesi eksik `FullyLoad()` → kısmen yüklü asset'te fatal) `Source/` genelinde taranacak.
+- Karar: Faz 2'den (kullanıcının birincil önceliği: level tasarımı + ışık) ÖNCE yapılıyor. Gerekçe: bu gizli bir ÇÖKME riski ve Faz 2 işi bolca asset üretecek, yani aynı riskli alana girecek. Ayrıca iyi sınırlı bir iş.
+- Ek şart: körlemesine yama yasak — her yer ayrı değerlendirilecek, yalnız paketin diskte zaten var olabildiği yerler gerçek hata sayılacak. İş tek işçiye sığmazsa **kısmi ama doğru** bitirmek tercih edilir; kalan modüller rapora yazılacak.
+- Commit: -
+- Sıradaki: Görev 11 raporu.
