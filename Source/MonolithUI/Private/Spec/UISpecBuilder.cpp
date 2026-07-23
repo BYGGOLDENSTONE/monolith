@@ -612,6 +612,14 @@ namespace MonolithUI::SpecBuilderInternal
 
             bOutPreExisting = true;
             OutPackage = Existing->GetPackage();
+            // GetAsset() only guarantees the WBP object itself is loaded; the rest of
+            // the package may still be on disk. UPackage::SavePackage refuses (fatally)
+            // to write a partially-loaded package, so reclaim the whole thing here
+            // before the overwrite path touches it.
+            if (OutPackage)
+            {
+                OutPackage->FullyLoad();
+            }
             return Existing;
         }
 
@@ -623,6 +631,10 @@ namespace MonolithUI::SpecBuilderInternal
             OutError = FString::Printf(TEXT("CreatePackage failed for '%s'."), *AssetPath);
             return nullptr;
         }
+        // Guard against a stale asset-registry view: if a .uasset is sitting on disk
+        // that the registry has not scanned, CreatePackage hands back a shell package
+        // and the later SavePackage would fatal on "only been partially loaded".
+        OutPackage->FullyLoad();
 
         UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
         Factory->BlueprintType = BPTYPE_Normal;

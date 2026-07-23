@@ -35,16 +35,55 @@ are centralized in `nightrun_common.ps1`.
 - **`launch_editor.ps1 -NullRhi`** — no rendering, for logic-only sessions.
   Screenshot/preview captures will NOT work in this mode.
 
-## Known issues (2026-07-23 validation)
+## Known issues
 
-- ~~Full-suite crash at `Assertion failed: !Database`~~ FIXED same day: four
-  tests held `FSQLitePreparedStatement` locals alive across `Db.Close()`
-  (CppReflectQueryTests, DecisionRecordIndexerTests ×2, RiskQueryTests) —
-  statements now finalize in nested scopes. Suite runs all 177 tests to completion.
-- 4 pre-existing test failures the crash was masking (genuine behavior bugs,
-  triage as separate work items): `Monolith.ReflectionIntel.Decision.HeuristicAccuracy`
-  (indexer ingests 2 rows from the non-decision fixture), `Monolith.CursorPagination.QueryMismatchRejection`
-  (error lacks ErrorData), `MonolithUI.Allowlist.UnknownTypeDenied`,
-  `MonolithUI.Reflection.ParseLinearColorHex`. Baseline: 173/177 green.
+**Current baseline: 177/177 green.** Nothing in this section is an open failure —
+everything below is either fixed history kept for its diagnosis, or a live caveat.
+
+### Fixed
+
+- ~~Full-suite crash at `Assertion failed: !Database`~~ (2026-07-23) — four tests
+  held `FSQLitePreparedStatement` locals alive across `Db.Close()`
+  (CppReflectQueryTests, DecisionRecordIndexerTests ×2, RiskQueryTests);
+  statements now finalize in nested scopes.
+- ~~Full-suite crash on every run after the first~~ (2026-07-24) —
+  `Asset '…/Tests/Monolith/UI/…' cannot be saved as it has only been partially loaded`,
+  which `run_tests.ps1` surfaced as the misleading `passed=0, failed=-1,
+  reason="UE report index.json missing"`. Cause: fixture-creating code called
+  `CreatePackage()` + `UPackage::SavePackage()` without `Package->FullyLoad()`, so a
+  fixture left on disk by the previous run was only half-loaded at save time. Fixed by
+  routing `UIErrorFormattingTests::CreateScratchWBP` through the shared
+  `MonolithUI::TestUtils::CreateOrReuseTestWidgetBlueprint` helper (which already did
+  the `FullyLoad()` + `FindObject` reclaim) and by adding the same reclaim to
+  `FUISpecBuilder`'s get-or-create path — the latter is what the Roundtrip and
+  SpecBuilder fixtures go through, and is a production bug too (`build_ui_from_spec`
+  with `overwrite=true` over an unloaded existing asset). Manually deleting
+  `Content/Tests/Monolith/UI/{ErrorFormatting,Roundtrip,SpecBuilder}` before each suite
+  run is no longer necessary.
+- ~~4 pre-existing test failures the SQLite crash was masking~~ — all four green as of
+  2026-07-24. Their real causes, which differ from the guesses first recorded here:
+  - `Monolith.ReflectionIntel.Decision.HeuristicAccuracy` — **not** simply "heuristic too
+    broad". Two causes: a lookahead that ran past section boundaries, plus a fixture whose
+    own prose spelled out the trigger tokens it was meant to be a negative case for.
+  - `Monolith.CursorPagination.QueryMismatchRejection` — **not** "error lacks ErrorData".
+    The rejection was never produced at all: the DB-availability guard ran ahead of the
+    cursor-validation branch, so in a `-nullrhi` run (engine source DB closed) the handler
+    returned "Engine source DB not available." before reaching `INVALID_CURSOR`.
+  - `MonolithUI.Allowlist.UnknownTypeDenied` — the allowlist cache injected 7 common
+    `UWidget` base properties for every token, registered or not.
+  - `MonolithUI.Reflection.ParseLinearColorHex` — hex parse skipped the sRGB→linear
+    degamma branch (dead code) for widget `FLinearColor` properties.
+
+### Live caveats
+
 - First `capture_scene_preview` right after boot renders very dark (preview
   scene lighting warmup); capability works, tune params per task.
+- `run_tests.ps1` reports `passed=0, failed=-1, reason="UE report index.json missing"`
+  for *any* editor crash, not just a missing report — read `logTail` in
+  `results/run_tests.json` before blaming your own change.
+- `exitCode 255` in `run_tests.json` only means "some test failed"; the suite still ran.
+  Confirm real completion with
+  `(Select-String -Path results\run_tests.log -Pattern 'Test Completed' -AllMatches).Count`.
+- `results/` is a shared single slot (`run_tests.ps1` starts with
+  `Stop-MonolithProcesses`). Harness runs must be sequential — two concurrent workers
+  kill each other's editor and overwrite each other's verdict.

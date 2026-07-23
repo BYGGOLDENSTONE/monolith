@@ -64,6 +64,8 @@
 #include "UObject/SavePackage.h"
 #include "Misc/PackageName.h"
 
+#include "Tests/Hoisted/MonolithUITestFixtureUtils.h"
+
 namespace MonolithUI::ErrorFormattingTests
 {
     /** Test asset path. Each test scopes a sub-suffix to avoid PIE cross-pollution. */
@@ -77,9 +79,12 @@ namespace MonolithUI::ErrorFormattingTests
      * widget class. Returns the asset path (so the test can pass it to MCP
      * actions) and stashes the live UWidgetBlueprint pointer via OutWBP.
      *
-     * Mirrors the helper shape used in EffectSurfaceActionsTests + UISpecBuilderTests
-     * so the bookkeeping (RegisterCreatedWidget / MarkBlueprintAsStructurallyModified
-     * / CompileBlueprint / SavePackage) is consistent across the suite.
+     * Thin wrapper over the shared suite fixture helper. It used to open-code the
+     * CreatePackage/FactoryCreateNew/SavePackage sequence, but without the
+     * Package->FullyLoad() reclaim step — which made every run after the first one
+     * fatal with "cannot be saved as it has only been partially loaded" once the
+     * fixture existed on disk. The shared helper is the single place that owns that
+     * sequence; do not re-open-code it here.
      */
     static FString CreateScratchWBP(
         const FString& Suffix,
@@ -89,45 +94,20 @@ namespace MonolithUI::ErrorFormattingTests
     {
         OutWBP = nullptr;
         const FString AssetPath = MakeTestPath(Suffix);
-        FString PackagePath, AssetName;
-        AssetPath.Split(TEXT("/"), &PackagePath, &AssetName, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
 
-        UPackage* Package = CreatePackage(*AssetPath);
-        if (!Package) return AssetPath;
-
-        UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
-        Factory->BlueprintType = BPTYPE_Normal;
-        Factory->ParentClass   = UUserWidget::StaticClass();
-        UObject* Created = Factory->FactoryCreateNew(
-            UWidgetBlueprint::StaticClass(), Package,
-            FName(*AssetName), RF_Public | RF_Standalone, nullptr, GWarn);
-        UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(Created);
-        if (!WBP || !WBP->WidgetTree) return AssetPath;
-
-        UCanvasPanel* Root = WBP->WidgetTree->ConstructWidget<UCanvasPanel>(
-            UCanvasPanel::StaticClass(), TEXT("RootCanvas"));
-        WBP->WidgetTree->RootWidget = Root;
-        WBP->OnVariableAdded(Root->GetFName());
-
-        if (ChildClass)
+        FString FixtureError;
+        if (!MonolithUI::TestUtils::CreateOrReuseTestWidgetBlueprint(
+                AssetPath,
+                ChildClass ? ChildName : NAME_None,
+                ChildClass,
+                FixtureError,
+                /*OutChildWidget=*/ nullptr,
+                &OutWBP))
         {
-            UWidget* Child = WBP->WidgetTree->ConstructWidget<UWidget>(ChildClass, ChildName);
-            Root->AddChild(Child);
-            WBP->OnVariableAdded(Child->GetFName());
+            UE_LOG(LogTemp, Error, TEXT("CreateScratchWBP('%s') failed: %s"), *AssetPath, *FixtureError);
+            OutWBP = nullptr;
         }
 
-        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
-        FKismetEditorUtilities::CompileBlueprint(WBP);
-
-        FAssetRegistryModule::AssetCreated(WBP);
-        Package->MarkPackageDirty();
-        FSavePackageArgs SaveArgs;
-        SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-        UPackage::SavePackage(Package, WBP,
-            *FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension()),
-            SaveArgs);
-
-        OutWBP = WBP;
         return AssetPath;
     }
 

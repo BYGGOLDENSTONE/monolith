@@ -81,15 +81,28 @@ namespace MonolithUI::TestUtils
      * @param OutError          Receives human-readable error on failure.
      * @param OutChildWidget    (Optional) Receives the constructed child widget pointer so
      *                          callers can configure it (e.g. set canvas slot geometry).
+     * @param OutWBP            (Optional) Receives the live UWidgetBlueprint pointer so callers
+     *                          can inspect the compiled asset without re-loading it.
      * @return true on success.
+     *
+     * Re-run safety: the package is FullyLoad()ed before any FindObject/save so that a
+     * fixture left on disk by a previous run is reclaimed rather than half-loaded. Saving a
+     * partially-loaded package is a fatal error in the engine, which is why every fixture
+     * helper in this suite must go through here.
      */
     inline bool CreateOrReuseTestWidgetBlueprint(
         const FString& AssetPath,
         FName ChildWidgetName,
         UClass* ChildWidgetClass,
         FString& OutError,
-        UWidget** OutChildWidget = nullptr)
+        UWidget** OutChildWidget = nullptr,
+        UWidgetBlueprint** OutWBP = nullptr)
     {
+        if (OutWBP)
+        {
+            *OutWBP = nullptr;
+        }
+
         if (!ChildWidgetClass)
         {
             ChildWidgetClass = UImage::StaticClass();
@@ -164,6 +177,11 @@ namespace MonolithUI::TestUtils
         {
             OutError = FString::Printf(TEXT("SavePackage failed for '%s'"), *PackageFilename);
             return false;
+        }
+
+        if (OutWBP)
+        {
+            *OutWBP = WBP;
         }
         return true;
     }
