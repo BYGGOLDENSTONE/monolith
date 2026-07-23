@@ -259,3 +259,28 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Ek şart: körlemesine yama yasak — her yer ayrı değerlendirilecek, yalnız paketin diskte zaten var olabildiği yerler gerçek hata sayılacak. İş tek işçiye sığmazsa **kısmi ama doğru** bitirmek tercih edilir; kalan modüller rapora yazılacak.
 - Commit: -
 - Sıradaki: Görev 11 raporu.
+
+## [02:08] Görev 11 TAMAM — 31 gizli çökme noktası kapatıldı (201/201)
+- Durum: done
+- Ne oldu: `Source/` altındaki 61 gerçek `UPackage::SavePackage` çağrı yeri (40 dosya) tek tek incelendi, 31'i gerçek hata olarak yargılanıp düzeltildi (22 kaynak dosya, 10 modül: UI, GAS, Niagara, Mesh, Material, Audio, ComboGraph, LogicDriver, Editor, Blueprint — hiçbiri incelenmemiş kalmadı). 1 yeni regresyon testi, 200→201.
+- **Kök sebep işçinin motor kaynağından doğruladığı haliyle görev 7'nin varsaydığından daha keskin**: kontrol `SavePackage2.cpp:216`'daki `!SaveContext.GetPackage()->IsFullyLoaded()`. `UPackage::IsFullyLoaded()` (`Package.cpp:327`) yalnız bellek durumuna bakmıyor — diskte `.uasset` varsa da false dönüyor. Yani hiç yüklenmemiş bir yola `CreatePackage()` çağırmak bile "kısmen yüklü" paket veriyor. Ve `FSavePackageArgs::Error` varsayılanı `GError`, yani bu **appError — editör sürecini öldürüyor**, sessizce false dönmüyor. 31 yerin hepsi çökmeydi.
+- **Tekrarlayan suçlunun sebebi**: `StaticLoadObjectInternal` yalnız yol NOKTA içeriyorsa "bellekte bul ve dön" kısayolunu alıyor; `AssetData::GetAsset()` ve `UEditorAssetLibrary::LoadAsset` hep noktalı yol geçiyor, dolayısıyla nesneyi verip paket yüklemesini bitirmiyorlar. Noktasız `LoadObject` ise hep `LoadPackage`'a düşüyor ve tam yüklüyor. Triyaj kuralı bu ayrım.
+- Karar: **Kabul, ama kontrol hükmü "mismatch" idi — farkı burada aynen kaydediyorum.** Uyuşmazlık tamamen sayısal ve raporun özet metninde: işçi "20 dosya" yazmış, `git show --stat` 23 dosya diyor (22 kaynak + 1 yeni test). İşçinin kendi `what_changed` listesi zaten doğruydu (`MonolithUIInternal.h` orada listeli), özet cümlesinde saymamış. İçeriğe dair her şey doğrulandı, bu yüzden görev geçmiş sayılıyor. Kontrol ajanının içerik bulguları: toplam 259 ekleme / 1 silme; eklenen satırların 48'i `FullyLoad` içeriyor; `FullyLoad`/yorum/parantez dışı kalan 44 esaslı ekleme satırının 43'ü YENİ TEST dosyasında, 1'i `FullyLoad`'u koruyan bir guard (`MonolithGASTagActions.cpp`); tek silinen satır bir YORUM satırı (genişletilip yeniden yazılmış), mantık silinmesi yok. Yani diff gerçekten dar. Kendi koşusunda 201/0/0 ve 201 "Test Completed"; yeni test + 19 job testi + 4 PoseSearch testi hepsi `{Success}`; build yeşil; ağaç temiz.
+- Commit: 88172a8
+- Sıradaki: Görev 12 — **Faz 2 başlıyor** (ışık aksiyonları).
+
+### notes_for_next_worker (görev 11 işçisinden — yanlış anlaşılmasın diye bırakılan güvenli yerler)
+- `MonolithBlueprintCompileActions.cpp:455` — **kasten dokunulmadı.** O yolda FullyLoad'a KARŞI yazılı bir gerekçe var (diskte kalmış bir `.uasset` bayat `RF_Transient` bayraklarını belleğe çeker ve `SaveLoadedAsset` onları geri yazar). Belgelenmiş bir kararı devirmek kapsam dışıydı; test edebilecek birinin hedefli bakması iyi olur.
+- Disk yükleyen `StaticLoadObject`/`LoadObject`/`LoadAsset` ile korunan oluşturma yolları (Audio ×3, Material ×2, Niagara ×2, CommonUIButton ×1) güvenli: ya guard hata veriyor ya guard'ın `LoadPackage`'ı yüklemeyi zaten bitiriyor.
+- `MonolithNiagaraActions.cpp:13872` guard'ı yalnız bellekte bakan `FindObject<UPackage>` — YANLIŞ görünüyor ama güvenli: isabet çağrıyı reddediyor, ıskalama ise bellekte paket yok demek, `CreatePackage` taze paket kuruyor.
+- `MonolithAINavigationActions.cpp:2115` — canlı dünya/level paketlerini kaydediyor, editör haritayı açık tuttuğu için tanımı gereği tam yüklü.
+- **Kullanıcıya görünür bir davranış değişikliği**: guard'ı yalnız bellekte `FindObject` olan dört CommonUI/UI oluşturma yolunda `FullyLoad()` guard'dan ÖNCEye kondu. Registry'nin taramadığı bayat bir `.uasset` artık temiz "asset zaten var" hatası veriyor; eskiden başarılı görünüp kayıtta çöküyordu.
+- needs_human: Yeni test yalnız MonolithUI scaffolder yolunu kaplıyor. Diğer 30 düzeltme aynı motor mekanizmasıyla doğru ama tek tek denenmedi. Canlı editörde, diskte var olup açık olmayan asset'ler üzerinde göz kontrolü değerli: `niagara::add_emitter`, `niagara::save_system`, `gas::add_attribute`, `editor::import_texture` (var olan doku üzerine), `editor::save_packages`, `mesh::merge_actors` (aynı `save_path`'e tekrar). Bu commit'ten önce her biri editörü öldüren bir çökmeydi.
+
+## [02:12] Görev 12 gönderildi — Faz 2 ilk dilim: ışık aksiyonları
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. **Faz 2 = kullanıcının BİRİNCİL ihtiyacı** (detaylı level tasarımlarını Claude'a yaptırabilmek). Bu dilim yalnız ışık aktörlerini kapsıyor: DirectionalLight, PointLight, SpotLight, RectLight, SkyLight — yerleştirme + ayar okuma/yazma. PostProcessVolume, ExponentialHeightFog, Lumen, canlı viewport ekran görüntüsü ve data-driven yerleşim sistemi sonraki dilimlere bırakıldı.
+- Karar: İşçiye roadmap'in "ışık yerleştirme yok" iddiasını DOĞRULAMASI söylendi, körü körüne kabul etmesi değil — genel bir aktör spawn aksiyonu zaten varsa değerli olan kısım tipli/keşfedilebilir ışık yüzeyi olur, spawner'ı kopyalamak değil. Ayrıca property yazımı için elle switch yerine mevcut reflection/allowlist makinesini kullanması istendi (motor sürüm yükseltmelerine dayanıklılık).
+- Ek: Görev 6'nın modül kararı emsal gösterildi — yeni modül maliyeti `Monolith.uplugin` çakışması, gerekçelendirilmeden şablondan sapma yok.
+- Commit: -
+- Sıradaki: Görev 12 raporu.
