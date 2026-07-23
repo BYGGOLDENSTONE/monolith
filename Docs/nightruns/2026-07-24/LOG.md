@@ -95,3 +95,23 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Karar: Bu son kırmızı olduğu için eşik 177/177; altı regresyon sayılır.
 - Commit: -
 - Sıradaki: Görev 4 raporu.
+
+## [00:28] Görev 4 TAMAM — HeuristicAccuracy yeşil → **177/177, dört kırmızı test kapandı**
+- Durum: done
+- Ne oldu: İki ayrı sebep vardı; README'nin teşhisi yine yarı yanlıştı. Logdaki tam assertion: `Expected '03_non_decision contributes zero rows' to be 0, but it was 2` (`DecisionRecordIndexerTests.cpp:172`). DB-kapalı teorisi burada geçerli değil — test kendi tek kullanımlık SQLite dosyasını `AutomationTransientDir` içinde açıyor, `EngineSource.db`'ye hiç dokunmuyor; saf mantık hatası. (1) **Gerçek implementasyon hatası**: 8 satırlık ileri-bakış `## Some Sub-Heading` başlığından sonra bir SONRAKİ başlığın içine taşıp oradaki metni bu başlığın gerekçesi sanıyordu — spec §3.2'ye aykırı (paragraf başlığı TAKİP etmeli) ve gerçek `Docs/` korpusunda da yanlış pozitif üretirdi. `FindRationaleWithin` artık `OwnerHeaderLevel` alıyor ve aynı/daha üst seviyeli ilk başlıkta duruyor. (2) **Fixture kendi önermesini çürütüyordu**: son cümlesi tetikleyici token'ların üçünü kendi ikinci bölümünde harfiyen yazıyordu. İşçi ilkeli bir daraltma arayıp bulamadı (kelime sınırı: üçü de tam kelime; tırnak/backtick soyma: `rationale` tırnaksız da geçiyor; olumsuzlama tespiti: dayanaksız NLP tahmini) — spec'e göre bu katman kasten aptal substring eşleşmesi (0.65 güven, sorgu anında filtreleniyor), yani kapı haklı, fixture hatalıydı. Fixture yeniden yazıldı + gelecekteki editörlere uyarı notu eklendi. Indexer artık 8 yerine 6 kayıt üretiyor (5 dosyadan) — testin kendi başlık yorumuyla uyumlu.
+- Karar: Kabul. Fixture değişikliği içerdiği için kontrol ajanına assertion bütünlüğü ayrıca doğrulatıldı → **verified**: `DecisionRecordIndexerTests.cpp` bu commit'te HİÇ değişmemiş (assertion'lar dokunulmamış), fixture diff'i yalnız düzyazıyı değiştiriyor (`0 satır` önermesi yerinde), HEAD=c6d73c6, ağaç temiz, üç dosya beyanla birebir, run_tests.json 177/0/0, logda 177 "Test Completed", dört `ReflectionIntel.Decision.*` testinin hepsi `{Success}`, build yeşil.
+- Commit: c6d73c6
+- Sıradaki: Görev 7 (harness fixture kaydetme hatası) — Faz 1'den önce, çünkü Faz 1 testleri de aynı paketten geçecek.
+
+### notes_for_next_worker (görev 4 işçisinden, AYNEN)
+- `Scripts/nightrun/README.md` "Known issues" hâlâ dört testi kırmızı listeliyor ve `HeuristicAccuracy` için yanlış teşhisi ("indexer non-decision fixture'dan 2 satır yutuyor") taşıyor — liste tazelenirken "fixture heuristiği kendi kendine tetikledi + ileri-bakış bölüm sınırını aştı" diye düzeltilmeli.
+- Elle doğrulandı: bölüm sınırlama tüm gerçek pozitifleri koruyor (01→1, 02→2, 04→1 frontmatter yolu sınırsız, 05→2). Toplam 6, log da 6 diyor.
+- Harness sorunsuz: fixture ön-temizliği gerekliydi, paket ~25 sn, artımlı derleme birkaç saniye.
+- needs_human: Bir davranış değişikliği göz kontrolü isteyebilir — gerçek `Docs/` markdown'ında gerekçe paragrafı BİR SONRAKİ başlıktan sonra gelen bölümler artık `decision_query("list_decisions")` satırı üretmeyecek. Kasıtlı sıkılaştırma ama canlı korpusta satır sayısı bir miktar düşecek.
+
+## [00:29] Görev 7 gönderildi — test fixture kaydetme hatası (harness güvenilirliği)
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. Üç yardımcının ortak `CreateOrReuseTestWidgetBlueprint` desenine taşınması istendi (üç yerde kopyalamak yerine tekilleştirme tercihi belirtildi). Kabul kriteri sıkı tutuldu: **arada fixture silmeden paketi arka arkaya İKİ KEZ koşup ikisinin de 177/177 olduğunu kanıtlayacak** — yoksa düzeltme kanıtlanmış sayılmaz. Ayrıca `Scripts/nightrun/README.md` "Known issues" bölümünü tazeleme ve görev 3-4'te ortaya çıkan yanlış teşhisleri düzeltme işi de bu göreve bağlandı (aynı alan, küçük iş).
+- Karar: Faz 1'den (görev 5-6) ÖNCE yapılıyor. Gerekçe: Faz 1'in yeni testleri de aynı paketten geçecek; her koşuda elle fixture silmek gereken bir harness ile ilerlemek hem yavaş hem yanlış alarm üretiyor.
+- Commit: -
+- Sıradaki: Görev 7 raporu.
