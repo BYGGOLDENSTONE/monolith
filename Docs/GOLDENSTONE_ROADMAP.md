@@ -27,9 +27,11 @@ Bu doküman, fork'un kendi ihtiyaçlarımıza göre geliştirme planıdır. Ama�
 
 ## Fazlar
 
-### Faz 0 — İnsansız Test Düzeneği ← SONRAKİ OTURUM BURADAN BAŞLA
+> **Yön kararları (2026-07-23, kullanıcı):** Fork GENEL AMAÇLI geliştirilir (oyun-özel değil). Öncelik sırası kullanıcının ihtiyaç sıralamasıyla: level/environment tasarımı → animasyon → VFX; Faz 1 (job system) teknik önkoşul olarak önce gelir. Gece ritmi istek üzerine (her gece değil); "istenen olgunluğa gelince" geliştirme durur. İlk gerçek gece = ısınma: 4 kırmızı test (Scripts/nightrun/README.md) + Faz 1 iskeleti.
 
-Gece protokolünün ön koşulu. `Scripts/nightrun/` altına: `build.ps1` (UBT sarmalayıcı, yeşil/kırmızı + hata özeti), `launch_editor.ps1` (insansız editör başlatma + port 9316 health check), `smoke.ps1` (HTTP üzerinden standart aksiyon serisi, JSON sonuç), çökme yakalama (exit code + `Saved/Crashes/` + log kuyruğu), `teardown.ps1` (temiz kapatma). Detay: NIGHT_PROTOCOL §6. Gündüz oturumunda kurulur ve elle doğrulanır; ilk gece denemesi kasıtlı KÜÇÜK bir hedefle yapılır (protokolün kendisini test etmek için).
+### Faz 0 — İnsansız Test Düzeneği ✅ TAMAMLANDI (2026-07-23)
+
+Kuruldu ve insansız doğrulandı (commit fcebb24; kullanım: `Scripts/nightrun/README.md`). Prova (kuru gece) da geçti — kayıt `Docs/nightruns/2026-07-23-prova/`. Doğrulanan taban: derleme yeşil, editör görüntülü ~15 sn / görüntüsüz ~7 sn açılıyor, MCP smoke 5/5, test paketi 173/177 (4 kırmızı = çökmenin maskelediği önceden var olan hatalar; ilk gece ısınma görevi). Ekran görüntüsü görüntülü modda çalışıyor; gece varsayılanı görüntülü mod.
 
 ### Faz 1 — İş Yöneticisi (Job System)
 
@@ -75,6 +77,6 @@ Kullanıcı tespiti (2026-07-23): VFX tarafı zayıf, sağlam geliştirilmesi la
 
 ## Operasyonel Notlar
 
-- Derleme: `D:\UE_5.7\Engine\Build\BatchFiles\Build.bat MonolithDevEditor Win64 Development -project="D:\UnrealProjects\MonolithDev\MonolithDev.uproject" -WaitMutex` — **başka bir UE editörü açıkken çalışmaz** (Live Coding mutex). İlk derleme henüz tamamlanmadı (kullanıcının necropunk1 oturumu açıktı).
+- Derleme: `Scripts/nightrun/build.ps1` kullan (UBT'yi zaman aşımı + artık-süreç temizliğiyle sarar). Ham komut: `D:\UE_5.7\Engine\Build\BatchFiles\Build.bat MonolithDevEditor Win64 Development -project="D:\UnrealProjects\MonolithDev\MonolithDev.uproject" -WaitMutex` — **başka bir UE editörü açıkken çalışmaz** (Live Coding mutex). İlk derleme 2026-07-23'te yeşil (~2,5 dk).
 - Kullanıcı kuralı: aynı anda en fazla 6 subagent.
 - Dokümantasyon (API_REFERENCE, spec'ler, Skills tabloları) upstream'de elle güncelleniyor — kendi eklediklerimizde de aynı disipline uy.
