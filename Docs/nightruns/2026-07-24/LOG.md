@@ -143,3 +143,25 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Karar: İki ek şart kondu: (a) bitmiş işler sızmasın diye saklama politikası, limiti hardcoded değil `MonolithSettings` üzerinden (data-driven kuralı); (b) testler deterministik ve görüntüsüz-güvenli olacak — duvar saati beklemesi yok, ticker elle sürülecek.
 - Commit: -
 - Sıradaki: Görev 5 raporu.
+
+## [00:44] Görev 5 TAMAM — FMonolithJobManager çekirdeği ayakta (184/184)
+- Durum: done
+- Ne oldu: `MonolithCore/Public/MonolithJobManager.h` + `Private/MonolithJobManager.cpp` yazıldı: `EMonolithJobState`, `FMonolithJob`, Meyers singleton `FMonolithJobManager`; `FCriticalSection` korumalı kayıt defteri, tek paylaşımlı `FTSTicker` pompası, saklama süpürmesi. `MonolithSettings.h`'e "Jobs" kategorisi (`JobRetentionCount`=64, `JobRetentionSeconds`=900, `JobPumpIntervalSeconds`=1.0). Modül kapanışında `Reset()`. 7 yeni otomasyon testi. Toplam 177→184.
+- Karar: Kabul. Kontrol ajanı **verified** — sayıların yanı sıra iki tasarım şartını da satır satır teyit etti: (a) `EnsurePump()` içinde TEK ticker handle var, iş başına ticker yok (`MonolithJobManager.cpp:341-343`, yorumu bile "One ticker for the WHOLE manager"); (b) saklama limitleri `UMonolithSettings::Get()` üzerinden okunuyor, sabit sayı değil (satır 232-238; sabitler yalnız Settings yoksa yedek). HEAD=374f81c, ağaç temiz, 5 dosya beyanla birebir, run_tests.json 184/0/0, logda 184 "Test Completed", 7 `JobManager.*` testinin hepsi `{Success}`, build yeşil.
+- Commit: 374f81c
+- Sıradaki: Görev 6 (`jobs` namespace aksiyonları).
+
+### notes_for_next_worker (görev 5 işçisinden — API özeti görev 6 promptuna aynen aktarıldı; ek kararlar)
+- Sonuç payload'ı `TSharedPtr<FJsonValue>` seçildi (`FJsonObject` değil) — `FMonolithActionResult::ErrorData` ile uyumlu olsun ve nesne olmayan payload'lara da izin versin diye.
+- Erişimciler kopya döndürüyor, işaretçi değil: `FPieSmokeSessionManager`'ın aksine bu kayıt defteri gerçekten çok iş parçacıklı.
+- Pompa şimdilik yalnız saklama yapıyor; iş başına tick geri çağrısı YOK — o Faz 1'in dilimleme adımı.
+- `Result` sözleşme gereği bir kez yazılır: üretici `CompleteJob` sonrası JSON'u değiştirmemeli (anlık görüntüler referansı paylaşıyor).
+- Testler kayıt defterinin boş olduğunu varsayamaz — süreç ömrü boyunca yaşayan singleton; saklama iddiaları `>= N` kullanıyor ve her test kendi işlerini siliyor (`Reset()` çağırmıyor).
+- needs_human: Yalnız kozmetik — Project Settings → Plugins → Monolith → "Jobs" altında üç yeni ayar göründü. Varsayılanları (64 / 900 sn / 1.0 sn) işçi seçti; kullanıcı farklı isteyebilir.
+
+## [00:46] Görev 6 gönderildi — `jobs` namespace (list/poll/cancel/clear)
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı; görev 5'in tam public API'si ve semantik şartları promptuna aynen kondu. Kritik tuzak açıkça yasaklandı: `jobs.clear` asla `Reset()` çağırmayacak (çalışan işleri de uçururdu), `ClearFinishedJobs()` kullanacak.
+- Karar: Modül kararı işçiye bırakıldı ama gerekçelendirme zorunlu tutuldu — 4 aksiyonluk yüzey kendi modülünü hak ediyor mu, yoksa mevcut bir modüle mi girmeli; ölçüt: kodun benzer küçük yüzeylerde ne yaptığı + roadmap'in upstream-merge-çakışması ilkesi. Şablondan sessizce sapmak yasak.
+- Commit: -
+- Sıradaki: Görev 6 raporu.
