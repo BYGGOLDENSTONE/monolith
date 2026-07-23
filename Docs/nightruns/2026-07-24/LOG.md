@@ -115,3 +115,31 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Karar: Faz 1'den (görev 5-6) ÖNCE yapılıyor. Gerekçe: Faz 1'in yeni testleri de aynı paketten geçecek; her koşuda elle fixture silmek gereken bir harness ile ilerlemek hem yavaş hem yanlış alarm üretiyor.
 - Commit: -
 - Sıradaki: Görev 7 raporu.
+
+## [00:34] Görev 7 TAMAM — harness yeniden koşulabilir + gerçek üretim hatası bulundu
+- Durum: done
+- Ne oldu: İşçi görev tanımındaki önermeyi düzeltti: üç değil **iki** ayrı suçlu vardı ve biri test kodu değil ÜRETİM koduydu. `UISpecRoundtripTests.cpp`/`UISpecBuilderTests.cpp` içinde yerel WBP yardımcısı yok; onların fixture'ları üretim yolundan (`FUISpecBuilder::Build` → `GetOrCreateWBP`, `Source/MonolithUI/Private/Spec/UISpecBuilder.cpp:560`) üretiliyormuş. Yani `ui::build_ui_from_spec` + `overwrite=true`, diskte olup açık olmayan bir WBP üzerinde KULLANICI için de fatal veriyordu — sadece harness sıkıntısı değil. `GetOrCreateWBP` artık hem yeniden-kullanım hem oluşturma yolunda `FullyLoad()` çağırıyor. `CreateScratchWBP` ise açık kodlanmış diziyi bırakıp ortak `CreateOrReuseTestWidgetBlueprint` yardımcısının ince sarmalayıcısı oldu (yamalanmadı, kopyası silindi); yardımcıya geriye dönük uyumlu `UWidgetBlueprint** OutWBP = nullptr` çıkış parametresi eklendi (mevcut 12 çağrı yeri dokunulmadı). `Scripts/nightrun/README.md` "Known issues" tazelendi.
+- Karar: Kabul. Kontrol ajanı bu sefer dosya okumakla yetinmedi, **kanıtı kendi üretti**: diskte 53 fixture `.uasset` dururken (temizlik YAPMADAN) paketi kendisi koştu → 177/0/0, logda 177 "Test Completed", teardown sonrası ağaç temiz. Eskiden bu senaryo `passed=0/failed=-1` ile ölüyordu. **verified**: HEAD=36aad13, dört dosya beyanla birebir, `UISpecBuilder.cpp`'ye `FullyLoad()` eklendiği diff'te görüldü.
+- Commit: 36aad13
+- Sıradaki: Görev 5 (FMonolithJobManager çekirdeği) — Faz 1 başlıyor.
+
+### notes_for_next_worker (görev 7 işçisinden, AYNEN)
+- **Genel kural**: bu repoda HER `CreatePackage()`/`GetPackage()` → `SavePackage()` çiftinin arasına `FullyLoad()` gerekiyor. `Source/` altında `CreatePackage|SavePackage` geçen ~70 dosya var; yalnız kapsamdaki MonolithUI olanları denetlendi. Aynı gizli fatal büyük olasılıkla başka yerlerde de duruyor (MonolithGAS, MonolithAI, MonolithBlueprint, MonolithMaterial hepsi grep'e takılıyor). Tarama başlı başına iyi bir görev olur.
+- Bir MonolithUI testi tuhaflaşırsa: eski `CreateScratchWBP` kök ve çocuk için `OnVariableAdded()` çağırıyor ve koşular arası WidgetTree'yi temizlemiyordu; ortak yardımcı tersini yapıyor (`CleanupWidgetTree` çağırıyor, `OnVariableAdded` çağırmıyor). Üç K5 testi widget'ları BP değişkeninden değil WidgetTree adından çözdüğü için yeşil kaldı; gerçek BP değişken bağı gereken yeni test bunu kendisi eklemeli.
+- Paket duvar süresi artık ~18 sn (sıcak DDC, `-nullrhi`) — hızlı dönmesi koşmadı anlamına gelmez, `Test Completed` sayısı 177 olmalı.
+- **Görev 1-3'ten devralınan fixture silme geçici çözümü ARTIK GEÇERSİZ. Yeniden ekleme.** Paket bir daha `passed=0/failed=-1` ile ölürse bu artık GERÇEK yeni bir çökmedir; klasörleri silmek yerine `logTail` okunmalı.
+- needs_human: İstenirse göz kontrolü — `ui::build_ui_from_spec` + `overwrite=true`, diskte olan ama editörde açık olmayan bir widget blueprint üzerinde. Düzeltmenin kullanıcıya bakan yarısı bu ve doğrudan otomasyon testiyle kaplı değil.
+
+## [00:35] Sıraya eklendi — CreatePackage/SavePackage taraması
+- Durum: parked (bilgi amaçlı)
+- Ne oldu: Görev 7'nin bulduğu hata biçimi (eksik `FullyLoad()`) muhtemelen MonolithGAS/AI/Blueprint/Material modüllerinde de var.
+- Karar: Faz 1'in arkasına alındı. Gerekçe: gerçek kullanıcıya bakan fatal riski taşıyor ama Faz 1 gecenin ana hedefi; sıra gelirse yapılır, gelmezse MORNING_REPORT'a takip işi olarak yazılır.
+- Commit: -
+- Sıradaki: -
+
+## [00:36] Görev 5 gönderildi — FMonolithJobManager çekirdeği (Faz 1)
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. Kapsam sıkı çizildi: yalnız çekirdek + testler; aksiyon kaydı, `Monolith.uplugin` namespace girişi ve proxy değişikliği YOK (onlar görev 6 ve sonrası), mevcut hiçbir bloke eden aksiyon henüz dönüştürülmeyecek. Tasarım roadmap'ten aynen verildi (Meyers singleton, `TMap<FString, FMonolithJob>`, TEK `FTSTicker` pompası, monoton id, running/complete/error/cancelled, ilerleme mesajı + JSON sonuç). İşçiye önce `FPieSmokeSessionManager`'ı okuması söylendi — bu görev onun genelleştirmesi, yeni bir şekil icat edilmeyecek.
+- Karar: İki ek şart kondu: (a) bitmiş işler sızmasın diye saklama politikası, limiti hardcoded değil `MonolithSettings` üzerinden (data-driven kuralı); (b) testler deterministik ve görüntüsüz-güvenli olacak — duvar saati beklemesi yok, ticker elle sürülecek.
+- Commit: -
+- Sıradaki: Görev 5 raporu.
