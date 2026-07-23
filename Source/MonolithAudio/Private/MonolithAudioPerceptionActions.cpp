@@ -89,6 +89,11 @@ namespace
 			OutError = TEXT("Asset has no package");
 			return false;
 		}
+		// The sound was reached through FAssetData::GetAsset() / a dotted LoadObject, both of
+		// which return an already-in-memory object without finishing the package load. A package
+		// that has a linker but bHasBeenFullyLoaded == false is REJECTED by SavePackage
+		// ("cannot be saved as it has only been partially loaded", SavePackage2.cpp:226).
+		Pkg->FullyLoad();
 		Pkg->MarkPackageDirty();
 
 		const FString PackageFilename = FPackageName::LongPackageNameToFilename(

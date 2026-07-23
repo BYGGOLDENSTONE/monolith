@@ -324,6 +324,13 @@ FMonolithActionResult FMonolithGASTagActions::HandleAddGameplayTags(const TShare
 
 		if (Added.Num() > 0)
 		{
+			// DataTable may be a pre-existing asset reached through a dotted LoadObject /
+			// FAssetData::GetAsset(), which return an in-memory object without finishing the
+			// package load; SavePackage rejects a partially-loaded package (SavePackage2.cpp:226).
+			if (UPackage* TablePackage = DataTable->GetPackage())
+			{
+				TablePackage->FullyLoad();
+			}
 			DataTable->MarkPackageDirty();
 
 			// Save the package

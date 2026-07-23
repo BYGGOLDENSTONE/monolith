@@ -223,7 +223,11 @@ namespace MonolithCommonUITemplate
                 TEXT("CreatePackage failed for '%s'"), *SavePath));
         }
         // UE 5.7 gotcha: CreatePackage returns an EXISTING in-memory package
-        // if one is loaded. Reject overwrite collisions here so the scaffolder
+        // if one is loaded. That package may be on disk yet only partially loaded (e.g. pulled
+        // in as an import), a state the FindObject check below cannot see and which SavePackage
+        // rejects outright (SavePackage2.cpp:226). Finish the load before either runs.
+        OutPackage->FullyLoad();
+        // Reject overwrite collisions here so the scaffolder
         // refuses to clobber an asset the caller forgot about.
         if (FindObject<UObject>(OutPackage, *OutAssetName))
         {

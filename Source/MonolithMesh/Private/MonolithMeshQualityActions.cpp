@@ -518,6 +518,10 @@ FMonolithActionResult FMonolithMeshQualityActions::GenerateProxyMesh(const TShar
 	{
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package: %s"), *PackageName));
 	}
+	// No existence guard on this path: re-merging to the same save_path is a normal workflow,
+	// so CreatePackage can hand back a package that is on disk and only partially loaded.
+	// SavePackage refuses to write such a package (SavePackage2.cpp:226).
+	Package->FullyLoad();
 
 	// Perform the merge
 	FVector MergedActorPivot = FVector::ZeroVector;
@@ -640,6 +644,10 @@ FMonolithActionResult FMonolithMeshQualityActions::SetupHlod(const TSharedPtr<FJ
 	{
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package: %s"), *PackageName));
 	}
+	// No existence guard on this path: re-authoring the same HLOD layer is a normal workflow,
+	// so CreatePackage can hand back a package that is on disk and only partially loaded.
+	// SavePackage refuses to write such a package (SavePackage2.cpp:226).
+	Package->FullyLoad();
 
 	UHLODLayer* HLODLayer = NewObject<UHLODLayer>(Package, FName(*AssetName), RF_Public | RF_Standalone);
 	if (!HLODLayer)

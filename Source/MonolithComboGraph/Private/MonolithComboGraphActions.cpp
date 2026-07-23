@@ -412,6 +412,10 @@ namespace
 	{
 		if (!Graph) return false;
 		UPackage* Package = Graph->GetPackage();
+		// Graph may have been reached through FAssetData::GetAsset() / a dotted LoadObject,
+		// which hand back an in-memory object without finishing the package load. SavePackage
+		// rejects a partially-loaded package outright (SavePackage2.cpp:226).
+		if (Package) { Package->FullyLoad(); }
 		FString PackageFilename = FPackageName::LongPackageNameToFilename(
 			Package->GetName(), FPackageName::GetAssetPackageExtension());
 		FSavePackageArgs SaveArgs;
@@ -1922,6 +1926,10 @@ FMonolithActionResult FMonolithComboGraphActions::HandleLinkAbilityToComboGraph(
 	FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
 	FKismetEditorUtilities::CompileBlueprint(BP, EBlueprintCompileOptions::SkipGarbageCollection);
 
+	// The ability BP is a pre-existing on-disk asset reached through a dotted load, which can
+	// return an in-memory object without finishing the package load. SavePackage rejects a
+	// partially-loaded package (SavePackage2.cpp:226).
+	BP->GetPackage()->FullyLoad();
 	BP->GetPackage()->MarkPackageDirty();
 
 	// Save

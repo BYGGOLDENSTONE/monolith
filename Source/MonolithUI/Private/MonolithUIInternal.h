@@ -397,6 +397,11 @@ namespace MonolithUIInternal
             OutError = FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package: %s"), *SavePath));
             return nullptr;
         }
+        // No existence guard on this path: CreatePackage returns an EXISTING in-memory package
+        // if one is loaded, and that package may be on disk yet only partially loaded (e.g.
+        // pulled in as an import). SavePackage refuses to write a partially-loaded package
+        // (SavePackage2.cpp:226) — same defect fixed in UISpecBuilder::GetOrCreateWBP (36aad13).
+        Package->FullyLoad();
 
         UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
         Factory->BlueprintType = BPTYPE_Normal;
@@ -432,6 +437,10 @@ namespace MonolithUIInternal
         FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
         FKismetEditorUtilities::CompileBlueprint(WBP);
         FAssetRegistryModule::AssetCreated(WBP);
+        // Reached with both freshly created and pre-existing WBPs; a WBP resolved through a
+        // dotted load / FAssetData::GetAsset() leaves its package only partially loaded, which
+        // SavePackage refuses to write (SavePackage2.cpp:226).
+        WBP->GetPackage()->FullyLoad();
         WBP->GetPackage()->MarkPackageDirty();
         FSavePackageArgs SaveArgs;
         SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;

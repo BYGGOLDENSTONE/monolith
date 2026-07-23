@@ -235,6 +235,12 @@ FMonolithActionResult FMonolithUIActions::HandleCreateWidgetBlueprint(const TSha
             TEXT("Verify the path is writeable and not in use by the editor.")), -32603);
     }
 
+    // CreatePackage returns an EXISTING in-memory package if one is loaded, and that package may
+    // be on disk yet only partially loaded (e.g. pulled in as an import) — a state neither the
+    // FindObject nor the asset-registry check below can see. SavePackage refuses to write a
+    // partially-loaded package (SavePackage2.cpp:226), so finish the load first.
+    Package->FullyLoad();
+
     // Fail cleanly if the asset already exists instead of letting FactoryCreateNew assert.
     if (FindObject<UObject>(Package, *AssetName))
     {

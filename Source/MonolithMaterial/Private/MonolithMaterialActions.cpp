@@ -8162,6 +8162,10 @@ FMonolithActionResult FMonolithMaterialActions::CreatePbrMaterialFromDisk(const 
 	{
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *MaterialPath));
 	}
+	// replace_existing lets this path run over a material that is already on disk, and
+	// CreatePackage hands back the existing (possibly only partially loaded) package.
+	// SavePackage refuses to write a partially-loaded package (SavePackage2.cpp:226).
+	Pkg->FullyLoad();
 
 	UMaterial* NewMat = NewObject<UMaterial>(Pkg, FName(*MaterialAssetName), RF_Public | RF_Standalone | RF_Transactional);
 	if (!NewMat)

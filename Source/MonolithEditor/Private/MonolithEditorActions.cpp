@@ -3450,6 +3450,10 @@ FMonolithActionResult FMonolithEditorActions::HandleImportTexture(
 
 	// Save the package
 	UPackage* Package = Texture->GetOutermost();
+	// bReplaceExisting is set above, so this package can be a texture that already lived on
+	// disk and was only partially loaded (e.g. pulled in as an import of a material).
+	// SavePackage rejects such a package outright (SavePackage2.cpp:226).
+	Package->FullyLoad();
 	FString PackageFilename = FPackageName::LongPackageNameToFilename(
 		Package->GetName(), FPackageName::GetAssetPackageExtension());
 	FSavePackageArgs SaveArgs;
@@ -4792,6 +4796,12 @@ FMonolithActionResult FMonolithEditorActions::HandleSavePackages(const TSharedPt
 			Rows.Add(MakeShared<FJsonValueObject>(Row));
 			continue;
 		}
+
+		// FindPackage above can hand back a package that exists on disk but was only
+		// partially loaded (e.g. pulled in as an import of something else). SavePackage
+		// refuses to write such a package (SavePackage2.cpp:226), so finish the load first.
+		// Deliberately AFTER the dry-run early-out: a dry run must not load anything.
+		Package->FullyLoad();
 
 		FSavePackageArgs SaveArgs;
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;

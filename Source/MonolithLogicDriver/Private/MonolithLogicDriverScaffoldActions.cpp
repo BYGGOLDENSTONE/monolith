@@ -27,6 +27,10 @@ namespace
 	{
 		if (!Asset) return false;
 		UPackage* Package = Asset->GetPackage();
+		// Asset may have been reached through FAssetData::GetAsset() / a dotted LoadObject,
+		// which hand back an in-memory object without finishing the package load. SavePackage
+		// rejects a partially-loaded package outright (SavePackage2.cpp:226).
+		if (Package) { Package->FullyLoad(); }
 		FString PackageFilename = FPackageName::LongPackageNameToFilename(
 			Package->GetName(), FPackageName::GetAssetPackageExtension());
 		FSavePackageArgs SaveArgs;

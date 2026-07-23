@@ -43,6 +43,12 @@ namespace MonolithCommonUI
 		{
 			return FMonolithActionResult::Error(FString::Printf(TEXT("CreateAsset: CreatePackage failed for '%s'"), *FullPath));
 		}
+		// CreatePackage returns an EXISTING in-memory package if one is loaded, and that package
+		// may be on disk yet only partially loaded (e.g. pulled in as an import of something
+		// else) — a state neither collision check below can see. SavePackage refuses to write a
+		// partially-loaded package (SavePackage2.cpp:226), so finish the load before either the
+		// FindObject check or the save runs.
+		Package->FullyLoad();
 
 		// Collision check — both in-memory (FindObject) and on-disk (AssetRegistry).
 		if (FindObject<UObject>(Package, *AssetName))
@@ -140,6 +146,10 @@ namespace MonolithCommonUI
 		FKismetEditorUtilities::CompileBlueprint(Wbp);
 
 		UPackage* Package = Wbp->GetOutermost();
+		// Wbp is a pre-existing on-disk asset; the dotted LoadObject it came from returns an
+		// in-memory object without finishing the package load. SavePackage refuses to write a
+		// partially-loaded package (SavePackage2.cpp:226).
+		Package->FullyLoad();
 		Package->MarkPackageDirty();
 
 		FSavePackageArgs SaveArgs;

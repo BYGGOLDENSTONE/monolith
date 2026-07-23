@@ -189,6 +189,10 @@ FMonolithActionResult FMonolithEditorMapActions::HandleCreateEmptyMap(const TSha
 	// Save the package now so the asset survives editor restart and shows up in
 	// the content browser without a manual save-all step.
 	UPackage* Package = NewWorld->GetOutermost();
+	// DoesAssetExist above is a registry + in-memory check; it cannot see a .umap sitting on
+	// disk whose package is loaded but incomplete. AssetTools::CreateAsset hands such a package
+	// straight back, and SavePackage refuses to write it (SavePackage2.cpp:226).
+	Package->FullyLoad();
 	Package->MarkPackageDirty();
 
 	FSavePackageArgs SaveArgs;

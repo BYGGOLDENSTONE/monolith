@@ -1833,6 +1833,10 @@ FMonolithActionResult FMonolithMeshAudioActions::CreateSurfaceDataTable(const TS
 		Transaction.Cancel();
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *PackagePath));
 	}
+	// There is no existence guard here and save_path defaults to a fixed settings path, so a
+	// second call lands on the table written by the first. CreatePackage returns that existing
+	// package, which may be only partially loaded — SavePackage rejects it (SavePackage2.cpp:226).
+	Package->FullyLoad();
 
 	UDataTable* DataTable = NewObject<UDataTable>(Package, FName(*AssetName), RF_Public | RF_Standalone);
 	DataTable->RowStruct = FAcousticSurfaceRow::StaticStruct();

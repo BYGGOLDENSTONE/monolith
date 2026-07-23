@@ -455,6 +455,10 @@ namespace
         FKismetEditorUtilities::CompileBlueprint(WBP);
         bOutCompiled = true;
 
+        // The WBP was reached through FAssetData::GetAsset() / a dotted LoadObject, both of which
+        // return an already-in-memory object without finishing the package load. SavePackage
+        // rejects a partially-loaded package (SavePackage2.cpp:226).
+        WBP->GetPackage()->FullyLoad();
         WBP->GetPackage()->MarkPackageDirty();
         FSavePackageArgs SaveArgs;
         SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;

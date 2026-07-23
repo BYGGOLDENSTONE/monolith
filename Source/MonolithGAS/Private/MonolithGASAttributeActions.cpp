@@ -857,6 +857,10 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleAddAttribute(const TSh
 		UPackage* OuterPackage = BP->GetOutermost();
 		if (OuterPackage)
 		{
+			// The BP was reached through FAssetData::GetAsset() / a dotted LoadObject, both of
+			// which return an already-in-memory object without finishing the package load.
+			// SavePackage rejects a partially-loaded package (SavePackage2.cpp:226).
+			OuterPackage->FullyLoad();
 			FString PackageFilename = FPackageName::LongPackageNameToFilename(
 				OuterPackage->GetName(), FPackageName::GetAssetPackageExtension());
 			FSavePackageArgs SaveArgs;

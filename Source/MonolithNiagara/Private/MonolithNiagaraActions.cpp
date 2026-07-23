@@ -3571,6 +3571,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddEmitter(const TSharedPtr
 	// Save the package to disk immediately. Without this, the Niagara editor may reload from disk
 	// (which has the old/empty state) and the added emitter will appear to vanish.
 	UPackage* SystemPkg = System->GetPackage();
+	// The system is a pre-existing on-disk asset reached through a dotted load /
+	// FAssetData::GetAsset(), which return an in-memory object without finishing the package
+	// load. SavePackage refuses to write a partially-loaded package (SavePackage2.cpp:226).
+	if (SystemPkg) { SystemPkg->FullyLoad(); }
 	FString PackageFilename;
 	if (SystemPkg && FPackageName::TryConvertLongPackageNameToFilename(SystemPkg->GetName(), PackageFilename, FPackageName::GetAssetPackageExtension()))
 	{
@@ -3857,6 +3861,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleCreateSystem(const TSharedP
 	FString FullPath = PackagePath / AssetName;
 	UPackage* Pkg = CreatePackage(*FullPath);
 	if (!Pkg) return FMonolithActionResult::Error(TEXT("Failed to create package"));
+	// No existence guard on this path, so CreatePackage can hand back a package that is on
+	// disk and only partially loaded (e.g. pulled in as an import). SavePackage refuses to
+	// write such a package (SavePackage2.cpp:226).
+	Pkg->FullyLoad();
 
 	UNiagaraSystem* NS = NewObject<UNiagaraSystem>(Pkg, FName(*AssetName), RF_Public | RF_Standalone | RF_Transactional);
 	if (!NS) return FMonolithActionResult::Error(TEXT("Failed to create system"));
@@ -3906,6 +3914,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleCreateStatelessEmitter(cons
 	FString FullPath = PackagePath / AssetName;
 	UPackage* Pkg = CreatePackage(*FullPath);
 	if (!Pkg) return FMonolithActionResult::Error(TEXT("Failed to create package"));
+	// No existence guard on this path, so CreatePackage can hand back a package that is on
+	// disk and only partially loaded (e.g. pulled in as an import). SavePackage refuses to
+	// write such a package (SavePackage2.cpp:226).
+	Pkg->FullyLoad();
 
 	// Resolve UNiagaraStatelessEmitter's UClass at runtime via FindObject — its
 	// header lives under Niagara/Internal/ which is intentionally not exposed to
@@ -5489,6 +5501,10 @@ FMonolithActionResult FMonolithNiagaraActions::CreateScriptFromHLSL(const TShare
 	FString FullPath = PackagePath / AssetName;
 	UPackage* Pkg = CreatePackage(*FullPath);
 	if (!Pkg) return FMonolithActionResult::Error(TEXT("Failed to create package"));
+	// No existence guard on this path, so CreatePackage can hand back a package that is on
+	// disk and only partially loaded (e.g. pulled in as an import). SavePackage refuses to
+	// write such a package (SavePackage2.cpp:226).
+	Pkg->FullyLoad();
 
 	UNiagaraScript* Script = NewObject<UNiagaraScript>(Pkg, FName(*AssetName), RF_Public | RF_Standalone | RF_Transactional);
 	if (!Script) return FMonolithActionResult::Error(TEXT("Failed to create NiagaraScript"));
@@ -14089,6 +14105,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSaveSystem(const TSharedPtr
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset '%s' is %s — not a Niagara asset type"), *AssetPath, *LoadedAsset->GetClass()->GetName()));
 
 	UPackage* Pkg = LoadedAsset->GetPackage();
+	// LoadedAsset was resolved through FMonolithAssetUtils, whose registry / FindObject tiers
+	// return an in-memory object without finishing the package load. SavePackage refuses to
+	// write a partially-loaded package (SavePackage2.cpp:226).
+	Pkg->FullyLoad();
 	bool bWasDirty = Pkg->IsDirty();
 
 	if (bOnlyIfDirty && !bWasDirty)

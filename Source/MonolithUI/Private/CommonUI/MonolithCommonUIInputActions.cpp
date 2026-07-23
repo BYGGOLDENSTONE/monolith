@@ -124,6 +124,10 @@ namespace MonolithCommonUIInput
 
 		// Save
 		UPackage* Pkg = DT->GetOutermost();
+		// table_path is caller-supplied and may be dotted, in which case LoadObject returns an
+		// already-in-memory object without finishing the package load. SavePackage refuses to
+		// write a partially-loaded package (SavePackage2.cpp:226).
+		Pkg->FullyLoad();
 		FSavePackageArgs SaveArgs;
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 		UPackage::SavePackage(

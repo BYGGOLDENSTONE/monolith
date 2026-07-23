@@ -679,6 +679,10 @@ FMonolithActionResult FMonolithBlueprintCDOActions::HandleSetPropertyAtPath(cons
 		UPackage* Package = TargetObject->GetPackage();
 		if (Package)
 		{
+			// TargetObject came from an existing on-disk asset resolved via a dotted load /
+			// FAssetData::GetAsset(), which return an in-memory object without finishing the
+			// package load. SavePackage rejects a partially-loaded package (SavePackage2.cpp:226).
+			Package->FullyLoad();
 			const FString PackageFilename = FPackageName::LongPackageNameToFilename(
 				Package->GetName(), FPackageName::GetAssetPackageExtension());
 			FSavePackageArgs SaveArgs;

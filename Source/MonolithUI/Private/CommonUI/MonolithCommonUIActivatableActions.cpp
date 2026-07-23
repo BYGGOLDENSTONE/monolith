@@ -55,6 +55,11 @@ namespace MonolithCommonUIActivatable
 		UPackage* Package = CreatePackage(*SavePath);
 		if (!Package)
 			return FMonolithActionResult::Error(FString::Printf(TEXT("CreatePackage failed for '%s'"), *SavePath));
+		// CreatePackage returns an EXISTING in-memory package if one is loaded, and that package
+		// may be on disk yet only partially loaded (e.g. pulled in as an import), which the
+		// FindObject collision check below cannot see. SavePackage refuses to write a
+		// partially-loaded package (SavePackage2.cpp:226).
+		Package->FullyLoad();
 
 		if (FindObject<UObject>(Package, *AssetName))
 			return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *SavePath));

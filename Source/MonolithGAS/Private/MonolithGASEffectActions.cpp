@@ -114,6 +114,10 @@ void MarkModified_Effect(UBlueprint* BP)
 	UPackage* OuterPackage = BP->GetOutermost();
 	if (OuterPackage)
 	{
+		// The BP was reached through FAssetData::GetAsset() / a dotted LoadObject, both of which
+		// return an already-in-memory object without finishing the package load. SavePackage
+		// rejects a package that has a linker but is not fully loaded (SavePackage2.cpp:226).
+		OuterPackage->FullyLoad();
 		const FString PackageFilename = FPackageName::LongPackageNameToFilename(
 			OuterPackage->GetName(), FPackageName::GetAssetPackageExtension());
 		FSavePackageArgs SaveArgs;
