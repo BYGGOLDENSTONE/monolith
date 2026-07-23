@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
 import sys
 import threading
 import time
@@ -34,9 +35,11 @@ MONOLITH_URL = os.environ.get("MONOLITH_URL", "http://localhost:9316/mcp")
 MONOLITH_HEALTH = MONOLITH_URL.replace("/mcp", "/health")
 PROXY_NAME = "monolith-proxy"
 PROXY_VERSION = "1.1.1"
-TIMEOUT = 30.0
 POLL_INTERVAL = 5.0
 POLL_START_DELAY = 3.0
+
+DEFAULT_TIMEOUT = 30.0
+DEFAULT_TIMEOUT_RESEND_GUARD = 60.0
 
 # Track Monolith availability for list_changed notifications
 _monolith_was_up = None
@@ -76,6 +79,107 @@ CORE_QUERY_TOOLS = [
 def _log(msg: str) -> None:
     """Log to stderr (visible in Claude Code debug mode, never interferes with stdio)."""
     print(f"[monolith-proxy] {msg}", file=sys.stderr, flush=True)
+
+
+# ----------------------------------------------------------------------------
+# Timeout configuration (Phase 1 / honest-timeout)
+#
+# TIMEOUT stays at 30 s by default *on purpose*: the editor's MCP server runs
+# every action on a single thread, so waiting longer blocks every other caller
+# too. The right fix for genuinely long work is the job system (`jobs`
+# namespace), not a bigger wall-clock budget. The env var exists for the
+# actions that have not been converted to jobs yet.
+# ----------------------------------------------------------------------------
+
+
+def _env_seconds(name: str, default: float, allow_zero: bool = False) -> float:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        _log(f"Invalid {name}={raw!r} (not a number) -- using default {default}")
+        return default
+    if value < 0 or (value == 0 and not allow_zero):
+        _log(f"Invalid {name}={raw!r} (out of range) -- using default {default}")
+        return default
+    return value
+
+
+TIMEOUT = _env_seconds("MONOLITH_TIMEOUT", DEFAULT_TIMEOUT)
+# 0 disables the guard entirely.
+TIMEOUT_RESEND_GUARD = _env_seconds(
+    "MONOLITH_TIMEOUT_RESEND_GUARD", DEFAULT_TIMEOUT_RESEND_GUARD, allow_zero=True
+)
+
+# Upstream failure classification. A timeout and a dead socket are NOT the same
+# event and must never produce the same message.
+FAIL_TIMEOUT = "timeout"
+FAIL_UNREACHABLE = "unreachable"
+
+# Signature -> monotonic timestamp of the call that timed out. Used only to
+# refuse an identical resend; the proxy itself never retries anything.
+_timed_out_calls = {}
+
+
+def _fmt_seconds(value: float) -> str:
+    return f"{value:g}"
+
+
+def _tool_signature(msg: dict) -> str:
+    """Canonical (name, arguments) signature -- byte-identical to the cpp proxy."""
+    params = msg.get("params")
+    if not isinstance(params, dict):
+        return ""
+    name = params.get("name")
+    if not isinstance(name, str) or not name:
+        return ""
+    args = params.get("arguments")
+    if not isinstance(args, dict):
+        args = {}
+    return _canonical_json({"name": name, "arguments": args})
+
+
+def _timeout_message(tool_name: str) -> str:
+    """Honest timeout text. Kept identical to the cpp proxy, word for word."""
+    return (
+        f"Monolith did not answer within {_fmt_seconds(TIMEOUT)}s. This is a TIMEOUT, not a "
+        f"disconnection: the Unreal Editor is probably still running and still working on "
+        f"'{tool_name}' right now, and its result will be discarded when it finishes.\n"
+        f"Do NOT repeat this call. The editor server is single-threaded, so a retry queues a "
+        f"second copy of the same work behind the first one and makes everything slower. This "
+        f"proxy did not retry it for you.\n"
+        f"To follow the work instead of waiting for it: call jobs_query with action 'list' to see "
+        f"running jobs and their job_id, then jobs_query action 'poll' with that job_id. This "
+        f"proxy does not know a job_id for the call that timed out -- use 'list' to find it. If "
+        f"'list' shows nothing, this action has not been converted to a job yet; wait and check "
+        f"monolith_status before calling anything else.\n"
+        f"Already converted: animation_query action 'rebuild_pose_search_index' is async by "
+        f"default and returns a job_id immediately (pass wait=true for the old blocking call).\n"
+        f"If an unconverted action legitimately needs longer, raise the proxy timeout with the "
+        f"MONOLITH_TIMEOUT environment variable (seconds, currently "
+        f"{_fmt_seconds(TIMEOUT)}) and restart the proxy."
+    )
+
+
+def _timeout_resend_message(tool_name: str, age: float) -> str:
+    return (
+        f"Tool '{tool_name}' with these exact arguments timed out {age:.0f}s ago and was NOT "
+        f"retried. The editor is probably still working on that first request, so sending it "
+        f"again would queue duplicate work on the single-threaded editor server. Check progress "
+        f"with jobs_query action 'list' (then action 'poll' with the job_id it reports), or wait "
+        f"-- this guard expires {max(0.0, TIMEOUT_RESEND_GUARD - age):.0f}s from now. Set "
+        f"MONOLITH_TIMEOUT_RESEND_GUARD=0 to disable it."
+    )
+
+
+def _unreachable_message(tool_name: str) -> str:
+    return (
+        f"Monolith MCP is not available (Unreal Editor not running). The connection was refused "
+        f"or closed, so tool '{tool_name}' did NOT execute -- this is a connection failure, not a "
+        f"timeout, and nothing is running in the background. Start the editor and try again."
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -233,8 +337,20 @@ def _write_call_log_line(msg: dict, resp: str | None, duration_ms: float) -> Non
         _log(f"Call-log write failed: {e}")
 
 
-def _post_monolith(body: str, timeout: float = TIMEOUT) -> str | None:
-    """POST JSON-RPC to Monolith. Returns response body or None on failure."""
+def _post_monolith(body: str, timeout: float | None = None) -> tuple[str | None, str | None]:
+    """POST JSON-RPC to Monolith.
+
+    Returns (response_body, failure_kind). On success failure_kind is None. On
+    failure the body is None and failure_kind is FAIL_TIMEOUT (the editor is
+    alive but slow -- the request is probably still executing over there) or
+    FAIL_UNREACHABLE (nothing answered the socket -- the request never ran).
+
+    This function makes exactly ONE attempt. It has never retried and must
+    never start: retrying a timed-out request stacks duplicate work onto the
+    single-threaded editor server.
+    """
+    if timeout is None:
+        timeout = TIMEOUT
     try:
         req = urllib.request.Request(
             MONOLITH_URL,
@@ -243,10 +359,22 @@ def _post_monolith(body: str, timeout: float = TIMEOUT) -> str | None:
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode("utf-8")
-    except (urllib.error.URLError, OSError, TimeoutError) as e:
+            return resp.read().decode("utf-8"), None
+    except (socket.timeout, TimeoutError) as e:
+        # Read-phase timeout (raised straight through, not wrapped).
+        _log(f"Monolith timed out after {_fmt_seconds(timeout)}s: {e}")
+        return None, FAIL_TIMEOUT
+    except urllib.error.URLError as e:
+        # Connect-phase failures are wrapped by urllib; unwrap to tell a slow
+        # editor apart from a dead one.
+        if isinstance(e.reason, (socket.timeout, TimeoutError)):
+            _log(f"Monolith timed out after {_fmt_seconds(timeout)}s: {e}")
+            return None, FAIL_TIMEOUT
         _log(f"Monolith unreachable: {e}")
-        return None
+        return None, FAIL_UNREACHABLE
+    except OSError as e:
+        _log(f"Monolith unreachable: {e}")
+        return None, FAIL_UNREACHABLE
 
 
 def _write(stdout, msg: str) -> None:
@@ -544,31 +672,52 @@ def handle_ping(msg: dict) -> str:
 def handle_tools_list(msg: dict) -> str:
     """Forward tools/list to Monolith. Stable cached/seed list if down."""
     t0 = time.perf_counter()
-    resp = _post_monolith(json.dumps(msg))
+    resp, failure = _post_monolith(json.dumps(msg))
     duration_ms = (time.perf_counter() - t0) * 1000.0
     _write_call_log_line(msg, resp, duration_ms)
 
     if resp:
         _write_tools_cache(resp)
         return resp
+    if failure == FAIL_TIMEOUT:
+        _log("tools/list timed out (editor busy, not down) -- serving cached/seed list")
     return _fallback_tools_list(msg)
 
 
 def handle_tools_call(msg: dict) -> str:
     """Forward tools/call to Monolith. Graceful error if down."""
+    tool_name = msg.get("params", {}).get("name", "unknown")
+
+    # --- Timed-out resend guard ---
+    # The proxy does not retry. This stops the *client* from blindly resending
+    # a call that is probably still executing inside the editor.
+    sig = _tool_signature(msg)
+    now = time.monotonic()
+    if sig and TIMEOUT_RESEND_GUARD > 0:
+        stamped = _timed_out_calls.get(sig)
+        if stamped is not None:
+            age = now - stamped
+            if age < TIMEOUT_RESEND_GUARD:
+                _log(f"Refusing resend of '{tool_name}' -- it timed out {age:.0f}s ago")
+                return _tool_error(msg.get("id"), _timeout_resend_message(tool_name, age))
+            del _timed_out_calls[sig]
+
     t0 = time.perf_counter()
-    resp = _post_monolith(json.dumps(msg))
+    resp, failure = _post_monolith(json.dumps(msg))
     duration_ms = (time.perf_counter() - t0) * 1000.0
     _write_call_log_line(msg, resp, duration_ms)
 
     if resp:
+        if sig:
+            _timed_out_calls.pop(sig, None)
         return resp
-    tool_name = msg.get("params", {}).get("name", "unknown")
-    return _tool_error(
-        msg.get("id"),
-        f"Monolith MCP is not available (Unreal Editor not running). "
-        f"Tool '{tool_name}' cannot execute. Start the editor and try again.",
-    )
+
+    if failure == FAIL_TIMEOUT:
+        if sig:
+            _timed_out_calls[sig] = time.monotonic()
+        return _tool_error(msg.get("id"), _timeout_message(tool_name))
+
+    return _tool_error(msg.get("id"), _unreachable_message(tool_name))
 
 
 def main() -> None:
@@ -625,14 +774,20 @@ def main() -> None:
         else:
             # Forward unknown methods to Monolith
             t0 = time.perf_counter()
-            resp = _post_monolith(json.dumps(msg))
+            resp, failure = _post_monolith(json.dumps(msg))
             duration_ms = (time.perf_counter() - t0) * 1000.0
             _write_call_log_line(msg, resp, duration_ms)
 
             if resp:
                 response = resp
             elif msg_id is not None:
-                response = _jsonrpc_error(msg_id, -32601, f"Method not found: {method}")
+                if failure == FAIL_TIMEOUT:
+                    # Reporting "method not found" for a timeout is the same
+                    # lie as reporting "editor closed" -- the editor answered
+                    # nothing in time, it did not reject the method.
+                    response = _jsonrpc_error(msg_id, -32000, _timeout_message(method))
+                else:
+                    response = _jsonrpc_error(msg_id, -32601, f"Method not found: {method}")
 
         if response:
             _write(stdout, response)

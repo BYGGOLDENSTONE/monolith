@@ -36,6 +36,7 @@
 #include <optional>
 #include <cstdlib>
 #include <cstdio>
+#include <stdexcept>
 #include <fstream>
 #include <vector>
 #include <iomanip>
@@ -53,10 +54,28 @@ using json = nlohmann::json;
 static const char* PROXY_NAME    = "monolith-proxy";
 static const char* PROXY_VERSION = "1.1.1";
 
-static constexpr double TIMEOUT                  = 30.0;
 static constexpr double POLL_INTERVAL            = 5.0;
 static constexpr double POLL_START_DELAY         = 3.0;
 static constexpr double REPEAT_TOOL_CALL_WINDOW  = 3.0;
+
+// Timeout configuration (Phase 1 / honest-timeout).
+//
+// The default stays at 30 s on purpose: the editor's MCP server runs every
+// action on a single thread, so waiting longer blocks every other caller too.
+// The right fix for genuinely long work is the job system (`jobs` namespace),
+// not a bigger wall-clock budget. The env vars exist for the actions that have
+// not been converted to jobs yet.
+static constexpr double DEFAULT_TIMEOUT               = 30.0;
+static constexpr double DEFAULT_TIMEOUT_RESEND_GUARD  = 60.0;
+
+// Classification of an upstream POST failure. A timeout and a dead socket are
+// NOT the same event and must never produce the same message.
+enum class EPostFailure
+{
+    None,
+    Timeout,      // editor alive but slow -- the request is probably still executing
+    Unreachable,  // nothing answered the socket -- the request never ran
+};
 
 static const std::set<std::string> SUPPORTED_VERSIONS = {
     "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"
@@ -94,10 +113,16 @@ static bool g_split_editor_query = false;
 static std::set<std::string> g_editor_action_allowlist;
 static std::set<std::string> g_editor_action_denylist;
 
+static double g_timeout              = DEFAULT_TIMEOUT;
+static double g_timeout_resend_guard = DEFAULT_TIMEOUT_RESEND_GUARD;
+
 // State tracking
 static std::optional<bool> g_monolith_was_up; // nullopt = unknown
 static std::mutex g_stdout_lock;
 static std::unordered_map<std::string, double> g_recent_tool_calls;
+// Signature -> timestamp of the call that timed out. Used only to refuse an
+// identical resend; the proxy itself never retries anything.
+static std::unordered_map<std::string, double> g_timed_out_tool_calls;
 
 // Call-log state (Phase 4 / survivor F)
 //
@@ -146,6 +171,53 @@ static std::string get_env(const char* name, const char* default_val = "")
 {
     const char* val = std::getenv(name);
     return val ? std::string(val) : std::string(default_val);
+}
+
+// Seconds formatting -- kept byte-identical to the Python proxy so the two
+// implementations emit the same text.
+// Matches Python's f"{value:g}" -- "30", "60", "1.5".
+static std::string fmt_seconds(double value)
+{
+    std::ostringstream ss;
+    ss << value;
+    return ss.str();
+}
+
+// Matches Python's f"{value:.0f}".
+static std::string fmt_whole_seconds(double value)
+{
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(0) << value;
+    return ss.str();
+}
+
+// Read a seconds-valued env var. Falls back to `default_val` when unset,
+// unparseable or out of range. `allow_zero` lets a knob be switched off.
+static double get_env_seconds(const char* name, double default_val, bool allow_zero = false)
+{
+    std::string raw = get_env(name);
+    // trim
+    size_t start = raw.find_first_not_of(" \t\r\n");
+    size_t end   = raw.find_last_not_of(" \t\r\n");
+    if (start == std::string::npos) return default_val;
+    raw = raw.substr(start, end - start + 1);
+
+    try
+    {
+        size_t consumed = 0;
+        double value = std::stod(raw, &consumed);
+        if (consumed != raw.size())
+            throw std::invalid_argument("trailing characters");
+        if (value < 0.0 || (value == 0.0 && !allow_zero))
+            throw std::out_of_range("out of range");
+        return value;
+    }
+    catch (const std::exception&)
+    {
+        std::cerr << "[monolith-proxy] Invalid " << name << "='" << raw
+                  << "' -- using default " << default_val << std::endl;
+        return default_val;
+    }
 }
 
 static std::set<std::string> parse_csv_env(const char* name)
@@ -560,27 +632,58 @@ static std::wstring to_wide(const std::string& s)
     return ws;
 }
 
-// POST JSON to Monolith. Returns response body or empty string on failure.
-static std::string post_monolith(const std::string& body, double timeout_sec = TIMEOUT)
+// Map a WinHTTP error code onto the two honest outcomes.
+static EPostFailure classify_winhttp_error(DWORD err)
 {
+    return (err == ERROR_WINHTTP_TIMEOUT) ? EPostFailure::Timeout : EPostFailure::Unreachable;
+}
+
+// POST JSON to Monolith. Returns response body, or empty string on failure with
+// *out_failure describing WHY (timeout vs unreachable -- never conflate them).
+//
+// Exactly ONE attempt is made. This function has never retried and must never
+// start: retrying a timed-out request stacks duplicate work onto the
+// single-threaded editor server.
+static std::string post_monolith(const std::string& body,
+                                 EPostFailure* out_failure = nullptr,
+                                 double timeout_sec = -1.0)
+{
+    if (out_failure) *out_failure = EPostFailure::None;
+    if (timeout_sec <= 0.0) timeout_sec = g_timeout;
+
+    auto fail = [out_failure, &timeout_sec](EPostFailure why) -> std::string
+    {
+        if (out_failure) *out_failure = why;
+        if (why == EPostFailure::Timeout)
+            log_msg("Monolith timed out after " + fmt_seconds(timeout_sec) + "s");
+        else
+            log_msg("Monolith unreachable");
+        return {};
+    };
+
     HINTERNET hSession = WinHttpOpen(
         L"MonolithProxy/1.0",
         WINHTTP_ACCESS_TYPE_NO_PROXY,
         WINHTTP_NO_PROXY_NAME,
         WINHTTP_NO_PROXY_BYPASS,
         0);
-    if (!hSession) return {};
+    if (!hSession) return fail(EPostFailure::Unreachable);
 
     std::wstring whost = to_wide(g_monolith_host);
     HINTERNET hConnect = WinHttpConnect(hSession, whost.c_str(), (INTERNET_PORT)g_monolith_port, 0);
-    if (!hConnect) { WinHttpCloseHandle(hSession); return {}; }
+    if (!hConnect) { WinHttpCloseHandle(hSession); return fail(EPostFailure::Unreachable); }
 
     std::wstring wpath = to_wide(g_monolith_path_mcp);
     HINTERNET hRequest = WinHttpOpenRequest(
         hConnect, L"POST", wpath.c_str(),
         nullptr, WINHTTP_NO_REFERER,
         WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
-    if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return {}; }
+    if (!hRequest)
+    {
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return fail(EPostFailure::Unreachable);
+    }
 
     // Set timeouts (milliseconds)
     DWORD timeout_ms = (DWORD)(timeout_sec * 1000);
@@ -593,28 +696,55 @@ static std::string post_monolith(const std::string& body, double timeout_sec = T
         (LPVOID)body.c_str(), (DWORD)body.size(),
         (DWORD)body.size(), 0);
 
-    if (!ok || !WinHttpReceiveResponse(hRequest, nullptr))
+    DWORD err = ok ? 0 : GetLastError();
+    if (ok && !WinHttpReceiveResponse(hRequest, nullptr))
+    {
+        ok = FALSE;
+        err = GetLastError();
+    }
+
+    if (!ok)
     {
         WinHttpCloseHandle(hRequest);
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
-        return {};
+        return fail(classify_winhttp_error(err));
     }
 
-    // Read response
+    // Read response. A stall mid-body is a timeout too -- surface it instead of
+    // handing the client a truncated payload.
     std::string response;
-    DWORD bytesAvailable = 0;
-    while (WinHttpQueryDataAvailable(hRequest, &bytesAvailable) && bytesAvailable > 0)
+    bool read_ok = true;
+    DWORD read_err = 0;
+    for (;;)
     {
+        DWORD bytesAvailable = 0;
+        if (!WinHttpQueryDataAvailable(hRequest, &bytesAvailable))
+        {
+            read_ok = false;
+            read_err = GetLastError();
+            break;
+        }
+        if (bytesAvailable == 0)
+            break;
+
         std::string chunk(bytesAvailable, '\0');
         DWORD bytesRead = 0;
-        WinHttpReadData(hRequest, &chunk[0], bytesAvailable, &bytesRead);
+        if (!WinHttpReadData(hRequest, &chunk[0], bytesAvailable, &bytesRead))
+        {
+            read_ok = false;
+            read_err = GetLastError();
+            break;
+        }
         response.append(chunk.c_str(), bytesRead);
     }
 
     WinHttpCloseHandle(hRequest);
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
+
+    if (!read_ok)
+        return fail(classify_winhttp_error(read_err));
 
     return response;
 }
@@ -1002,6 +1132,55 @@ static void record_tool_call(const json& msg)
 }
 
 // ============================================================================
+// Honest failure messages (Phase 1 / honest-timeout)
+//
+// These strings are kept word-for-word identical to Scripts/monolith_proxy.py.
+// If you edit one, edit the other in the same commit.
+// ============================================================================
+
+static std::string timeout_message(const std::string& tool_name)
+{
+    const std::string t = fmt_seconds(g_timeout);
+    return
+        "Monolith did not answer within " + t + "s. This is a TIMEOUT, not a "
+        "disconnection: the Unreal Editor is probably still running and still working on "
+        "'" + tool_name + "' right now, and its result will be discarded when it finishes.\n"
+        "Do NOT repeat this call. The editor server is single-threaded, so a retry queues a "
+        "second copy of the same work behind the first one and makes everything slower. This "
+        "proxy did not retry it for you.\n"
+        "To follow the work instead of waiting for it: call jobs_query with action 'list' to see "
+        "running jobs and their job_id, then jobs_query action 'poll' with that job_id. This "
+        "proxy does not know a job_id for the call that timed out -- use 'list' to find it. If "
+        "'list' shows nothing, this action has not been converted to a job yet; wait and check "
+        "monolith_status before calling anything else.\n"
+        "Already converted: animation_query action 'rebuild_pose_search_index' is async by "
+        "default and returns a job_id immediately (pass wait=true for the old blocking call).\n"
+        "If an unconverted action legitimately needs longer, raise the proxy timeout with the "
+        "MONOLITH_TIMEOUT environment variable (seconds, currently " + t + ") and restart the proxy.";
+}
+
+static std::string timeout_resend_message(const std::string& tool_name, double age)
+{
+    double remaining = g_timeout_resend_guard - age;
+    if (remaining < 0.0) remaining = 0.0;
+    return
+        "Tool '" + tool_name + "' with these exact arguments timed out " + fmt_whole_seconds(age) +
+        "s ago and was NOT retried. The editor is probably still working on that first request, so "
+        "sending it again would queue duplicate work on the single-threaded editor server. Check "
+        "progress with jobs_query action 'list' (then action 'poll' with the job_id it reports), or "
+        "wait -- this guard expires " + fmt_whole_seconds(remaining) + "s from now. Set "
+        "MONOLITH_TIMEOUT_RESEND_GUARD=0 to disable it.";
+}
+
+static std::string unreachable_message(const std::string& tool_name)
+{
+    return
+        "Monolith MCP is not available (Unreal Editor not running). The connection was refused "
+        "or closed, so tool '" + tool_name + "' did NOT execute -- this is a connection failure, "
+        "not a timeout, and nothing is running in the background. Start the editor and try again.";
+}
+
+// ============================================================================
 // State check + health poll
 // ============================================================================
 
@@ -1095,9 +1274,13 @@ static std::string handle_ping(const json& msg)
 static std::string handle_tools_list(const json& msg)
 {
     double t0 = now_seconds();
-    std::string resp = post_monolith(msg.dump());
+    EPostFailure failure = EPostFailure::None;
+    std::string resp = post_monolith(msg.dump(), &failure);
     double duration_ms = (now_seconds() - t0) * 1000.0;
     write_call_log_line(msg, resp, duration_ms);
+
+    if (resp.empty() && failure == EPostFailure::Timeout)
+        log_msg("tools/list timed out (editor busy, not down) -- serving cached/seed list");
 
     if (!resp.empty())
     {
@@ -1239,6 +1422,28 @@ static std::string handle_tools_call(const json& msg)
     json forwarded_msg = msg;
     forwarded_msg["params"] = params;
 
+    // --- Timed-out resend guard ---
+    // The proxy does not retry. This stops the *client* from blindly resending
+    // a call that is probably still executing inside the editor. It is separate
+    // from the 3 s dedup window below, which is far too short to cover a call
+    // that already burned the whole timeout budget.
+    std::string timeout_sig = tool_signature(forwarded_msg);
+    if (!timeout_sig.empty() && g_timeout_resend_guard > 0.0)
+    {
+        auto it = g_timed_out_tool_calls.find(timeout_sig);
+        if (it != g_timed_out_tool_calls.end())
+        {
+            double age = now_seconds() - it->second;
+            if (age < g_timeout_resend_guard)
+            {
+                log_msg("Refusing resend of '" + tool_name + "' -- it timed out " +
+                        fmt_whole_seconds(age) + "s ago");
+                return make_tool_error(id, timeout_resend_message(tool_name, age));
+            }
+            g_timed_out_tool_calls.erase(it);
+        }
+    }
+
     if (is_repeated_tool_call(forwarded_msg))
     {
         return make_tool_error(id,
@@ -1279,16 +1484,26 @@ static std::string handle_tools_call(const json& msg)
     record_tool_call(forwarded_msg);
 
     double t0 = now_seconds();
-    std::string resp = post_monolith(forwarded_msg.dump());
+    EPostFailure failure = EPostFailure::None;
+    std::string resp = post_monolith(forwarded_msg.dump(), &failure);
     double duration_ms = (now_seconds() - t0) * 1000.0;
     write_call_log_line(forwarded_msg, resp, duration_ms);
 
     if (!resp.empty())
+    {
+        if (!timeout_sig.empty())
+            g_timed_out_tool_calls.erase(timeout_sig);
         return resp;
+    }
 
-    return make_tool_error(id,
-        "Monolith MCP is not available (Unreal Editor not running). "
-        "Tool '" + tool_name + "' cannot execute. Start the editor and try again.");
+    if (failure == EPostFailure::Timeout)
+    {
+        if (!timeout_sig.empty())
+            g_timed_out_tool_calls[timeout_sig] = now_seconds();
+        return make_tool_error(id, timeout_message(tool_name));
+    }
+
+    return make_tool_error(id, unreachable_message(tool_name));
 }
 
 // ============================================================================
@@ -1308,6 +1523,11 @@ int main()
     g_split_editor_query   = get_env("MONOLITH_SPLIT_EDITOR_QUERY", "0") == "1";
     g_editor_action_allowlist = parse_csv_env("MONOLITH_EDITOR_ACTION_ALLOWLIST");
     g_editor_action_denylist  = parse_csv_env("MONOLITH_EDITOR_ACTION_DENYLIST");
+
+    g_timeout              = get_env_seconds("MONOLITH_TIMEOUT", DEFAULT_TIMEOUT);
+    // 0 disables the guard entirely.
+    g_timeout_resend_guard = get_env_seconds("MONOLITH_TIMEOUT_RESEND_GUARD",
+                                             DEFAULT_TIMEOUT_RESEND_GUARD, /*allow_zero=*/true);
 
     log_msg(std::string("Started. Forwarding to ") + g_monolith_url);
 
@@ -1370,7 +1590,8 @@ int main()
         {
             // Forward unknown methods to Monolith
             double t0 = now_seconds();
-            std::string resp = post_monolith(msg.dump());
+            EPostFailure failure = EPostFailure::None;
+            std::string resp = post_monolith(msg.dump(), &failure);
             double duration_ms = (now_seconds() - t0) * 1000.0;
             write_call_log_line(msg, resp, duration_ms);
 
@@ -1380,8 +1601,18 @@ int main()
             }
             else if (has_id)
             {
-                response = make_jsonrpc_error(msg["id"], -32601,
-                    "Method not found: " + method);
+                if (failure == EPostFailure::Timeout)
+                {
+                    // Reporting "method not found" for a timeout is the same
+                    // lie as reporting "editor closed" -- the editor answered
+                    // nothing in time, it did not reject the method.
+                    response = make_jsonrpc_error(msg["id"], -32000, timeout_message(method));
+                }
+                else
+                {
+                    response = make_jsonrpc_error(msg["id"], -32601,
+                        "Method not found: " + method);
+                }
             }
             // else: notification with no id, silently drop
         }
