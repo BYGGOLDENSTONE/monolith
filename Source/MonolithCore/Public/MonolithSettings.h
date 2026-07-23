@@ -287,7 +287,15 @@ public:
 	FString SurfaceAcousticsTablePath = TEXT("/Game/Data/DT_SurfaceAcoustics");
 
 	// --- Jobs ---
-	// Retention policy for FMonolithJobManager (Faz 1 job system). Finished jobs
+	// The `jobs` MCP namespace (list / poll / cancel / clear) plus the retention policy
+	// for FMonolithJobManager (Faz 1 job system).
+
+	/** Register the `jobs` namespace (list / poll / cancel / clear) with the MCP tool registry. Turning this off hides the actions; it does NOT stop jobs being created, so long work would become unpollable. Takes effect on next editor restart. */
+	UPROPERTY(config, EditAnywhere, Category="Jobs", DisplayName="Enable Jobs Namespace",
+		meta=(ToolTip="Registers jobs_query actions (list, poll, cancel, clear) over the job manager. Disable only if you do not want asynchronous job control exposed over MCP - jobs are still created and still enforce retention, they just cannot be inspected."))
+	bool bEnableJobs = true;
+
+	// Retention policy applies to every job regardless of bEnableJobs — finished jobs
 	// (complete / error / cancelled) are held so callers can still poll their result,
 	// then evicted by the shared job pump. Running jobs are never evicted.
 

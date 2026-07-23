@@ -5,6 +5,7 @@
 #include "MonolithJobManager.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithCoreTools.h"
+#include "MonolithJobActions.h"
 #include "Actions/MonolithBulkFillActions.h"
 #include "Misc/FileHelper.h"
 #include "GenericPlatform/GenericPlatformProcess.h"
@@ -36,6 +37,19 @@ void FMonolithCoreModule::StartupModule()
 
 	// Register core discovery/status tools
 	RegisterCoreTools();
+
+	// Faz 1 — `jobs` namespace (list/poll/cancel/clear) over FMonolithJobManager.
+	// Registered here, not from a module of its own, because the registry it exposes is a
+	// MonolithCore singleton whose teardown this module already owns (see ShutdownModule)
+	// — full rationale in Private/MonolithJobActions.h. Gated by its own settings toggle,
+	// exactly like every namespace that lives in a feature module.
+	{
+		const UMonolithSettings* JobSettings = UMonolithSettings::Get();
+		if (!JobSettings || JobSettings->bEnableJobs)
+		{
+			FMonolithJobActions::RegisterAll();
+		}
+	}
 
 	// Phase 0: register bulk_fill + describe central dispatchers. Per-namespace
 	// adapters self-register from their own module's StartupModule via
@@ -75,6 +89,7 @@ void FMonolithCoreModule::ShutdownModule()
 	}
 
 	FMonolithToolRegistry::Get().UnregisterNamespace(TEXT("monolith"));
+	FMonolithToolRegistry::Get().UnregisterNamespace(FMonolithJobActions::GetNamespace());
 	FMonolithBulkFillActions::UnregisterAll();
 
 	// Faz 1 — drop every job and uninstall the shared job pump before the module unloads,
