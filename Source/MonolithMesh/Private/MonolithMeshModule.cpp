@@ -13,6 +13,7 @@
 #include "MonolithMeshLevelDesignActions.h"
 #include "MonolithMeshLightActions.h"
 #include "MonolithMeshAtmosphereActions.h"
+#include "MonolithMeshLayoutActions.h"
 #include "MonolithMeshVolumeActions.h"
 #include "MonolithMeshTechArtActions.h"
 #include "MonolithMeshHorrorDesignActions.h"
@@ -70,6 +71,10 @@ void FMonolithMeshModule::StartupModule()
 	FMonolithMeshLightActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithMeshAtmosphereActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithMeshVolumeActions::RegisterActions(FMonolithToolRegistry::Get());
+	// Layout actions register LAST of the placement family: they resolve entries
+	// against the PARAM SCHEMAS of spawn_actor / place_light / spawn_atmosphere,
+	// so those must already be in the registry.
+	FMonolithMeshLayoutActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithMeshTechArtActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithMeshHorrorDesignActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithMeshAdvancedLevelActions::RegisterActions(FMonolithToolRegistry::Get());

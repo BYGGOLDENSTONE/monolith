@@ -847,7 +847,7 @@ Unreal Engine C++ source code navigation. 1M+ symbols indexed. **12 actions** (1
 
 ## mesh
 
-Mesh inspection, scene manipulation, spatial queries, level blockout, GeometryScript, procedural geometry, lighting, audio, performance, mesh import (incl. skeletal + animation, PR #58), and **experimental** procedural town generation. **194 actions** (always registered, in the public count) + 45 experimental town gen (gated on `bEnableProceduralTownGen=true`, default `false`) = 239 when town-gen is on.
+Mesh inspection, scene manipulation, spatial queries, level blockout, GeometryScript, procedural geometry, lighting, atmosphere, **data-driven level layouts**, audio, performance, mesh import (incl. skeletal + animation, PR #58), and **experimental** procedural town generation. **183 actions** (always registered, in the public count — this is the live `Monolith — Mesh module loaded (N actions)` count, verified 2026-07-24) + 45 experimental town gen (gated on `bEnableProceduralTownGen=true`, default `false`).
 
 > For full param schemas, call `describe_query("action_schema", target_namespace="mesh", target_action="<name>")` (or `monolith_discover("mesh", detail=true)`). Plain `monolith_discover("mesh")` is terse — names + one-line descriptions only. The action surface is too broad for full enumeration — see categories below.
 
@@ -862,6 +862,8 @@ Mesh inspection, scene manipulation, spatial queries, level blockout, GeometrySc
 | Level analysis | `analyze_sightlines`, `find_hiding_spots`, `find_ambush_points`, `analyze_choke_points`, `analyze_escape_routes`, `classify_zone_tension`, `analyze_pacing_curve`, `find_dead_ends`, `validate_path_width`, `validate_navigation_complexity`, `analyze_visual_contrast`, `find_rest_points`, `validate_interactive_reach`, `generate_accessibility_report` |
 | Performance | `get_region_performance`, `estimate_placement_cost`, `find_overdraw_hotspots`, `analyze_shadow_cost`, `get_triangle_budget`, `analyze_texel_density`, `analyze_material_cost_in_region`, `analyze_lightmap_density`, `find_instancing_candidates`, `convert_to_hism`, `setup_hlod`, `analyze_texture_budget`, `generate_proxy_mesh` |
 | Lighting | `place_light` (directional/point/spot/rect/**sky**, `preset` + reflection `properties`), `set_light_properties`, `get_light_properties`, `list_light_presets`, `sample_light_levels`, `find_dark_corners`, `analyze_light_transitions`, `get_light_coverage`, `suggest_light_placement` |
+| Atmosphere / GI | `spawn_atmosphere` (`post_process` / `height_fog` / `sky_atmosphere`), `set_atmosphere_properties`, `get_atmosphere_properties`, `list_atmosphere_presets`, `get_lumen_settings`, `set_lumen_settings` |
+| Level layouts (data-driven) | `list_level_layouts`, `describe_level_layout`, `apply_level_layout`, `remove_level_layout`, `save_level_layout` — see below |
 | Audio | `get_audio_volumes`, `get_surface_materials`, `estimate_footstep_sound`, `analyze_room_acoustics`, `analyze_sound_propagation`, `find_loud_surfaces`, `find_sound_paths`, `can_ai_hear_from`, `get_stealth_map`, `find_quiet_path`, `suggest_audio_volumes`, `create_audio_volume`, `set_surface_type` |
 | Decals / scatter | `place_decals`, `place_along_path`, `analyze_prop_density`, `place_storytelling_scene`, `scatter_on_surface`, `scatter_on_walls`, `scatter_on_ceiling`, `randomize_transforms` |
 | Encounter design | `analyze_ai_territory`, `evaluate_safe_room`, `predict_player_paths`, `evaluate_spawn_point`, `suggest_scare_positions`, `evaluate_encounter_pacing`, `design_encounter`, `suggest_patrol_route`, `analyze_level_pacing_structure`, `generate_scare_sequence`, `validate_horror_intensity`, `evaluate_monster_reveal`, `analyze_co_op_balance` |
@@ -887,6 +889,49 @@ Mesh inspection, scene manipulation, spatial queries, level blockout, GeometrySc
 | Debug | Debug views and diagnostics |
 
 > **Experimental — town gen has known geometry issues** (wall misalignment, room separation). Fix Plans v2-v5 applied 27+ fixes but fundamental issues remain. Core mesh actions (sweep walls, auto-collision, proc mesh caching, blueprint prefabs) work fine.
+
+### Data-driven level layouts
+
+A **layout** is a JSON document that says what a level contains. It is the source of
+truth; the actions below only make the level match it.
+
+- **Where the data lives** — built-ins in `Plugins/Monolith/Config/MonolithLevelLayouts.json`;
+  your own in `Plugins/Monolith/Saved/Monolith/LevelLayouts/*.json` (same shape, and a
+  layout id defined there overrides a built-in with that id). Same built-in + user-override
+  mechanism as the light and atmosphere preset libraries.
+- **Shape** — `layouts.<layout_id>` = `{description?, folder?, origin?, entries: [...]}`.
+  An entry is `{id, kind, ...}` where `kind` is `actor` | `light` | `atmosphere`, selecting
+  which existing action places it (`mesh.spawn_actor` / `mesh.place_light` /
+  `mesh.spawn_atmosphere`). **Every other key on the entry is forwarded to that action
+  verbatim**, so anything those actions accept works in a layout — including `preset`,
+  so a layout references a light or atmosphere recipe by name instead of restating its
+  property values. `class` is the layout spelling of `spawn_actor`'s `class_or_mesh`;
+  `name`/`label` set the actor label (default `<layout_id>.<entry_id>`).
+- **Identity** — every placed actor is tagged `Monolith.Layout:<layout_id>` and
+  `Monolith.LayoutEntry:<entry_id>`, and put in outliner folder `Monolith/Layouts/<layout_id>`.
+  The tags are the identity: they survive save/load and are visible in the details panel.
+- **Idempotency** — `apply_level_layout` defaults to `on_existing="replace"`: it removes the
+  previous instance of that layout id and places the document fresh, so applying twice never
+  duplicates and an entry deleted from the document disappears from the level.
+  `on_existing="skip"` places only entries that have no tagged actor yet.
+- **All-or-nothing** — every entry is resolved against the live engine *before* anything is
+  placed (ids, kinds, the target action's required/unknown params, actor classes and mesh
+  assets, light/atmosphere type tokens, preset names and preset/type compatibility). One bad
+  entry fails the call, reports *every* problem, and leaves the level untouched. The previous
+  instance is retired only after the new one is fully built, so a late engine-side refusal
+  also rolls back cleanly.
+- **Cost** — synchronous; measured at ~0.8 ms per entry (150 entries in ~123 ms), so nothing
+  here goes through the job system. `apply_level_layout` returns `elapsed_ms`.
+
+| Action | Purpose |
+|--------|---------|
+| `list_level_layouts` | Every available layout: id, description, entry/kind counts, source file, validity, and how many of its actors are in the open level |
+| `describe_level_layout` | Dry resolve of one layout: per-entry target action, resolved class/type/preset, per-entry problems, which entries are already in the level, and orphan actors no longer in the document |
+| `apply_level_layout` | Place it. `layout` (named) or `layout_json` (a layout you just generated), `origin`, `folder`, `on_existing`, `dry_run` |
+| `remove_level_layout` | Delete every actor tagged with a layout id — works from the tags alone, even if the document changed or is gone |
+| `save_level_layout` | Validate a generated layout and write it to the user layout directory so it becomes a named layout |
+
+Verify the result visually with `editor.capture_viewport`.
 
 See `Plugins/Monolith/Docs/specs/SPEC_MonolithMesh.md` for the full action catalog.
 

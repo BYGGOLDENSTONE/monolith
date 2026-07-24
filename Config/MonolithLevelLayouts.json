@@ -1,0 +1,167 @@
+{
+  "_comment": [
+    "Monolith data-driven level layouts (Goldenstone roadmap, Phase 2).",
+    "A layout is DATA: this file is the source of truth for what gets placed, not C++.",
+    "Built-ins live here (Plugins/Monolith/Config/MonolithLevelLayouts.json).",
+    "Your own layouts go in Plugins/Monolith/Saved/Monolith/LevelLayouts/*.json —",
+    "same shape, and a layout id defined there overrides a built-in of the same name.",
+    "",
+    "Shape:",
+    "  layouts.<layout_id>.description   human text",
+    "  layouts.<layout_id>.folder        outliner folder (default Monolith/Layouts/<layout_id>)",
+    "  layouts.<layout_id>.origin        [x,y,z] offset added to every entry",
+    "  layouts.<layout_id>.entries[]     one placed actor each",
+    "",
+    "Entry:",
+    "  id      REQUIRED, unique inside the layout. This is the identity: re-applying",
+    "          the layout finds the actor tagged Monolith.LayoutEntry:<id> instead of",
+    "          spawning a second one.",
+    "  kind    actor | light | atmosphere. Selects which existing action places it:",
+    "          mesh.spawn_actor / mesh.place_light / mesh.spawn_atmosphere.",
+    "  Every other key is forwarded to that action verbatim, so anything those",
+    "  actions accept works here (preset, properties, extent, mobility, ...).",
+    "  'class' is the layout spelling of spawn_actor's 'class_or_mesh'.",
+    "  'name' / 'label' set the actor label (default '<layout_id>.<entry_id>').",
+    "",
+    "Apply with mesh.apply_level_layout, inspect with mesh.describe_level_layout,",
+    "undo with mesh.remove_level_layout, look at the result with editor.capture_viewport."
+  ],
+
+  "layouts": {
+
+    "demo_lit_room": {
+      "description": "Three-walled 10x10m grey-box room with a golden-hour sun, sky light, two warm practicals, a window rect light, morning haze, sky atmosphere and a cinematic grade. Reference layout: shows geometry, lights and atmosphere composing in one document, all values coming from named presets.",
+      "origin": [0, 0, 0],
+      "entries": [
+        {
+          "id": "floor",
+          "kind": "actor",
+          "class": "/Engine/BasicShapes/Cube.Cube",
+          "location": [0, 0, -25],
+          "scale": [10, 10, 0.5]
+        },
+        {
+          "id": "wall_north",
+          "kind": "actor",
+          "class": "/Engine/BasicShapes/Cube.Cube",
+          "location": [500, 0, 150],
+          "scale": [0.5, 10, 3]
+        },
+        {
+          "id": "wall_south",
+          "kind": "actor",
+          "class": "/Engine/BasicShapes/Cube.Cube",
+          "location": [-500, 0, 150],
+          "scale": [0.5, 10, 3]
+        },
+        {
+          "id": "wall_west",
+          "kind": "actor",
+          "class": "/Engine/BasicShapes/Cube.Cube",
+          "location": [0, -500, 150],
+          "scale": [10, 0.5, 3]
+        },
+        {
+          "id": "sun",
+          "kind": "light",
+          "type": "directional",
+          "preset": "sun_golden_hour",
+          "location": [0, 0, 800],
+          "rotation": [-35, 150, 0]
+        },
+        {
+          "id": "sky_light",
+          "kind": "light",
+          "type": "sky",
+          "preset": "sky_clear_day",
+          "location": [0, 0, 400]
+        },
+        {
+          "id": "lamp_left",
+          "kind": "light",
+          "type": "point",
+          "preset": "bulb_warm_60w",
+          "location": [-250, -250, 260]
+        },
+        {
+          "id": "lamp_right",
+          "kind": "light",
+          "type": "point",
+          "preset": "bulb_warm_60w",
+          "location": [250, 250, 260]
+        },
+        {
+          "id": "window_light",
+          "kind": "light",
+          "type": "rect",
+          "preset": "rect_window_daylight",
+          "location": [0, -470, 200],
+          "rotation": [0, 90, 0]
+        },
+        {
+          "id": "haze",
+          "kind": "atmosphere",
+          "type": "height_fog",
+          "preset": "fog_morning_haze",
+          "location": [0, 0, 0]
+        },
+        {
+          "id": "sky",
+          "kind": "atmosphere",
+          "type": "sky_atmosphere",
+          "preset": "sky_earth_default",
+          "location": [0, 0, 0]
+        },
+        {
+          "id": "grade",
+          "kind": "atmosphere",
+          "type": "post_process",
+          "preset": "look_cinematic",
+          "location": [0, 0, 150],
+          "extent": [700, 700, 400]
+        }
+      ]
+    },
+
+    "three_point_studio": {
+      "description": "Pure lighting layout — no geometry. Classic key / fill / rim rect-light rig plus an overcast sky light for ambient. Drop it on top of whatever is already in the level. Shows a preset being composed with an explicit property override (the fill is the softbox preset dimmed through 'properties').",
+      "origin": [0, 0, 0],
+      "entries": [
+        {
+          "id": "key",
+          "kind": "light",
+          "type": "rect",
+          "preset": "rect_softbox",
+          "location": [300, -300, 260],
+          "rotation": [-15, 135, 0]
+        },
+        {
+          "id": "fill",
+          "kind": "light",
+          "type": "rect",
+          "preset": "rect_softbox",
+          "location": [-320, -280, 200],
+          "rotation": [-5, 45, 0],
+          "properties": {
+            "Intensity": 400.0
+          }
+        },
+        {
+          "id": "rim",
+          "kind": "light",
+          "type": "rect",
+          "preset": "rect_screen_glow",
+          "location": [0, 400, 300],
+          "rotation": [-25, -90, 0]
+        },
+        {
+          "id": "ambient",
+          "kind": "light",
+          "type": "sky",
+          "preset": "sky_overcast",
+          "location": [0, 0, 300]
+        }
+      ]
+    }
+  }
+}

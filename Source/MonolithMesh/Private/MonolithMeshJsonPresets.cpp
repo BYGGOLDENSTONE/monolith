@@ -141,6 +141,45 @@ TMap<FString, FMonolithJsonPreset> FMonolithMeshJsonPresets::LoadPresets(TArray<
 	return Presets;
 }
 
+TMap<FString, FMonolithNamedJsonObject> FMonolithMeshJsonPresets::LoadNamedObjects(
+	const FString& SectionField, TArray<FString>& OutWarnings) const
+{
+	TMap<FString, FMonolithNamedJsonObject> Out;
+
+	TArray<TPair<FString, TSharedPtr<FJsonObject>>> Docs;
+	CollectDocuments(Docs, OutWarnings);
+
+	for (const TPair<FString, TSharedPtr<FJsonObject>>& Doc : Docs)
+	{
+		const TSharedPtr<FJsonObject>* Section = nullptr;
+		if (!Doc.Value->TryGetObjectField(SectionField, Section) || !Section || !(*Section).IsValid())
+		{
+			continue;
+		}
+
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*Section)->Values)
+		{
+			const TSharedPtr<FJsonObject>* Entry = nullptr;
+			if (!Pair.Value.IsValid() || !Pair.Value->TryGetObject(Entry) || !Entry || !(*Entry).IsValid())
+			{
+				OutWarnings.Add(FString::Printf(TEXT("'%s.%s' in '%s' is not an object — skipped"),
+					*SectionField, *Pair.Key, *Doc.Key));
+				continue;
+			}
+
+			FMonolithNamedJsonObject Named;
+			Named.Name = Pair.Key;
+			Named.SourceFile = Doc.Key;
+			Named.Object = *Entry;
+
+			// Later document wins — user files override built-ins by name.
+			Out.Add(Named.Name, MoveTemp(Named));
+		}
+	}
+
+	return Out;
+}
+
 TArray<FString> FMonolithMeshJsonPresets::LoadReadbackKeys(
 	const FString& SectionToken, TArray<FString>& OutWarnings) const
 {

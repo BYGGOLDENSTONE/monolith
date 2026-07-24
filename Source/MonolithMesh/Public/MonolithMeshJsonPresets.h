@@ -33,6 +33,20 @@ struct FMonolithJsonPreset
 };
 
 /**
+ * One named object read out of an arbitrary top-level section of a Monolith JSON
+ * data file (see FMonolithMeshJsonPresets::LoadNamedObjects). Used by data
+ * libraries whose entries are not shaped like a preset — e.g. level layouts,
+ * whose entries are an array rather than a `properties` bag.
+ */
+struct FMonolithNamedJsonObject
+{
+	FString Name;
+	/** Absolute path of the file the object came from (built-in or user override). */
+	FString SourceFile;
+	TSharedPtr<FJsonObject> Object;
+};
+
+/**
  * Generic loader for Monolith JSON preset libraries.
  *
  * Built-in file ships with the plugin (Plugins/Monolith/Config/<File>); user files
@@ -77,9 +91,23 @@ public:
 	 */
 	bool ResolvePreset(const FString& Name, FMonolithJsonPreset& OutPreset, FString& OutError) const;
 
-private:
+	/**
+	 * Read one top-level object section (`{ "<Section>": { "<name>": {...} } }`)
+	 * across every document, with the same built-in-then-user-override precedence
+	 * LoadPresets uses. Entries that are not objects are reported as warnings and
+	 * skipped, never fatal.
+	 *
+	 * This is the shape-agnostic half of the loader: the caller decides what the
+	 * inner object means. Preset libraries use LoadPresets; libraries whose entries
+	 * are not property bags (level layouts) use this.
+	 */
+	TMap<FString, FMonolithNamedJsonObject> LoadNamedObjects(
+		const FString& SectionField, TArray<FString>& OutWarnings) const;
+
+	/** Built-in document first, then user documents in name order. Public so callers can report sources. */
 	void CollectDocuments(TArray<TPair<FString, TSharedPtr<FJsonObject>>>& Out, TArray<FString>& OutWarnings) const;
 
+private:
 	FString BuiltinFileName;
 	FString UserSubDir;
 	FString KindLabel;

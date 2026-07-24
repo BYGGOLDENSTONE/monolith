@@ -291,6 +291,66 @@ FMonolithActionResult FMonolithMeshSceneActions::GetActorInfo(const TSharedPtr<F
 // 2. spawn_actor
 // ============================================================================
 
+bool FMonolithMeshSceneActions::ResolveSpawnTarget(
+	const FString& ClassOrMesh, UClass*& OutClass, UStaticMesh*& OutMesh, FString& OutError)
+{
+	OutClass = nullptr;
+	OutMesh = nullptr;
+	OutError.Reset();
+
+	if (ClassOrMesh.TrimStartAndEnd().IsEmpty())
+	{
+		OutError = TEXT("Empty class_or_mesh — expected an actor class name (e.g. 'PointLight') or a "
+						"StaticMesh asset path starting with '/' (e.g. '/Engine/BasicShapes/Cube.Cube').");
+		return false;
+	}
+
+	if (ClassOrMesh.StartsWith(TEXT("/")))
+	{
+		OutMesh = FMonolithAssetUtils::LoadAssetByPath<UStaticMesh>(ClassOrMesh);
+		if (!OutMesh)
+		{
+			OutError = FString::Printf(TEXT("StaticMesh not found: %s"), *ClassOrMesh);
+			return false;
+		}
+		return true;
+	}
+
+	// Block ABlockingVolume
+	if (ClassOrMesh.Equals(TEXT("BlockingVolume"), ESearchCase::IgnoreCase) ||
+		ClassOrMesh.Equals(TEXT("ABlockingVolume"), ESearchCase::IgnoreCase))
+	{
+		OutError = TEXT("Spawning BlockingVolume is not allowed via Monolith. Use the editor directly.");
+		return false;
+	}
+
+	OutClass = FindFirstObject<UClass>(*ClassOrMesh, EFindFirstObjectOptions::NativeFirst);
+	if (!OutClass)
+	{
+		FString AltName = ClassOrMesh.StartsWith(TEXT("A")) ? ClassOrMesh.Mid(1) : (TEXT("A") + ClassOrMesh);
+		OutClass = FindFirstObject<UClass>(*AltName, EFindFirstObjectOptions::NativeFirst);
+	}
+	if (!OutClass)
+	{
+		OutError = FString::Printf(TEXT("Class not found: %s"), *ClassOrMesh);
+		return false;
+	}
+	if (!OutClass->IsChildOf(AActor::StaticClass()))
+	{
+		OutError = FString::Printf(TEXT("Class '%s' is not an Actor class"), *ClassOrMesh);
+		OutClass = nullptr;
+		return false;
+	}
+	if (OutClass->IsChildOf(ABlockingVolume::StaticClass()))
+	{
+		OutClass = nullptr;
+		OutError = TEXT("Spawning BlockingVolume is not allowed via Monolith. Use the editor directly.");
+		return false;
+	}
+
+	return true;
+}
+
 FMonolithActionResult FMonolithMeshSceneActions::SpawnActor(const TSharedPtr<FJsonObject>& Params)
 {
 	FString ClassOrMesh;
@@ -326,41 +386,11 @@ FMonolithActionResult FMonolithMeshSceneActions::SpawnActor(const TSharedPtr<FJs
 	// Validate inputs before opening a transaction
 	UStaticMesh* MeshToSpawn = nullptr;
 	UClass* ClassToSpawn = nullptr;
-
-	if (ClassOrMesh.StartsWith(TEXT("/")))
 	{
-		MeshToSpawn = FMonolithAssetUtils::LoadAssetByPath<UStaticMesh>(ClassOrMesh);
-		if (!MeshToSpawn)
+		FString ResolveError;
+		if (!ResolveSpawnTarget(ClassOrMesh, ClassToSpawn, MeshToSpawn, ResolveError))
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("StaticMesh not found: %s"), *ClassOrMesh));
-		}
-	}
-	else
-	{
-		// Block ABlockingVolume
-		if (ClassOrMesh.Equals(TEXT("BlockingVolume"), ESearchCase::IgnoreCase) ||
-			ClassOrMesh.Equals(TEXT("ABlockingVolume"), ESearchCase::IgnoreCase))
-		{
-			return FMonolithActionResult::Error(TEXT("Spawning BlockingVolume is not allowed via Monolith. Use the editor directly."));
-		}
-
-		ClassToSpawn = FindFirstObject<UClass>(*ClassOrMesh, EFindFirstObjectOptions::NativeFirst);
-		if (!ClassToSpawn)
-		{
-			FString AltName = ClassOrMesh.StartsWith(TEXT("A")) ? ClassOrMesh.Mid(1) : (TEXT("A") + ClassOrMesh);
-			ClassToSpawn = FindFirstObject<UClass>(*AltName, EFindFirstObjectOptions::NativeFirst);
-		}
-		if (!ClassToSpawn)
-		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Class not found: %s"), *ClassOrMesh));
-		}
-		if (!ClassToSpawn->IsChildOf(AActor::StaticClass()))
-		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Class '%s' is not an Actor class"), *ClassOrMesh));
-		}
-		if (ClassToSpawn->IsChildOf(ABlockingVolume::StaticClass()))
-		{
-			return FMonolithActionResult::Error(TEXT("Spawning BlockingVolume is not allowed via Monolith. Use the editor directly."));
+			return FMonolithActionResult::Error(ResolveError);
 		}
 	}
 
