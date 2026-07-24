@@ -729,20 +729,31 @@ bool FMonolithMeshLayoutActions::CaptureActors(
 					*EntryId, *Why));
 			}
 
-			// spawn_volume's `properties` are curated snake_case aliases, not
-			// UPROPERTY names, so reflection cannot read them back. Say so instead of
-			// pretending the entry is complete — but only for the types that HAVE
-			// such keys, taken from spawn_volume's own table.
-			FString ClassError;
-			UClass* VolumeClass = FMonolithMeshVolumeActions::ResolveVolumeClass(VolumeToken, ClassError);
-			const TArray<FString> Curated = FMonolithMeshVolumeActions::GetHonouredVolumePropertyKeys(VolumeClass);
-			if (Curated.Num() > 0)
+			// spawn_volume's `properties` is a REFLECTION channel now (its curated
+			// snake_case aliases are still accepted on the way in, but they are
+			// translated to the UPROPERTY names they mean), so a volume reads back
+			// exactly like a light or an actor does: an allowlist that lives in data,
+			// plus the differs-from-the-archetype filter. The allowlist section is
+			// `readback.volume_<type>` in Config/MonolithLevelLayouts.json — a type
+			// with no section simply captures no properties, which is the honest
+			// answer for a trigger or a blocking volume.
+			TSharedPtr<FJsonObject> VolumeBag = MakeShared<FJsonObject>();
+			TArray<FString> VolumeKeyWarnings;
+			const TArray<FString> VolumeKeys =
+				LoadCaptureKeys(FString::Printf(TEXT("volume_%s"), *VolumeToken), VolumeKeyWarnings);
+			OutResult.Warnings.Append(VolumeKeyWarnings);
+
+			FReadRequest VolumeRead;
+			VolumeRead.Struct = Actor->GetClass();
+			VolumeRead.Container = Actor;
+			VolumeRead.Archetype = Actor->GetArchetype();
+			VolumeRead.Owner = Actor;
+			VolumeRead.WhatLabel = FString::Printf(TEXT("%s volume"), *VolumeToken);
+			ReadAllowlisted(
+				VolumeRead, VolumeKeys, Options.bIncludeDefaults, EntryId, VolumeBag, OutResult.Warnings);
+			if (VolumeBag->Values.Num() > 0)
 			{
-				OutResult.Warnings.Add(FString::Printf(
-					TEXT("'%s': a '%s' volume also has the curated setting(s) [%s]. Those are spawn_volume aliases "
-						 "rather than UPROPERTY names, so capture cannot read them back — if you changed any of "
-						 "them, add a \"properties\" object to this entry by hand."),
-					*EntryId, *VolumeToken, *FString::Join(Curated, TEXT(", "))));
+				Entry->SetObjectField(TEXT("properties"), VolumeBag);
 			}
 			bScaleMatters = true;
 		}
@@ -782,17 +793,28 @@ bool FMonolithMeshLayoutActions::CaptureActors(
 			else
 			{
 				UClass* ActorClass = Actor->GetClass();
-				if (ActorClass->ClassGeneratedBy != nullptr || !ActorClass->HasAnyClassFlags(CLASS_Native))
+				const bool bBlueprintClass =
+					ActorClass->ClassGeneratedBy != nullptr || !ActorClass->HasAnyClassFlags(CLASS_Native);
+				if (bBlueprintClass)
 				{
-					OutResult.Skipped.Add({ ActorName, ActorClassName, FString::Printf(
-						TEXT("'%s' is a Blueprint class. A layout names actor classes by short name, which only "
-							 "resolves when that Blueprint already happens to be loaded, so the entry would be "
-							 "unreliable. Place this actor by hand, or spawn it with mesh.spawn_actor."),
-						*ActorClassName) });
-					UsedIds.Remove(EntryId);
-					continue;
+					// A Blueprint is named by its OBJECT PATH, which mesh.spawn_actor
+					// resolves without the Blueprint having to be loaded first. (A short
+					// name would not: that is why this used to be a refusal.) The only
+					// Blueprint left that cannot be expressed is one with no asset path.
+					if (ActorClass->GetPackage() == GetTransientPackage())
+					{
+						OutResult.Skipped.Add({ ActorName, ActorClassName, FString::Printf(
+							TEXT("its class '%s' lives in the transient package, so it has no asset path a layout "
+								 "could name. Save the Blueprint as an asset first."), *ActorClassName) });
+						UsedIds.Remove(EntryId);
+						continue;
+					}
+					Token = ActorClass->GetPathName();
 				}
-				Token = ActorClass->GetName();
+				else
+				{
+					Token = ActorClass->GetName();
+				}
 			}
 
 			// Prove the token round-trips to exactly this actor before writing it.
@@ -1002,8 +1024,9 @@ void FMonolithMeshLayoutActions::RegisterCaptureAction(FMonolithToolRegistry& Re
 			 "list, or the current editor selection. Writes only what differs from each object's default, using "
 			 "the same data-driven read-back property sets as mesh.get_light_properties / "
 			 "mesh.get_atmosphere_properties, and references a light/atmosphere PRESET by name whenever applying "
-			 "that preset would reproduce the live values exactly. Anything the layout format cannot express "
-			 "(Blueprint classes, unsaved meshes, scaled lights, hand-built brushes) is reported as a warning, "
+			 "that preset would reproduce the live values exactly. Blueprint actors are captured by their class "
+			 "object path, so they re-apply without having to be loaded first. Anything the layout format cannot "
+			 "express (unsaved meshes or Blueprints, scaled lights, hand-built brushes) is reported as a warning, "
 			 "never dropped in silence. Pass save=true to write it through mesh.save_level_layout."),
 		FMonolithActionHandler::CreateStatic(&FMonolithMeshLayoutActions::CaptureLevelLayout),
 		FParamSchemaBuilder()

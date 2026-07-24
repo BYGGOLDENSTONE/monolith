@@ -16,8 +16,10 @@ class UWorld;
  * ---------------------------------------------------------------------------
  * WHAT ALREADY EXISTED (verified before writing a line — do not duplicate it)
  * ---------------------------------------------------------------------------
- *   - `mesh.spawn_actor`      — spawn any actor class by name, or a StaticMeshActor
- *                               from a mesh asset path. Generic, one at a time.
+ *   - `mesh.spawn_actor`      — spawn any actor class by name or by object path
+ *                               (Blueprints: '/Game/Props/BP_Barrel'), or a
+ *                               StaticMeshActor from a mesh asset path. Generic, one
+ *                               at a time.
  *                               (It had NO property channel when this file was
  *                               written, which is why `kind: "actor"` could not set
  *                               arbitrary properties. Fixed upstream since: it now
@@ -119,12 +121,17 @@ class UWorld;
  *                     (Mobility, CastShadow, ... — the StaticMeshComponent for a
  *                      mesh path). Both were added to mesh.spawn_actor for this;
  *                      the layout gets them for free because it forwards verbatim.
- *       volume     -> `properties`  = spawn_volume's CURATED keys (damage_per_sec,
- *                     pain_causing, priority, unbound, blend_radius, blend_weight),
- *                     which are aliases rather than UPROPERTY names.
- *   All four are validated in phase 1 against the real engine class (or, for volumes,
- *   against spawn_volume's honoured-key table), so a mistyped property name fails the
- *   apply before anything is placed — see the partial-failure contract below.
+ *       volume     -> `properties`  = UPROPERTYs on the volume ACTOR (DamagePerSec,
+ *                     bPainCausing, Priority, bUnbound, ...). spawn_volume's six
+ *                     original snake_case aliases (damage_per_sec, pain_causing,
+ *                     priority, unbound, blend_radius, blend_weight) are still
+ *                     accepted and mean exactly those properties — they are
+ *                     translated, not deprecated, so old documents keep applying.
+ *                     A CAPTURE writes the canonical spelling, because that is the
+ *                     one reflection can read back.
+ *   All four are validated in phase 1 against the real engine class, so a mistyped
+ *   property name fails the apply before anything is placed — see the partial-failure
+ *   contract below.
  *
  * ---------------------------------------------------------------------------
  * IDENTITY / IDEMPOTENCY
@@ -154,8 +161,8 @@ class UWorld;
  *     kinds, required params of the target action, unknown params, vector shapes,
  *     actor classes and mesh assets, light/atmosphere/volume type tokens, preset
  *     names and preset/type compatibility, and every key of an actor or volume
- *     entry's property bags — the actor bags against the class default object, the
- *     volume bag against spawn_volume's honoured-key table). Any problem fails the
+ *     entry's property bags — all of them against the class default object of the
+ *     class that would be spawned). Any problem fails the
  *     call, reports EVERY failing entry with its reason, and leaves the level
  *     untouched — the common failure (a typo) costs nothing and is reported at once.
  *     Note the entry-level unknown-key check (FMonolithParamSchema::FindUnknownKeys)
@@ -234,19 +241,23 @@ class UWorld;
  *   WHERE THE ROUND TRIP IS LOSSY — the capture SAYS SO, it never drops silently.
  *   Every one of these produces a `warnings` line, and the same list is embedded in
  *   the document under `capture.warnings` so it survives being saved:
- *     - an actor the format cannot express is REFUSED, not half-written: Blueprint
- *       classes (a layout names classes by short name, which only resolves if the
- *       Blueprint happens to be loaded), a StaticMeshActor whose mesh lives in the
- *       transient package, a class name that resolves to a different class. Those
- *       actors come back in `skipped` with a per-actor reason.
+ *     - an actor the format cannot express is REFUSED, not half-written: a
+ *       StaticMeshActor whose mesh lives in the transient package, a Blueprint whose
+ *       generated class lives there (an unsaved Blueprint has no path to name), a
+ *       class name that resolves to a different class. Those actors come back in
+ *       `skipped` with a per-actor reason.
+ *       A saved Blueprint actor is NOT one of them any more: it is captured as
+ *       `class: "/Game/Props/BP_Barrel.BP_Barrel_C"`, the object path mesh.spawn_actor
+ *       resolves without the Blueprint having to be loaded first.
  *     - a light/atmosphere/volume actor with a non-unit scale (place_light,
  *       spawn_atmosphere and spawn_volume have no `scale` parameter).
  *     - a volume brush that is not the box builder those actions create, so its
  *       `extent` cannot be recovered exactly.
- *     - spawn_volume's curated property aliases (damage_per_sec, ...), which are
- *       not UPROPERTY names and therefore cannot be read back through reflection.
  *     - a property whose captured value the write path would refuse (checked with
  *       InspectTree, the same validation the real write runs).
+ *   Volume properties are NOT on that list any more either: spawn_volume's bag became
+ *   a reflection channel, so a volume's UPROPERTYs are read back through
+ *   `readback.volume_<type>` exactly like a light's or an actor's.
  *   A captured document is ALSO resolved through ResolveLayout before it is
  *   returned, so `valid` / `problems` say up front whether it would apply.
  *
@@ -355,6 +366,7 @@ public:
 	 *   actor             UPROPERTYs on the ACTOR                 (-> entry.properties)
 	 *   actor_component   UPROPERTYs on its ROOT COMPONENT        (-> entry.component_properties)
 	 *   atmosphere_actor  actor-level knobs of a post-process volume (-> entry.actor_properties)
+	 *   volume_<type>     UPROPERTYs on a volume ACTOR of that type  (-> entry.properties)
 	 * A name that does not exist on a particular class is skipped, not an error:
 	 * these lists span several classes on purpose (CastShadow exists on a primitive
 	 * root, not on a bare USceneComponent).

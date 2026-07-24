@@ -905,7 +905,11 @@ truth; the actions below only make the level match it.
   `mesh.spawn_atmosphere` / `mesh.spawn_volume`). **Every other key on the entry is forwarded
   to that action verbatim**, so anything those actions accept works in a layout — including
   `preset`, so a layout references a light or atmosphere recipe by name instead of restating
-  its property values. `class` is the layout spelling of `spawn_actor`'s `class_or_mesh`;
+  its property values. `class` is the layout spelling of `spawn_actor`'s `class_or_mesh` and
+  takes three forms: a StaticMesh asset path (`/Engine/BasicShapes/Cube.Cube`), a **class
+  object path** — a Blueprint as `/Game/Props/BP_Barrel` or `/Game/Props/BP_Barrel.BP_Barrel_C`
+  — or a native class name (`PointLight`). Name a Blueprint by path, never by short name: a
+  short name only resolves while that Blueprint is already loaded.
   `name`/`label` set the actor label (default `<layout_id>.<entry_id>`).
 - **Free-form properties per kind** — because forwarding is verbatim, an entry can only set
   what its target action exposes:
@@ -915,10 +919,17 @@ truth; the actions below only make the level match it.
   (UPROPERTYs on its **root component** — `Mobility`, `CastShadow`, … which for a mesh path
   is the StaticMeshComponent). Both bags were added to `mesh.spawn_actor` itself, so they
   work outside layouts too;
-  `volume` → `properties`, which for `spawn_volume` is a **curated key set**, not UPROPERTY
-  names: `damage_per_sec` / `pain_causing` (pain), `priority` (audio), `unbound` /
-  `blend_radius` / `blend_weight` / `priority` (post_process). A key the volume type does not
-  honour is now an **error** — previously it was silently dropped.
+  `volume` → `properties` (UPROPERTYs on the volume **actor** — `DamagePerSec`,
+  `bPainCausing`, `Priority`, `bUnbound`, …). An unknown name is an **error** with a
+  did-you-mean, never a silent drop.
+  **Alias compatibility (deliberate, and it will not be withdrawn):** `spawn_volume`'s
+  `properties` used to be a curated set of six snake_case keys that were *not* UPROPERTY
+  names, which is why nothing could read them back. It is a reflection channel now, and the
+  six aliases are **translated, not removed** — `damage_per_sec` → `DamagePerSec`,
+  `pain_causing` → `bPainCausing`, `priority` → `Priority`, `unbound` → `bUnbound`,
+  `blend_radius` → `BlendRadius`, `blend_weight` → `BlendWeight`. Every existing call and
+  every saved layout keeps working unchanged. Prefer the UPROPERTY spelling in new
+  documents: that is what a capture writes, so capturing an old document upgrades it.
 - **Identity** — every placed actor is tagged `Monolith.Layout:<layout_id>` and
   `Monolith.LayoutEntry:<entry_id>`, and put in outliner folder `Monolith/Layouts/<layout_id>`.
   The tags are the identity: they survive save/load and are visible in the details panel.
@@ -943,7 +954,8 @@ truth; the actions below only make the level match it.
   `actors` list, or the current editor `selection`.
   - *What it writes*: only names on a **data-driven allowlist** (the `readback` sections of
     `MonolithLightPresets.json` / `MonolithAtmospherePresets.json`, plus `readback.actor`,
-    `readback.actor_component` and `readback.atmosphere_actor` in `MonolithLevelLayouts.json`)
+    `readback.actor_component`, `readback.atmosphere_actor` and `readback.volume_<type>` in
+    `MonolithLevelLayouts.json`)
     **and** only where the value differs from the object's archetype. `include_defaults=true`
     disables the second filter. A post-process volume is the exception and is captured by its
     `bOverride_` bits — exactly what is in effect, nothing that is not.
@@ -951,11 +963,16 @@ truth; the actions below only make the level match it.
     **exactly** (checked by running the preset through the real write path into a scratch
     buffer and comparing with `FProperty::Identical`), the entry references the preset by name
     instead of restating its values.
-  - *Honest about loss*: Blueprint classes, meshes that only exist in memory, scaled lights,
-    hand-built brushes and values the write path would refuse are reported in `warnings` /
-    `skipped` and echoed into the document under `capture`, never dropped in silence. The
-    captured document is resolved before it is returned (`valid` / `problems`), and
-    `save=true` writes it through `save_level_layout`.
+  - *Honest about loss*: meshes or Blueprints that only exist in memory (nothing a document
+    could name), scaled lights, hand-built brushes and values the write path would refuse are
+    reported in `warnings` / `skipped` and echoed into the document under `capture`, never
+    dropped in silence. The captured document is resolved before it is returned
+    (`valid` / `problems`), and `save=true` writes it through `save_level_layout`.
+  - *Blueprint actors round-trip*: they used to be refused, because a layout could only name a
+    class by short name and that only resolves while the Blueprint happens to be loaded.
+    `spawn_actor` now takes a class **object path**, so a Blueprint actor is captured as
+    `"class": "/Game/Props/BP_Barrel.BP_Barrel_C"` and re-applies without being loaded first.
+    Volume properties round-trip too, through `readback.volume_<type>`.
   - *One bounded approximation*: transform numbers are written to 6 decimals so documents stay
     diffable. Property values are never rounded.
 - **Fixed in the same pass** — `mesh.place_light` did not honour its own `rotation` parameter

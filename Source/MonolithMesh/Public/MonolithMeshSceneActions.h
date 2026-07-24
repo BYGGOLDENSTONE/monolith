@@ -26,9 +26,19 @@ public:
 	/**
 	 * Resolve a `spawn_actor` style `class_or_mesh` token WITHOUT touching the world.
 	 *
-	 * A token starting with '/' is an asset path and must load as a UStaticMesh
-	 * (spawned as an AStaticMeshActor); anything else is an actor class name, tried
-	 * verbatim then with the 'A' prefix added/removed. Blocking volumes are refused.
+	 * A token starting with '/' is an OBJECT PATH and may be either:
+	 *   - a UStaticMesh asset  -> spawned as an AStaticMeshActor, or
+	 *   - a class: a Blueprint named as '/Game/Props/BP_Barrel' (the UBlueprint, whose
+	 *     GeneratedClass is used) or '/Game/Props/BP_Barrel.BP_Barrel_C' (the generated
+	 *     class itself); a native class path ('/Script/Engine.PointLight') works too.
+	 * Anything else is an actor class NAME, tried verbatim then with the 'A' prefix
+	 * added/removed, and a miss carries did-you-mean candidates.
+	 *
+	 * Blueprints must be named by PATH, never by short name: a short name only resolves
+	 * while that Blueprint happens to be loaded. That is what makes a Blueprint actor
+	 * expressible in a layout document at all, and therefore capturable.
+	 *
+	 * Blocking volumes are refused, and a class that is not an AActor is refused.
 	 *
 	 * Exactly one of OutClass / OutMesh is non-null on success. Returns false with an
 	 * actionable OutError on a miss. Split out of SpawnActor so callers that need to

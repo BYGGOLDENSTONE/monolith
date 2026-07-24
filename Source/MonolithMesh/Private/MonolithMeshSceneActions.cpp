@@ -8,10 +8,12 @@
 #include "MonolithBulkFillTypes.h"
 #include "Reflection/MonolithReflectionWalker.h"
 
+#include "Engine/Blueprint.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/BlockingVolume.h"
 #include "Engine/World.h"
+#include "UObject/UObjectIterator.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "Components/StaticMeshComponent.h"
@@ -79,6 +81,122 @@ namespace SceneActionHelpers
 		}
 	};
 
+	/**
+	 * Levenshtein distance, used only to build a did-you-mean list for a class name
+	 * that did not resolve. Same shape as the property suggester in
+	 * MonolithMeshLightActions.cpp; it is not shared because that one lives in a
+	 * translation-unit-private namespace and hoisting it would touch a file this
+	 * change has no other reason to open.
+	 */
+	int32 EditDistance(const FString& A, const FString& B)
+	{
+		const int32 LenA = A.Len();
+		const int32 LenB = B.Len();
+		if (LenA == 0) { return LenB; }
+		if (LenB == 0) { return LenA; }
+
+		TArray<int32> Prev, Curr;
+		Prev.SetNumUninitialized(LenB + 1);
+		Curr.SetNumUninitialized(LenB + 1);
+		for (int32 j = 0; j <= LenB; ++j) { Prev[j] = j; }
+
+		for (int32 i = 1; i <= LenA; ++i)
+		{
+			Curr[0] = i;
+			for (int32 j = 1; j <= LenB; ++j)
+			{
+				const int32 Cost = (A[i - 1] == B[j - 1]) ? 0 : 1;
+				Curr[j] = FMath::Min3(Curr[j - 1] + 1, Prev[j] + 1, Prev[j - 1] + Cost);
+			}
+			Prev = Curr;
+		}
+		return Prev[LenB];
+	}
+
+	/**
+	 * Actor class names close to Query, best first. Walks the classes that are
+	 * actually loaded — which is exactly the set a class NAME can resolve against, so
+	 * the suggestion can never name something the caller could not then spawn.
+	 */
+	TArray<FString> SuggestActorClassNames(const FString& Query, int32 MaxResults = 5)
+	{
+		TArray<FString> Out;
+		if (Query.IsEmpty())
+		{
+			return Out;
+		}
+
+		struct FCandidate { FString Name; int32 Score; int32 Distance; };
+		TArray<FCandidate> Candidates;
+
+		const FString Lower = Query.ToLower();
+		const int32 Threshold = FMath::Max(2, Lower.Len() / 4);
+
+		for (TObjectIterator<UClass> It; It; ++It)
+		{
+			UClass* Class = *It;
+			if (!Class->IsChildOf(AActor::StaticClass()) || Class->HasAnyClassFlags(CLASS_Abstract))
+			{
+				continue;
+			}
+			const FString Name = Class->GetName();
+			const FString NameLower = Name.ToLower();
+
+			int32 Score = 3;
+			if (NameLower == Lower)                                               { Score = 0; }
+			else if (NameLower.StartsWith(Lower) || Lower.StartsWith(NameLower))  { Score = 1; }
+			else if (NameLower.Contains(Lower) || Lower.Contains(NameLower))      { Score = 2; }
+
+			const int32 Distance = EditDistance(Lower, NameLower);
+			if (Score == 3 && Distance > Threshold)
+			{
+				continue;
+			}
+			Candidates.Add({ Name, Score, Distance });
+		}
+
+		Candidates.Sort([](const FCandidate& A, const FCandidate& B)
+		{
+			if (A.Score != B.Score) { return A.Score < B.Score; }
+			if (A.Distance != B.Distance) { return A.Distance < B.Distance; }
+			return A.Name < B.Name;
+		});
+
+		for (const FCandidate& C : Candidates)
+		{
+			if (Out.Num() >= MaxResults) { break; }
+			Out.Add(C.Name);
+		}
+		return Out;
+	}
+
+	/**
+	 * Everything a spawnable actor class must satisfy, whatever route produced it (a
+	 * class NAME or a Blueprint class PATH). One place, so the two routes cannot
+	 * drift apart on what they refuse.
+	 */
+	bool ValidateSpawnableActorClass(UClass* Class, const FString& Token, FString& OutError)
+	{
+		if (!Class)
+		{
+			OutError = FString::Printf(TEXT("Class not found: %s"), *Token);
+			return false;
+		}
+		if (!Class->IsChildOf(AActor::StaticClass()))
+		{
+			OutError = FString::Printf(
+				TEXT("'%s' resolves to %s, which is not an Actor class and cannot be placed in a level."),
+				*Token, *Class->GetName());
+			return false;
+		}
+		if (Class->IsChildOf(ABlockingVolume::StaticClass()))
+		{
+			OutError = TEXT("Spawning BlockingVolume is not allowed via Monolith. Use the editor directly.");
+			return false;
+		}
+		return true;
+	}
+
 	/** Convert a mobility enum to string */
 	FString MobilityToString(EComponentMobility::Type Mobility)
 	{
@@ -115,8 +233,11 @@ void FMonolithMeshSceneActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Build());
 
 	Registry.RegisterAction(TEXT("mesh"), TEXT("spawn_actor"),
-		TEXT("Spawn an actor in the editor world. Path starting with '/' spawns StaticMeshActor with that mesh; "
-			 "otherwise spawns by class name. Any UPROPERTY can be set at spawn time through two bags: "
+		TEXT("Spawn an actor in the editor world. `class_or_mesh` takes three spellings: a StaticMesh asset path "
+			 "(spawns a StaticMeshActor with that mesh), an object path to a class — a Blueprint as "
+			 "'/Game/Props/BP_Barrel' or '/Game/Props/BP_Barrel.BP_Barrel_C' — or a native class NAME "
+			 "('PointLight'). Name a Blueprint by PATH: a short name only resolves while that Blueprint is "
+			 "already loaded. Any UPROPERTY can be set at spawn time through two bags: "
 			 "`properties` targets the ACTOR (e.g. bEnableAutoLODGeneration, Tags) and `component_properties` "
 			 "targets its ROOT COMPONENT (e.g. Mobility, CastShadow, bReceivesDecals — the StaticMeshComponent "
 			 "for a mesh path). Both are validated against the class BEFORE anything spawns: an unknown name is "
@@ -124,7 +245,9 @@ void FMonolithMeshSceneActions::RegisterActions(FMonolithToolRegistry& Registry)
 			 "no actor behind."),
 		FMonolithActionHandler::CreateStatic(&FMonolithMeshSceneActions::SpawnActor),
 		FParamSchemaBuilder()
-			.Required(TEXT("class_or_mesh"), TEXT("string"), TEXT("Asset path for mesh (starts with '/') or class name"))
+			.Required(TEXT("class_or_mesh"), TEXT("string"),
+				TEXT("StaticMesh asset path ('/Engine/BasicShapes/Cube.Cube'), Blueprint actor class path "
+					 "('/Game/Props/BP_Barrel' or '/Game/Props/BP_Barrel.BP_Barrel_C'), or native class name ('PointLight')"))
 			.Required(TEXT("location"), TEXT("array"), TEXT("World location [x, y, z]"))
 			.Optional(TEXT("rotation"), TEXT("array"), TEXT("Rotation [pitch, yaw, roll]"), TEXT("[0,0,0]"))
 			.Optional(TEXT("scale"), TEXT("array"), TEXT("Scale [x, y, z]"), TEXT("[1,1,1]"))
@@ -594,56 +717,116 @@ bool FMonolithMeshSceneActions::ResolveSpawnTarget(
 	OutMesh = nullptr;
 	OutError.Reset();
 
-	if (ClassOrMesh.TrimStartAndEnd().IsEmpty())
+	const FString Token = ClassOrMesh.TrimStartAndEnd();
+	if (Token.IsEmpty())
 	{
-		OutError = TEXT("Empty class_or_mesh — expected an actor class name (e.g. 'PointLight') or a "
-						"StaticMesh asset path starting with '/' (e.g. '/Engine/BasicShapes/Cube.Cube').");
+		OutError = TEXT("Empty class_or_mesh — expected an actor class name (e.g. 'PointLight'), a "
+						"StaticMesh asset path (e.g. '/Engine/BasicShapes/Cube.Cube') or a Blueprint "
+						"actor class path (e.g. '/Game/Props/BP_Barrel').");
 		return false;
 	}
 
-	if (ClassOrMesh.StartsWith(TEXT("/")))
+	// ------------------------------------------------------------------
+	// An OBJECT PATH: a StaticMesh asset, or a class.
+	//
+	// One generic load answers both spellings of a Blueprint, because that is what
+	// the two paths actually name: the object at '/Game/Props/BP_Barrel' is the
+	// UBlueprint (so its GeneratedClass is what "spawn this" means), while the
+	// object at '/Game/Props/BP_Barrel.BP_Barrel_C' IS the generated class. Native
+	// class paths ('/Script/Engine.PointLight') resolve through the same load.
+	//
+	// Naming a Blueprint by PATH rather than by short name is the whole point: a
+	// short name only resolves while that Blueprint happens to already be loaded,
+	// which is why mesh.capture_level_layout used to refuse Blueprint actors
+	// outright. A path always resolves, so capture can express them.
+	// ------------------------------------------------------------------
+	if (Token.StartsWith(TEXT("/")))
 	{
-		OutMesh = FMonolithAssetUtils::LoadAssetByPath<UStaticMesh>(ClassOrMesh);
-		if (!OutMesh)
+		UObject* Asset = FMonolithAssetUtils::LoadAssetByPath(Token);
+		if (!Asset)
 		{
-			OutError = FString::Printf(TEXT("StaticMesh not found: %s"), *ClassOrMesh);
+			OutError = FString::Printf(
+				TEXT("Nothing found at asset path '%s'. Give a StaticMesh asset path (e.g. "
+					 "'/Engine/BasicShapes/Cube.Cube'), a Blueprint actor class path ('/Game/Props/BP_Barrel' "
+					 "or '/Game/Props/BP_Barrel.BP_Barrel_C'), or a native actor class name (e.g. 'PointLight')."),
+				*Token);
 			return false;
 		}
+
+		if (UStaticMesh* Mesh = Cast<UStaticMesh>(Asset))
+		{
+			OutMesh = Mesh;
+			return true;
+		}
+
+		UClass* Class = Cast<UClass>(Asset);
+		if (!Class)
+		{
+			if (const UBlueprint* Blueprint = Cast<UBlueprint>(Asset))
+			{
+				Class = Blueprint->GeneratedClass;
+				if (!Class)
+				{
+					OutError = FString::Printf(
+						TEXT("Blueprint '%s' has no generated class, so there is nothing to spawn — it has "
+							 "never compiled successfully. Open and compile it, then try again."), *Token);
+					return false;
+				}
+			}
+		}
+		if (!Class)
+		{
+			OutError = FString::Printf(
+				TEXT("Asset '%s' is a %s. mesh.spawn_actor takes a StaticMesh asset path, a Blueprint actor "
+					 "class path, or a native actor class name."), *Token, *Asset->GetClass()->GetName());
+			return false;
+		}
+
+		if (!SceneActionHelpers::ValidateSpawnableActorClass(Class, Token, OutError))
+		{
+			return false;
+		}
+		OutClass = Class;
 		return true;
 	}
 
+	// ------------------------------------------------------------------
+	// A class NAME. Tried verbatim, then with the 'A' prefix added/removed.
+	// ------------------------------------------------------------------
+
 	// Block ABlockingVolume
-	if (ClassOrMesh.Equals(TEXT("BlockingVolume"), ESearchCase::IgnoreCase) ||
-		ClassOrMesh.Equals(TEXT("ABlockingVolume"), ESearchCase::IgnoreCase))
+	if (Token.Equals(TEXT("BlockingVolume"), ESearchCase::IgnoreCase) ||
+		Token.Equals(TEXT("ABlockingVolume"), ESearchCase::IgnoreCase))
 	{
 		OutError = TEXT("Spawning BlockingVolume is not allowed via Monolith. Use the editor directly.");
 		return false;
 	}
 
-	OutClass = FindFirstObject<UClass>(*ClassOrMesh, EFindFirstObjectOptions::NativeFirst);
-	if (!OutClass)
+	UClass* Found = FindFirstObject<UClass>(*Token, EFindFirstObjectOptions::NativeFirst);
+	if (!Found)
 	{
-		FString AltName = ClassOrMesh.StartsWith(TEXT("A")) ? ClassOrMesh.Mid(1) : (TEXT("A") + ClassOrMesh);
-		OutClass = FindFirstObject<UClass>(*AltName, EFindFirstObjectOptions::NativeFirst);
+		const FString AltName = Token.StartsWith(TEXT("A")) ? Token.Mid(1) : (TEXT("A") + Token);
+		Found = FindFirstObject<UClass>(*AltName, EFindFirstObjectOptions::NativeFirst);
 	}
-	if (!OutClass)
+	if (!Found)
 	{
-		OutError = FString::Printf(TEXT("Class not found: %s"), *ClassOrMesh);
-		return false;
-	}
-	if (!OutClass->IsChildOf(AActor::StaticClass()))
-	{
-		OutError = FString::Printf(TEXT("Class '%s' is not an Actor class"), *ClassOrMesh);
-		OutClass = nullptr;
-		return false;
-	}
-	if (OutClass->IsChildOf(ABlockingVolume::StaticClass()))
-	{
-		OutClass = nullptr;
-		OutError = TEXT("Spawning BlockingVolume is not allowed via Monolith. Use the editor directly.");
+		const TArray<FString> Hints = SceneActionHelpers::SuggestActorClassNames(Token);
+		OutError = FString::Printf(
+			TEXT("Class not found: %s.%s A Blueprint class must be named by its asset path "
+				 "('/Game/Props/BP_Barrel'), not by its short name — a short name only resolves while that "
+				 "Blueprint happens to be loaded."),
+			*Token,
+			Hints.Num() > 0
+				? *FString::Printf(TEXT(" Did you mean: %s?"), *FString::Join(Hints, TEXT(", ")))
+				: TEXT(""));
 		return false;
 	}
 
+	if (!SceneActionHelpers::ValidateSpawnableActorClass(Found, Token, OutError))
+	{
+		return false;
+	}
+	OutClass = Found;
 	return true;
 }
 

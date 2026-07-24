@@ -29,9 +29,12 @@
     "  atmosphere  properties           = fields of the atmosphere settings struct",
     "  actor       properties           = UPROPERTYs on the ACTOR",
     "              component_properties = UPROPERTYs on its ROOT COMPONENT",
-    "  volume      properties           = spawn_volume's curated keys only",
-    "              (pain: damage_per_sec/pain_causing, audio: priority,",
-    "               post_process: unbound/blend_radius/blend_weight/priority)",
+    "  volume      properties           = UPROPERTYs on the volume ACTOR",
+    "              (spawn_volume's six original snake_case aliases still work and mean",
+    "               the same properties: damage_per_sec -> DamagePerSec, pain_causing ->",
+    "               bPainCausing, priority -> Priority, unbound -> bUnbound, blend_radius",
+    "               -> BlendRadius, blend_weight -> BlendWeight. Prefer the UPROPERTY",
+    "               spelling in new documents: that is what a capture writes back.)",
     "",
     "Apply with mesh.apply_level_layout, inspect with mesh.describe_level_layout,",
     "undo with mesh.remove_level_layout, look at the result with editor.capture_viewport.",
@@ -72,6 +75,16 @@
       "BlendRadius",
       "BlendWeight"
     ],
+    "volume_pain": [
+      "DamagePerSec",
+      "bPainCausing",
+      "bEntryPain",
+      "PainInterval"
+    ],
+    "volume_audio": [
+      "Priority",
+      "bEnabled"
+    ],
     "_comment": [
       "Capture allowlists. Two rules decide what a capture writes: a name must be",
       "listed here (or in the light/atmosphere readback sets), AND its live value",
@@ -81,6 +94,15 @@
       "'actor' resolves against AActor, 'actor_component' against the root component",
       "(so primitive-only names are simply skipped on a bare USceneComponent root),",
       "'atmosphere_actor' against APostProcessVolume.",
+      "",
+      "'volume_<type>' is the read-back set for a `kind: volume` entry of that type,",
+      "resolved against the volume ACTOR class (volume_pain -> APainCausingVolume,",
+      "volume_audio -> AAudioVolume). A type with no section here captures no",
+      "properties, which is the honest answer for trigger / blocking / kill: nothing",
+      "on them is worth restating. There is deliberately no volume_post_process:",
+      "a post-process volume already classifies as a `kind: atmosphere` entry (its",
+      "settings come from the override bits, its actor knobs from 'atmosphere_actor'),",
+      "so such a section would never be read.",
       "",
       "AActor::Tags is deliberately ABSENT: apply owns the Monolith.Layout /",
       "Monolith.LayoutEntry tags, and capturing them would make a re-applied actor",
@@ -96,7 +118,7 @@
   "layouts": {
 
     "demo_lit_room": {
-      "description": "Three-walled 10x10m grey-box room with a golden-hour sun, sky light, two warm practicals, a window rect light, morning haze, sky atmosphere, a cinematic grade, a movable pedestal that sets UPROPERTYs on both the actor and its component, and a doorway trigger volume. Reference layout: shows geometry, lights, atmosphere, free-form properties and volumes composing in one document, all values coming from named presets.",
+      "description": "Three-walled 10x10m grey-box room with a golden-hour sun, sky light, two warm practicals, a window rect light, morning haze, sky atmosphere, a cinematic grade, a movable pedestal that sets UPROPERTYs on both the actor and its component, a doorway trigger volume and an audio volume that sets a UPROPERTY of its own. Reference layout: shows geometry, lights, atmosphere, free-form properties on actors AND volumes, and volumes composing in one document, all values coming from named presets.",
       "origin": [0, 0, 0],
       "entries": [
         {
@@ -148,6 +170,16 @@
           "type": "trigger",
           "location": [-500, 0, 100],
           "extent": [60, 200, 110]
+        },
+        {
+          "id": "room_audio",
+          "kind": "volume",
+          "type": "audio",
+          "location": [0, 0, 150],
+          "extent": [520, 520, 200],
+          "properties": {
+            "Priority": 5.0
+          }
         },
         {
           "id": "sun",

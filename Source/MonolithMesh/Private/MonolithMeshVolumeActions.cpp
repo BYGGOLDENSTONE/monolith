@@ -1,8 +1,11 @@
 #include "MonolithMeshVolumeActions.h"
 #include "MonolithMeshUtils.h"
+#include "MonolithMeshLightActions.h"
+#include "MonolithMeshSceneActions.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+#include "Reflection/MonolithReflectionWalker.h"
 
 #include "Engine/World.h"
 #include "Engine/TriggerVolume.h"
@@ -49,13 +52,21 @@ namespace VolumeActionHelpers
 		return Arr;
 	}
 
-	/** Scoped undo transaction */
+	/**
+	 * Scoped undo transaction that respects FMonolithMeshSceneActions::bBatchTransactionActive.
+	 *
+	 * The flag matters now that spawn_volume can CANCEL: inside mesh.batch_execute or
+	 * mesh.apply_level_layout the transaction belongs to the caller, and cancelling it
+	 * from a nested action would throw away the caller's whole batch. Every other
+	 * scoped-transaction helper in this module already respected it; this one did not,
+	 * which was harmless only because nothing here used to roll back.
+	 */
 	struct FScopedMeshTransaction
 	{
 		bool bOwnsTransaction;
 
 		FScopedMeshTransaction(const FText& Description)
-			: bOwnsTransaction(true)
+			: bOwnsTransaction(!FMonolithMeshSceneActions::bBatchTransactionActive)
 		{
 			if (GEditor)
 			{
@@ -149,45 +160,103 @@ UClass* FMonolithMeshVolumeActions::ResolveVolumeClass(const FString& TypeStr, F
 }
 
 // ============================================================================
-// spawn_volume's `properties` bag — curated keys, strictly checked
+// spawn_volume's `properties` bag — a REFLECTION channel with curated aliases
 //
-// This bag predates the reflection channel and its keys are hand-mapped aliases
-// (`damage_per_sec` -> APainCausingVolume::DamagePerSec), so FMonolithReflectionWalker
-// cannot validate it. Until this commit an unrecognised key was SILENTLY DROPPED,
-// which is fine for a one-shot call the caller can re-read but not for a layout
-// document: mesh.apply_level_layout would report having applied a `volume` entry
-// whose properties never landed. The table below is the single source of truth for
-// what the handler below actually reads, and it is checked before anything spawns.
+// HISTORY, because the shape only makes sense with it. This bag started as a
+// hand-written table of six snake_case aliases (`damage_per_sec` ->
+// APainCausingVolume::DamagePerSec) read by a chain of if-statements. Those keys
+// are not UPROPERTY names, so nothing could read them back: mesh.capture_level_layout
+// had to warn "this volume also has curated settings I cannot see" and a volume with
+// properties could not survive a capture -> re-apply round trip. That is the last
+// place in the layout system where the document was not the truth.
+//
+// The fix is to make the bag what every other property bag in this plugin already is
+// — FMonolithReflectionWalker over the volume ACTOR — and to KEEP THE ALIASES WORKING
+// by translating them to the UPROPERTY names they always meant. The alternative,
+// deleting the aliases, would break every existing caller and every saved layout
+// document for no gain: the mapping below is six lines, and a call that used to work
+// keeps working, byte for byte, on the same volume.
+//
+// Consequences, all deliberate:
+//   - `properties` now accepts ANY UPROPERTY on the volume actor, not six names. That
+//     is the same surface mesh.place_light and mesh.spawn_actor already expose, and it
+//     is validated the same way (unknown name -> error with did-you-mean, nothing
+//     spawned, never a silent drop).
+//   - the write goes through Modify + PreEditChange + PostEditChangeProperty, i.e. the
+//     details-panel path. For AAudioVolume::Priority that is strictly better than the
+//     old SetPriority() call: AAudioVolume::PostEditChangeProperty re-sorts
+//     World->AudioVolumes and updates the proxy exactly like SetPriority does.
+//   - capture writes the CANONICAL names (DamagePerSec, not damage_per_sec), because
+//     that is what reflection reads back. A captured document therefore re-captures
+//     identically, which is the whole point.
 // ============================================================================
 
-TArray<FString> FMonolithMeshVolumeActions::GetHonouredVolumePropertyKeys(const UClass* VolumeClass)
+const TArray<FMonolithMeshVolumeActions::FVolumePropertyAlias>&
+FMonolithMeshVolumeActions::GetVolumePropertyAliases()
 {
+	// One flat table, not a per-class one: `priority` means Priority on both an audio
+	// volume and a post-process volume, and an alias whose property does not exist on
+	// the volume class in hand is rejected by reflection anyway.
+	static const TArray<FVolumePropertyAlias> Aliases = {
+		{ TEXT("damage_per_sec"), TEXT("DamagePerSec") },
+		{ TEXT("pain_causing"),   TEXT("bPainCausing") },
+		{ TEXT("priority"),       TEXT("Priority")     },
+		{ TEXT("unbound"),        TEXT("bUnbound")     },
+		{ TEXT("blend_radius"),   TEXT("BlendRadius")  },
+		{ TEXT("blend_weight"),   TEXT("BlendWeight")  },
+	};
+	return Aliases;
+}
+
+FString FMonolithMeshVolumeActions::CanonicalVolumePropertyName(const FString& Key)
+{
+	for (const FVolumePropertyAlias& Alias : GetVolumePropertyAliases())
+	{
+		if (Key.Equals(Alias.Alias, ESearchCase::IgnoreCase))
+		{
+			return Alias.Property;
+		}
+	}
+	return Key;
+}
+
+TSharedPtr<FJsonObject> FMonolithMeshVolumeActions::TranslateVolumeProperties(
+	const TSharedPtr<FJsonObject>& InBag)
+{
+	TSharedPtr<FJsonObject> Out = MakeShared<FJsonObject>();
+	if (!InBag.IsValid())
+	{
+		return Out;
+	}
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : InBag->Values)
+	{
+		Out->SetField(CanonicalVolumePropertyName(Pair.Key), Pair.Value);
+	}
+	return Out;
+}
+
+TArray<FString> FMonolithMeshVolumeActions::GetHonouredVolumePropertyKeys(UClass* VolumeClass)
+{
+	// Derived from the class, not restated per class: an alias is offered exactly when
+	// the property it means really exists on this volume. Adding an alias above is
+	// therefore the only edit an alias ever needs.
 	TArray<FString> Keys;
 	if (!VolumeClass)
 	{
 		return Keys;
 	}
-	if (VolumeClass->IsChildOf(APainCausingVolume::StaticClass()))
+	for (const FVolumePropertyAlias& Alias : GetVolumePropertyAliases())
 	{
-		Keys.Add(TEXT("damage_per_sec"));
-		Keys.Add(TEXT("pain_causing"));
-	}
-	if (VolumeClass->IsChildOf(AAudioVolume::StaticClass()))
-	{
-		Keys.Add(TEXT("priority"));
-	}
-	if (VolumeClass->IsChildOf(APostProcessVolume::StaticClass()))
-	{
-		Keys.Add(TEXT("unbound"));
-		Keys.Add(TEXT("blend_radius"));
-		Keys.Add(TEXT("blend_weight"));
-		Keys.Add(TEXT("priority"));
+		if (FMonolithReflectionWalker::FindPropertyForwarding(VolumeClass, Alias.Property))
+		{
+			Keys.AddUnique(Alias.Alias);
+		}
 	}
 	return Keys;
 }
 
 bool FMonolithMeshVolumeActions::ValidateVolumeProperties(
-	const UClass* VolumeClass, const TSharedPtr<FJsonObject>& Params, FString& OutError)
+	UClass* VolumeClass, const TSharedPtr<FJsonObject>& Params, FString& OutError)
 {
 	OutError.Reset();
 	if (!Params.IsValid() || !Params->HasField(TEXT("properties")))
@@ -199,41 +268,53 @@ bool FMonolithMeshVolumeActions::ValidateVolumeProperties(
 	if (!Params->TryGetObjectField(TEXT("properties"), PropsObj) || !PropsObj || !(*PropsObj).IsValid())
 	{
 		OutError = TEXT("Param 'properties' must be a JSON object of {key: value}, "
-						"e.g. {\"damage_per_sec\": 20} on a pain volume.");
+						"e.g. {\"DamagePerSec\": 20} on a pain volume.");
 		return false;
 	}
-
-	const TArray<FString> Honoured = GetHonouredVolumePropertyKeys(VolumeClass);
-
-	TArray<FString> Unknown;
-	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*PropsObj)->Values)
+	if (!VolumeClass)
 	{
-		bool bFound = false;
-		for (const FString& K : Honoured)
-		{
-			if (Pair.Key.Equals(K, ESearchCase::IgnoreCase)) { bFound = true; break; }
-		}
-		if (!bFound) { Unknown.Add(Pair.Key); }
-	}
-
-	if (Unknown.Num() == 0)
-	{
+		// No class resolved yet — the caller reports that failure on its own.
 		return true;
 	}
 
-	const FString ClassName = VolumeClass ? VolumeClass->GetName() : TEXT("<unknown volume>");
-	OutError = Honoured.Num() > 0
-		? FString::Printf(
-			TEXT("%d unsupported key(s) in `properties` for %s: %s. This volume type honours: %s. "
-				 "Nothing was spawned. For post-process exposure/bloom/grading/Lumen use "
-				 "mesh.spawn_atmosphere type=post_process; for generic actor or component UPROPERTYs use "
-				 "mesh.set_actor_properties."),
-			Unknown.Num(), *ClassName, *FString::Join(Unknown, TEXT(", ")), *FString::Join(Honoured, TEXT(", ")))
-		: FString::Printf(
-			TEXT("%d key(s) in `properties` (%s), but %s honours no `properties` keys at all. Nothing was "
-				 "spawned. Use mesh.set_actor_properties on the spawned volume instead."),
-			Unknown.Num(), *FString::Join(Unknown, TEXT(", ")), *ClassName);
-	return false;
+	// --- 1. Names, judged after alias translation but REPORTED in the caller's own
+	//        spelling: someone who wrote `damage_per_sec` must be told about
+	//        `damage_per_sec`, not about a canonical name they never typed. ---
+	TArray<FString> Unknown;
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*PropsObj)->Values)
+	{
+		const FString Canonical = CanonicalVolumePropertyName(Pair.Key);
+		if (FMonolithReflectionWalker::FindPropertyForwarding(VolumeClass, Canonical))
+		{
+			continue;
+		}
+		const TArray<FString> Hints = FMonolithMeshLightActions::SuggestPropertyNames(VolumeClass, Canonical);
+		Unknown.Add(Hints.Num() > 0
+			? FString::Printf(TEXT("'%s' (did you mean: %s?)"), *Pair.Key, *FString::Join(Hints, TEXT(", ")))
+			: FString::Printf(TEXT("'%s'"), *Pair.Key));
+	}
+
+	if (Unknown.Num() > 0)
+	{
+		const TArray<FString> Aliases = GetHonouredVolumePropertyKeys(VolumeClass);
+		OutError = FString::Printf(
+			TEXT("%d unsupported key(s) in `properties` for %s: %s. Nothing was spawned. `properties` takes any "
+				 "UPROPERTY name on the volume actor%s. For post-process exposure/bloom/grading/Lumen use "
+				 "mesh.spawn_atmosphere type=post_process; read the names a live volume has with "
+				 "mesh.get_actor_properties."),
+			Unknown.Num(), *VolumeClass->GetName(), *FString::Join(Unknown, TEXT(", ")),
+			Aliases.Num() > 0
+				? *FString::Printf(TEXT(", plus the curated aliases [%s]"), *FString::Join(Aliases, TEXT(", ")))
+				: TEXT(""));
+		return false;
+	}
+
+	// --- 2. Values, through the exact coercion the real write runs (against the class
+	//        default object, so nothing is touched). Same helper mesh.spawn_actor uses,
+	//        so the two channels can never disagree about what a value means. ---
+	TSharedPtr<FJsonObject> Probe = MakeShared<FJsonObject>();
+	Probe->SetObjectField(TEXT("properties"), TranslateVolumeProperties(*PropsObj));
+	return FMonolithMeshSceneActions::ValidateSpawnProperties(Probe, VolumeClass, OutError);
 }
 
 // ============================================================================
@@ -285,10 +366,13 @@ void FMonolithMeshVolumeActions::RegisterActions(FMonolithToolRegistry& Registry
 			.Optional(TEXT("name"), TEXT("string"), TEXT("Optional label for the volume actor"))
 			.OptionalAssetPath(TEXT("folder"), TEXT("Actor folder path in the outliner"))
 			.Optional(TEXT("properties"), TEXT("object"),
-				TEXT("Type-specific properties. Honoured keys, per type: pain -> damage_per_sec, pain_causing; "
-					 "audio -> priority; post_process -> unbound, blend_radius, blend_weight, priority. "
-					 "trigger/blocking/kill/nav_modifier honour none. An unlisted key is an ERROR (nothing is "
-					 "spawned), never a silent no-op."))
+				TEXT("UPROPERTYs to set on the volume ACTOR, {name: value} — e.g. {\"DamagePerSec\": 20} on a "
+					 "pain volume. Written by reflection, so any UPROPERTY the volume class has is allowed and "
+					 "mesh.capture_level_layout can read it back. The six original snake_case aliases still "
+					 "work and mean exactly the same properties: damage_per_sec -> DamagePerSec, pain_causing "
+					 "-> bPainCausing, priority -> Priority, unbound -> bUnbound, blend_radius -> BlendRadius, "
+					 "blend_weight -> BlendWeight. An unknown name is an ERROR listing did-you-mean candidates "
+					 "(nothing is spawned), never a silent no-op."))
 			.Build());
 
 	// 2. get_actor_properties
@@ -443,6 +527,29 @@ FMonolithActionResult FMonolithMeshVolumeActions::SpawnVolume(const TSharedPtr<F
 	UBrushComponent* BrushComp = Volume->GetBrushComponent();
 	bool bBrushValid = BrushComp && BrushComp->Brush != nullptr;
 
+	// Free-form property channel — the same reflection write mesh.spawn_actor and
+	// mesh.place_light use, so anything on the volume actor is settable AND readable
+	// back by mesh.capture_level_layout. A rejection rolls the spawn back: destroy
+	// first, then cancel, so the undo buffer never holds a half-configured volume.
+	// Under mesh.batch_execute / mesh.apply_level_layout the transaction belongs to
+	// the caller, so Cancel() is a no-op there and only the destroy runs — which is
+	// what keeps an all-or-nothing layout apply from leaking an actor.
+	TArray<FString> PropsApplied;
+	{
+		const TSharedPtr<FJsonObject>* PropsObj = nullptr;
+		if (Params->TryGetObjectField(TEXT("properties"), PropsObj) && PropsObj && (*PropsObj).IsValid())
+		{
+			FString PropertyError;
+			if (!FMonolithMeshSceneActions::ApplyPropertyTree(
+					Volume, TranslateVolumeProperties(*PropsObj), TEXT("volume"), PropsApplied, PropertyError))
+			{
+				World->DestroyActor(Volume);
+				Transaction.Cancel();
+				return FMonolithActionResult::Error(PropertyError);
+			}
+		}
+	}
+
 	// Set label
 	if (!OptionalName.IsEmpty())
 	{
@@ -459,66 +566,6 @@ FMonolithActionResult FMonolithMeshVolumeActions::SpawnVolume(const TSharedPtr<F
 		Volume->SetFolderPath(FName(TEXT("Volumes")));
 	}
 
-	// Apply type-specific properties
-	const TSharedPtr<FJsonObject>* PropsObj;
-	if (Params->TryGetObjectField(TEXT("properties"), PropsObj))
-	{
-		// Pain volume — damage_per_sec
-		if (APainCausingVolume* PainVol = Cast<APainCausingVolume>(Volume))
-		{
-			double DamagePerSec;
-			if ((*PropsObj)->TryGetNumberField(TEXT("damage_per_sec"), DamagePerSec))
-			{
-				PainVol->DamagePerSec = static_cast<float>(DamagePerSec);
-			}
-			bool bPainCausing;
-			if ((*PropsObj)->TryGetBoolField(TEXT("pain_causing"), bPainCausing))
-			{
-				PainVol->bPainCausing = bPainCausing;
-			}
-			else
-			{
-				// Default to pain-causing if damage_per_sec is set
-				PainVol->bPainCausing = true;
-			}
-		}
-
-		// Audio volume — reverb, priority, etc
-		if (AAudioVolume* AudioVol = Cast<AAudioVolume>(Volume))
-		{
-			double Priority;
-			if ((*PropsObj)->TryGetNumberField(TEXT("priority"), Priority))
-			{
-				AudioVol->SetPriority(static_cast<float>(Priority));
-			}
-		}
-
-		// Post process volume — settings
-		if (APostProcessVolume* PPVol = Cast<APostProcessVolume>(Volume))
-		{
-			bool bUnbound;
-			if ((*PropsObj)->TryGetBoolField(TEXT("unbound"), bUnbound))
-			{
-				PPVol->bUnbound = bUnbound;
-			}
-			double BlendRadius;
-			if ((*PropsObj)->TryGetNumberField(TEXT("blend_radius"), BlendRadius))
-			{
-				PPVol->BlendRadius = static_cast<float>(BlendRadius);
-			}
-			double BlendWeight;
-			if ((*PropsObj)->TryGetNumberField(TEXT("blend_weight"), BlendWeight))
-			{
-				PPVol->BlendWeight = static_cast<float>(BlendWeight);
-			}
-			double PPPriority;
-			if ((*PropsObj)->TryGetNumberField(TEXT("priority"), PPPriority))
-			{
-				PPVol->Priority = static_cast<float>(PPPriority);
-			}
-		}
-	}
-
 	Volume->MarkPackageDirty();
 
 	auto Result = MakeShared<FJsonObject>();
@@ -527,6 +574,10 @@ FMonolithActionResult FMonolithMeshVolumeActions::SpawnVolume(const TSharedPtr<F
 	Result->SetArrayField(TEXT("location"), VolumeActionHelpers::VectorToJsonArray(Volume->GetActorLocation()));
 	Result->SetArrayField(TEXT("extent"), VolumeActionHelpers::VectorToJsonArray(Extent));
 	Result->SetBoolField(TEXT("brush_valid"), bBrushValid);
+
+	TArray<TSharedPtr<FJsonValue>> AppliedArr;
+	for (const FString& Name : PropsApplied) { AppliedArr.Add(MakeShared<FJsonValueString>(Name)); }
+	Result->SetArrayField(TEXT("properties_set"), AppliedArr);
 
 	return FMonolithActionResult::Success(Result);
 }

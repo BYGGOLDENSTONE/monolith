@@ -36,24 +36,55 @@ public:
 	 */
 	static const TArray<FString>& GetVolumeTokens();
 
-	/**
-	 * The keys `spawn_volume`'s `properties` bag actually honours for a volume class.
-	 *
-	 * Unlike mesh.place_light / mesh.spawn_actor, this bag is NOT a reflection channel:
-	 * the keys are curated snake_case aliases (`damage_per_sec`), not UPROPERTY names,
-	 * so the reflection walker cannot validate them. This table is what makes them
-	 * checkable instead of silently ignored.
-	 */
-	static TArray<FString> GetHonouredVolumePropertyKeys(const UClass* VolumeClass);
+	// ------------------------------------------------------------------
+	// `spawn_volume`'s `properties` bag
+	//
+	// It IS a reflection channel (FMonolithReflectionWalker over the volume ACTOR),
+	// exactly like mesh.place_light's and mesh.spawn_actor's. It did not start that
+	// way: it began as six curated snake_case aliases read by hand-written
+	// if-statements, and because those are not UPROPERTY names, nothing could read
+	// them back — mesh.capture_level_layout had to warn that a volume's settings were
+	// invisible to it, so a volume could not survive capture -> re-apply.
+	//
+	// COMPATIBILITY DECISION: the aliases were NOT removed. They are translated to the
+	// properties they always meant (see GetVolumePropertyAliases), so every existing
+	// call and every saved layout document keeps working unchanged, while capture
+	// writes the canonical names that actually round-trip. Deleting a working call
+	// shape to save six lines of mapping would be a worse trade.
+	// ------------------------------------------------------------------
+
+	/** One curated snake_case key and the UPROPERTY it is a spelling of. */
+	struct FVolumePropertyAlias
+	{
+		const TCHAR* Alias;
+		const TCHAR* Property;
+	};
+
+	/** The whole alias table. Adding a row here is the only edit a new alias needs. */
+	static const TArray<FVolumePropertyAlias>& GetVolumePropertyAliases();
+
+	/** Key -> the UPROPERTY name it means. A name that is not an alias is returned as-is. */
+	static FString CanonicalVolumePropertyName(const FString& Key);
+
+	/** A `properties` bag with every alias key renamed to its UPROPERTY name. */
+	static TSharedPtr<FJsonObject> TranslateVolumeProperties(const TSharedPtr<FJsonObject>& InBag);
 
 	/**
-	 * Validate a `properties` bag against a volume class WITHOUT touching the world.
-	 * An unhonoured key is an error listing the keys this volume type does honour —
-	 * a silently dropped key would make mesh.apply_level_layout claim it applied a
-	 * document it did not.
+	 * The curated aliases that are still meaningful on a volume class — i.e. those
+	 * whose UPROPERTY really exists on it. Derived from the class, never restated per
+	 * class, so it cannot drift. Used in error text and in the docs.
+	 */
+	static TArray<FString> GetHonouredVolumePropertyKeys(UClass* VolumeClass);
+
+	/**
+	 * Validate a `properties` bag against a volume class WITHOUT touching the world:
+	 * key names (after alias translation, but reported in the caller's own spelling,
+	 * with did-you-mean) and then values, through the same coercion the real write
+	 * runs. A silently dropped key would make mesh.apply_level_layout claim it applied
+	 * a document it did not.
 	 */
 	static bool ValidateVolumeProperties(
-		const UClass* VolumeClass, const TSharedPtr<FJsonObject>& Params, FString& OutError);
+		UClass* VolumeClass, const TSharedPtr<FJsonObject>& Params, FString& OutError);
 
 private:
 	static FMonolithActionResult SpawnVolume(const TSharedPtr<FJsonObject>& Params);

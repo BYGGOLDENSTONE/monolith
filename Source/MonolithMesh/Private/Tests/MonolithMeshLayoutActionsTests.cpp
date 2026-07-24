@@ -81,6 +81,20 @@
 #include "HAL/FileManager.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
+
+// --- fixture Blueprint construction (see CreateOrReuseTestActorBlueprint) ---
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "Engine/Blueprint.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "GameFramework/PainCausingVolume.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "Kismet2/KismetEditorUtilities.h"
+#include "Misc/PackageName.h"
+#include "Sound/AudioVolume.h"
+#include "UObject/SavePackage.h"
 
 namespace MonolithLayoutTestUtils
 {
@@ -253,6 +267,128 @@ namespace MonolithLayoutTestUtils
 		return nullptr;
 	}
 
+	/** A layout document body serialised to a stable string, for identity comparisons. */
+	static FString Canonicalise(const TSharedPtr<FJsonObject>& InBody)
+	{
+		FString Out;
+		if (!InBody.IsValid())
+		{
+			return Out;
+		}
+		const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Out);
+		FJsonSerializer::Serialize(InBody.ToSharedRef(), Writer);
+		return Out;
+	}
+
+	/** How many actors of exactly this class are in the test world. */
+	static int32 CountActorsOfClass(UClass* Class)
+	{
+		int32 Count = 0;
+		UWorld* World = GetTestWorld();
+		if (!World || !Class)
+		{
+			return Count;
+		}
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (IsValid(*It) && It->GetClass() == Class) { ++Count; }
+		}
+		return Count;
+	}
+
+	/**
+	 * Create (or reclaim) a throwaway ACTOR Blueprint whose ROOT COMPONENT comes from
+	 * the SimpleConstructionScript, and return its generated class.
+	 *
+	 * The SCS root is the POINT, not an implementation detail. A Blueprint built this
+	 * way has NO root component on its class default object, so mesh.spawn_actor cannot
+	 * pre-validate `component_properties` against the CDO and has to defer them to the
+	 * post-spawn write — the one write in the spawn path whose rejection must roll the
+	 * spawn back. Blueprint actors were unreachable until this slice, so that branch had
+	 * never been exercised; the tests below drive it deliberately.
+	 *
+	 * MonolithDev is not assumed to contain any particular Blueprint: the fixture is
+	 * built here, so the suite carries no dependency on project content.
+	 *
+	 * Re-run safety follows MonolithUI::TestUtils::CreateOrReuseTestWidgetBlueprint —
+	 * FullyLoad() before FindObject/SavePackage, or a fixture left on disk by an earlier
+	 * run is only partially loaded and SavePackage is fatal.
+	 */
+	static UClass* CreateOrReuseTestActorBlueprint(const FString& AssetPath, FString& OutError)
+	{
+		OutError.Reset();
+
+		FString PackagePath, AssetName;
+		if (!AssetPath.Split(TEXT("/"), &PackagePath, &AssetName,
+				ESearchCase::IgnoreCase, ESearchDir::FromEnd) || AssetName.IsEmpty())
+		{
+			OutError = FString::Printf(TEXT("Cannot split asset path '%s'"), *AssetPath);
+			return nullptr;
+		}
+
+		UPackage* Package = CreatePackage(*AssetPath);
+		if (!Package)
+		{
+			OutError = FString::Printf(TEXT("CreatePackage failed for '%s'"), *AssetPath);
+			return nullptr;
+		}
+		Package->FullyLoad();
+
+		UBlueprint* BP = FindObject<UBlueprint>(Package, *AssetName);
+		if (!BP)
+		{
+			BP = FKismetEditorUtilities::CreateBlueprint(
+				AActor::StaticClass(), Package, FName(*AssetName), BPTYPE_Normal);
+		}
+		if (!BP)
+		{
+			OutError = FString::Printf(TEXT("CreateBlueprint failed for '%s'"), *AssetPath);
+			return nullptr;
+		}
+
+		if (!BP->SimpleConstructionScript)
+		{
+			OutError = TEXT("the fixture Blueprint has no SimpleConstructionScript");
+			return nullptr;
+		}
+		if (BP->SimpleConstructionScript->GetAllNodes().Num() == 0)
+		{
+			USCS_Node* Node = BP->SimpleConstructionScript->CreateNode(
+				USceneComponent::StaticClass(), TEXT("FixtureRoot"));
+			if (!Node)
+			{
+				OutError = TEXT("could not create the fixture's SCS root node");
+				return nullptr;
+			}
+			BP->SimpleConstructionScript->AddNode(Node);
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
+		}
+
+		FKismetEditorUtilities::CompileBlueprint(BP);
+		FAssetRegistryModule::AssetCreated(BP);
+		Package->MarkPackageDirty();
+
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		const FString Filename = FPackageName::LongPackageNameToFilename(
+			AssetPath, FPackageName::GetAssetPackageExtension());
+		if (!UPackage::SavePackage(Package, BP, *Filename, SaveArgs))
+		{
+			OutError = FString::Printf(TEXT("SavePackage failed for '%s'"), *Filename);
+			return nullptr;
+		}
+
+		if (!BP->GeneratedClass)
+		{
+			OutError = TEXT("the fixture Blueprint compiled to no generated class");
+			return nullptr;
+		}
+		return BP->GeneratedClass;
+	}
+
+	/** The one fixture Blueprint this file uses. */
+	static const TCHAR* FixtureBlueprintPath() { return TEXT("/Game/Tests/Monolith/Mesh/BP_MonolithLayoutFixture"); }
+
 	/** A minimal two-entry layout: one cube-less StaticMeshActor + one warm point light. */
 	static TSharedPtr<FJsonObject> MakeSimpleBody()
 	{
@@ -383,11 +519,22 @@ bool FMonolithMeshLayoutShippedDataTest::RunTest(const FString& /*Parameters*/)
 			FString TypeStr;
 			E.Params->TryGetStringField(TEXT("type"), TypeStr);
 
-			// spawn_volume's `properties` are curated snake_case aliases, not
-			// UPROPERTY names, so there is nothing to look up by reflection. Their
-			// canary is ResolveLayout's own honoured-key check, asserted above.
+			// spawn_volume's `properties` bag is a reflection channel like the others
+			// now, so it gets the same canary — but its keys may be written in the
+			// curated snake_case spelling, which is a legal alias, so they are
+			// translated before being looked up.
 			if (E.KindToken == TEXT("volume"))
 			{
+				const TSharedPtr<FJsonObject>* VolPropsPtr = nullptr;
+				if (!E.Params->TryGetObjectField(TEXT("properties"), VolPropsPtr) || !VolPropsPtr)
+				{
+					continue;
+				}
+				FString VolumeTypeError;
+				UClass* VolumeClass =
+					FMonolithMeshVolumeActions::ResolveVolumeClass(TypeStr, VolumeTypeError);
+				CheckBag(E.EntryId, TEXT("properties"),
+					FMonolithMeshVolumeActions::TranslateVolumeProperties(*VolPropsPtr), VolumeClass);
 				continue;
 			}
 
@@ -1594,6 +1741,53 @@ bool FMonolithMeshLayoutCaptureKeysTest::RunTest(const FString& /*Parameters*/)
 			FMonolithReflectionWalker::FindPropertyForwarding(APostProcessVolume::StaticClass(), Key));
 	}
 
+	// The volume read-back sets are per volume TYPE and resolve against the volume
+	// ACTOR class that type token maps to — so the section name and the type token can
+	// never drift apart without this going red.
+	{
+		const TCHAR* VolumeTypes[] = { TEXT("pain"), TEXT("audio") };
+		for (const TCHAR* Type : VolumeTypes)
+		{
+			FString TypeError;
+			UClass* VolumeClass = FMonolithMeshVolumeActions::ResolveVolumeClass(Type, TypeError);
+			TestNotNull(*FString::Printf(TEXT("volume type '%s' still resolves (%s)"), Type, *TypeError),
+				VolumeClass);
+			if (!VolumeClass) { continue; }
+
+			const TArray<FString> Keys = FMonolithMeshLayoutActions::LoadCaptureKeys(
+				FString::Printf(TEXT("volume_%s"), Type), Warnings);
+			TestTrue(*FString::Printf(TEXT("the shipped `readback.volume_%s` allowlist is not empty"), Type),
+				Keys.Num() > 0);
+			for (const FString& Key : Keys)
+			{
+				TestNotNull(*FString::Printf(TEXT("capture key 'volume_%s.%s' exists on %s"),
+					Type, *Key, *VolumeClass->GetName()),
+					FMonolithReflectionWalker::FindPropertyForwarding(VolumeClass, Key));
+			}
+		}
+	}
+
+	// Every curated spawn_volume alias must still name a real property, or an old
+	// document would apply "successfully" while writing nothing.
+	for (const FMonolithMeshVolumeActions::FVolumePropertyAlias& Alias :
+		FMonolithMeshVolumeActions::GetVolumePropertyAliases())
+	{
+		bool bResolvesSomewhere = false;
+		for (const FString& Type : FMonolithMeshVolumeActions::GetVolumeTokens())
+		{
+			FString TypeError;
+			UClass* VolumeClass = FMonolithMeshVolumeActions::ResolveVolumeClass(Type, TypeError);
+			if (VolumeClass && FMonolithReflectionWalker::FindPropertyForwarding(VolumeClass, Alias.Property))
+			{
+				bResolvesSomewhere = true;
+				break;
+			}
+		}
+		TestTrue(*FString::Printf(
+			TEXT("the curated alias '%s' still names a real UPROPERTY ('%s') on some volume type"),
+			Alias.Alias, Alias.Property), bResolvesSomewhere);
+	}
+
 	// AActor::Tags must NEVER be captured: apply owns the layout tags, and a
 	// captured Tags array would fight the identity mechanism on re-apply.
 	TestFalse(TEXT("AActor::Tags is deliberately absent from the actor allowlist"),
@@ -2283,6 +2477,514 @@ bool FMonolithMeshLayoutCaptureSaveTest::RunTest(const FString& /*Parameters*/)
 	IFileManager::Get().Delete(*FilePath, false, true, true);
 	TestFalse(TEXT("cleanup removed the test layout file"), IFileManager::Get().FileExists(*FilePath));
 	Remove(LayoutId);
+	return true;
+}
+
+// ============================================================================
+// 22. spawn_actor names a class by OBJECT PATH — which is what makes Blueprint
+//     actors expressible at all, and therefore capturable.
+//
+//     Also the one branch that had never been exercised: a Blueprint whose root
+//     component comes from the SimpleConstructionScript has no root on its CDO, so
+//     `component_properties` cannot be pre-validated and falls through to the
+//     post-spawn write. The rollback on THAT path is asserted here.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshSpawnActorByClassPathTest,
+	"Monolith.Mesh.Layouts.SpawnActorByClassPath",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshSpawnActorByClassPathTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	UWorld* World = GetTestWorld();
+	TestNotNull(TEXT("there is an editor world"), World);
+	if (!World) { return false; }
+
+	FString FixtureError;
+	UClass* BPClass = CreateOrReuseTestActorBlueprint(FixtureBlueprintPath(), FixtureError);
+	TestNotNull(*FString::Printf(TEXT("the fixture Blueprint builds (%s)"), *FixtureError), BPClass);
+	if (!BPClass) { return false; }
+
+	// The premise of the whole test: this Blueprint's root really does come from the
+	// SCS, so the CDO has none. If a future engine change makes CDOs carry SCS roots,
+	// this assertion fails and the deferred-validation branch below stops being the
+	// thing under test — which is exactly when someone should be told.
+	AActor* CDO = Cast<AActor>(BPClass->GetDefaultObject());
+	TestNotNull(TEXT("the fixture class has a CDO"), CDO);
+	TestNull(TEXT("PREMISE: an SCS-rooted Blueprint's CDO has no root component"),
+		CDO ? CDO->GetRootComponent() : nullptr);
+
+	const FString ExplicitPath = BPClass->GetPathName();          // /Game/.../BP_X.BP_X_C
+	const FString FriendlyPath = FixtureBlueprintPath();          // /Game/.../BP_X
+
+	// --- ResolveSpawnTarget accepts both spellings and lands on the same class ---
+	{
+		UClass* Cls = nullptr;
+		UStaticMesh* Mesh = nullptr;
+		FString Err;
+		TestTrue(*FString::Printf(TEXT("the generated-class path resolves (%s)"), *Err),
+			FMonolithMeshSceneActions::ResolveSpawnTarget(ExplicitPath, Cls, Mesh, Err));
+		TestEqual(TEXT("and it resolves to the Blueprint's generated class"), Cls, BPClass);
+
+		Cls = nullptr; Mesh = nullptr;
+		TestTrue(*FString::Printf(TEXT("the friendlier Blueprint-asset path resolves too (%s)"), *Err),
+			FMonolithMeshSceneActions::ResolveSpawnTarget(FriendlyPath, Cls, Mesh, Err));
+		TestEqual(TEXT("to exactly the same class"), Cls, BPClass);
+	}
+
+	// --- spawning by the explicit generated-class path ---
+	const int32 Before = CountActorsOfClass(BPClass);
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("class_or_mesh"), ExplicitPath);
+		P->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		P->SetStringField(TEXT("name"), TEXT("MonolithBPPathExplicit"));
+		auto Comp = MakeShared<FJsonObject>();
+		Comp->SetStringField(TEXT("Mobility"), TEXT("Static"));
+		P->SetObjectField(TEXT("component_properties"), Comp);
+
+		FMonolithActionResult R = Exec(TEXT("spawn_actor"), P);
+		TestTrue(FString::Printf(TEXT("spawn_actor accepts a Blueprint class path (%s)"), *R.ErrorMessage),
+			R.bSuccess);
+		TestEqual(TEXT("and one actor of that class appeared"), CountActorsOfClass(BPClass), Before + 1);
+
+		// The deferred `component_properties` write really landed on the SCS root.
+		FString FindError;
+		AActor* Spawned = MonolithMeshUtils::FindActorByName(TEXT("MonolithBPPathExplicit"), FindError);
+		TestNotNull(TEXT("the spawned Blueprint actor is findable"), Spawned);
+		if (Spawned)
+		{
+			TestEqual(TEXT("it is the Blueprint class, not its parent"), Spawned->GetClass(), BPClass);
+			USceneComponent* Root = Spawned->GetRootComponent();
+			TestNotNull(TEXT("the spawned actor DOES have an SCS root"), Root);
+			if (Root)
+			{
+				TestEqual(TEXT("component_properties reached the SCS root after the spawn"),
+					static_cast<int32>(Root->Mobility.GetValue()), static_cast<int32>(EComponentMobility::Static));
+			}
+			World->EditorDestroyActor(Spawned, false);
+		}
+	}
+
+	// --- spawning by the friendlier Blueprint-asset path ---
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("class_or_mesh"), FriendlyPath);
+		P->SetArrayField(TEXT("location"), Vec(50.0, 0.0, 0.0));
+		P->SetStringField(TEXT("name"), TEXT("MonolithBPPathFriendly"));
+		FMonolithActionResult R = Exec(TEXT("spawn_actor"), P);
+		TestTrue(FString::Printf(TEXT("spawn_actor accepts the Blueprint asset path (%s)"), *R.ErrorMessage),
+			R.bSuccess);
+
+		FString FindError;
+		if (AActor* Spawned = MonolithMeshUtils::FindActorByName(TEXT("MonolithBPPathFriendly"), FindError))
+		{
+			TestEqual(TEXT("which spawns the generated class"), Spawned->GetClass(), BPClass);
+			World->EditorDestroyActor(Spawned, false);
+		}
+	}
+
+	// --- THE ROLLBACK ON THE DEFERRED PATH ---------------------------------
+	// `component_properties` could not be checked before the spawn (no CDO root), so
+	// the rejection happens AFTER the actor exists. Nothing may survive it.
+	{
+		const int32 CountBefore = CountActorsOfClass(BPClass);
+
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("class_or_mesh"), ExplicitPath);
+		P->SetArrayField(TEXT("location"), Vec(100.0, 0.0, 0.0));
+		P->SetStringField(TEXT("name"), TEXT("MonolithBPPathRollback"));
+		auto Comp = MakeShared<FJsonObject>();
+		Comp->SetNumberField(TEXT("NoSuchComponentProperty"), 1.0);
+		P->SetObjectField(TEXT("component_properties"), Comp);
+
+		FMonolithActionResult R = Exec(TEXT("spawn_actor"), P);
+		TestFalse(TEXT("a bad component_properties key on an SCS-rooted Blueprint is refused"), R.bSuccess);
+		TestTrue(TEXT("the error names the key that was refused"),
+			R.ErrorMessage.Contains(TEXT("NoSuchComponentProperty")));
+		TestEqual(TEXT("ROLLBACK: the actor the rejected write was spawned for is gone"),
+			CountActorsOfClass(BPClass), CountBefore);
+
+		FString FindError;
+		TestNull(TEXT("and it is not findable by the label it would have got"),
+			MonolithMeshUtils::FindActorByName(TEXT("MonolithBPPathRollback"), FindError));
+	}
+
+	// --- the ACTOR bag is still pre-validated: same class, but the CDO exists ---
+	{
+		const int32 CountBefore = CountActorsOfClass(BPClass);
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("class_or_mesh"), ExplicitPath);
+		P->SetArrayField(TEXT("location"), Vec(150.0, 0.0, 0.0));
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("NoSuchActorProperty"), 1.0);
+		P->SetObjectField(TEXT("properties"), Props);
+
+		FMonolithActionResult R = Exec(TEXT("spawn_actor"), P);
+		TestFalse(TEXT("a bad `properties` key is refused"), R.bSuccess);
+		TestEqual(TEXT("with nothing spawned at all (phase 1, against the CDO)"),
+			CountActorsOfClass(BPClass), CountBefore);
+	}
+
+	// --- misses are actionable -------------------------------------------------
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("class_or_mesh"), TEXT("/Game/Tests/Monolith/Mesh/BP_ThisDoesNotExist"));
+		P->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		FMonolithActionResult R = Exec(TEXT("spawn_actor"), P);
+		TestFalse(TEXT("a path to nothing is refused"), R.bSuccess);
+		TestTrue(TEXT("and the error says both accepted Blueprint spellings"),
+			R.ErrorMessage.Contains(TEXT("BP_Barrel.BP_Barrel_C")));
+	}
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("class_or_mesh"), TEXT("PontLight"));
+		P->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		FMonolithActionResult R = Exec(TEXT("spawn_actor"), P);
+		TestFalse(TEXT("a mistyped class name is refused"), R.bSuccess);
+		TestTrue(TEXT("with a did-you-mean that names the class actually meant"),
+			R.ErrorMessage.Contains(TEXT("PointLight")));
+	}
+
+	return true;
+}
+
+// ============================================================================
+// 23. CAPTURE — a Blueprint actor round-trips.
+//
+//     apply (naming the Blueprint by class path) -> capture -> re-apply -> capture
+//     again, and the two documents must be IDENTICAL. That is the property that
+//     makes the document the source of truth; anything weaker is a one-way street.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutBlueprintRoundTripTest,
+	"Monolith.Mesh.Layouts.BlueprintRoundTrip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutBlueprintRoundTripTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	FString FixtureError;
+	UClass* BPClass = CreateOrReuseTestActorBlueprint(FixtureBlueprintPath(), FixtureError);
+	TestNotNull(*FString::Printf(TEXT("the fixture Blueprint builds (%s)"), *FixtureError), BPClass);
+	if (!BPClass) { return false; }
+
+	const FString ClassPath = BPClass->GetPathName();
+	const FString LayoutId = TEXT("monolith_test_bp_roundtrip");
+	Remove(LayoutId);
+
+	TSharedPtr<FJsonObject> Prop = Entry(TEXT("prop"), TEXT("actor"));
+	Prop->SetStringField(TEXT("class"), ClassPath);
+	Prop->SetArrayField(TEXT("location"), Vec(120.0, -40.0, 60.0));
+	{
+		auto Comp = MakeShared<FJsonObject>();
+		Comp->SetStringField(TEXT("Mobility"), TEXT("Static"));
+		Prop->SetObjectField(TEXT("component_properties"), Comp);
+	}
+
+	FMonolithActionResult Applied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ Prop })));
+	TestTrue(FString::Printf(TEXT("a layout can place a Blueprint actor (%s)"), *Applied.ErrorMessage),
+		Applied.bSuccess);
+	if (!Applied.bSuccess) { Remove(LayoutId); return false; }
+
+	AActor* Placed = ActorForEntry(LayoutId, TEXT("prop"));
+	TestNotNull(TEXT("the Blueprint actor is in the level, tagged"), Placed);
+	if (Placed)
+	{
+		TestEqual(TEXT("and it is the Blueprint class"), Placed->GetClass(), BPClass);
+	}
+
+	// --- capture: the actor that used to be REFUSED is now an entry -------------
+	FMonolithActionResult First = Exec(TEXT("capture_level_layout"), CaptureParams(LayoutId));
+	TestTrue(FString::Printf(TEXT("capture succeeds (%s)"), *First.ErrorMessage), First.bSuccess);
+	if (!First.bSuccess) { Remove(LayoutId); return false; }
+
+	int32 SkippedCount = -1;
+	First.Result->TryGetNumberField(TEXT("skipped_count"), SkippedCount);
+	TestEqual(TEXT("the Blueprint actor is NOT skipped any more"), SkippedCount, 0);
+
+	bool bValid = false;
+	First.Result->TryGetBoolField(TEXT("valid"), bValid);
+	TestTrue(TEXT("the captured document resolves against the live engine"), bValid);
+
+	const TSharedPtr<FJsonObject> FirstBody = BodyOf(First);
+	const TSharedPtr<FJsonObject> PropEntry = EntryById(FirstBody, TEXT("prop"));
+	TestTrue(TEXT("the Blueprint entry is in the captured document"), PropEntry.IsValid());
+	if (PropEntry.IsValid())
+	{
+		FString Kind, Class;
+		PropEntry->TryGetStringField(TEXT("kind"), Kind);
+		PropEntry->TryGetStringField(TEXT("class"), Class);
+		TestEqual(TEXT("captured as an actor entry"), Kind, FString(TEXT("actor")));
+		TestEqual(TEXT("naming the Blueprint by its generated-class OBJECT PATH"), Class, ClassPath);
+
+		const TSharedPtr<FJsonObject> CompBag = BagOf(PropEntry, TEXT("component_properties"));
+		TestTrue(TEXT("the SCS root's non-default properties are captured"), CompBag.IsValid());
+		if (CompBag.IsValid())
+		{
+			FString Mobility;
+			CompBag->TryGetStringField(TEXT("Mobility"), Mobility);
+			TestEqual(TEXT("including the Mobility written after the spawn"), Mobility, FString(TEXT("Static")));
+		}
+	}
+
+	// --- re-apply the captured document, then capture again ---------------------
+	Remove(LayoutId);
+	TestEqual(TEXT("the level is empty of this layout before the re-apply"), CountInLevel(LayoutId), 0);
+
+	FMonolithActionResult ReApplied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, FirstBody));
+	TestTrue(FString::Printf(TEXT("the captured document re-applies (%s)"), *ReApplied.ErrorMessage),
+		ReApplied.bSuccess);
+	if (!ReApplied.bSuccess) { Remove(LayoutId); return false; }
+
+	AActor* Rebuilt = ActorForEntry(LayoutId, TEXT("prop"));
+	TestNotNull(TEXT("the re-applied Blueprint actor is in the level"), Rebuilt);
+	if (Rebuilt)
+	{
+		TestEqual(TEXT("as the same Blueprint class"), Rebuilt->GetClass(), BPClass);
+		if (USceneComponent* Root = Rebuilt->GetRootComponent())
+		{
+			TestEqual(TEXT("with the component property the document carried"),
+				static_cast<int32>(Root->Mobility.GetValue()), static_cast<int32>(EComponentMobility::Static));
+		}
+	}
+
+	FMonolithActionResult Second = Exec(TEXT("capture_level_layout"), CaptureParams(LayoutId));
+	TestTrue(FString::Printf(TEXT("the second capture succeeds (%s)"), *Second.ErrorMessage), Second.bSuccess);
+	if (Second.bSuccess)
+	{
+		TestEqual(TEXT("THE ROUND TRIP: capture -> apply -> capture produces an IDENTICAL document"),
+			Canonicalise(BodyOf(Second)), Canonicalise(FirstBody));
+	}
+
+	Remove(LayoutId);
+	return true;
+}
+
+// ============================================================================
+// 24. CAPTURE — a volume's properties round-trip, and the curated aliases that
+//     were the old public contract still mean exactly what they used to.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutVolumePropertyRoundTripTest,
+	"Monolith.Mesh.Layouts.VolumePropertyRoundTrip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutVolumePropertyRoundTripTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	const FString LayoutId = TEXT("monolith_test_volume_props");
+	Remove(LayoutId);
+
+	const double Damage = 37.0;
+	const double Priority = 7.0;
+
+	TSharedPtr<FJsonObject> Lava = Entry(TEXT("lava"), TEXT("volume"));
+	Lava->SetStringField(TEXT("type"), TEXT("pain"));
+	Lava->SetArrayField(TEXT("location"), Vec(600.0, 0.0, 0.0));
+	Lava->SetArrayField(TEXT("extent"), Vec(100.0, 100.0, 50.0));
+	{
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("DamagePerSec"), Damage);
+		Props->SetBoolField(TEXT("bPainCausing"), false);
+		Lava->SetObjectField(TEXT("properties"), Props);
+	}
+
+	TSharedPtr<FJsonObject> Reverb = Entry(TEXT("reverb"), TEXT("volume"));
+	Reverb->SetStringField(TEXT("type"), TEXT("audio"));
+	Reverb->SetArrayField(TEXT("location"), Vec(-600.0, 0.0, 0.0));
+	Reverb->SetArrayField(TEXT("extent"), Vec(200.0, 200.0, 150.0));
+	{
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("Priority"), Priority);
+		Reverb->SetObjectField(TEXT("properties"), Props);
+	}
+
+	FMonolithActionResult Applied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ Lava, Reverb })));
+	TestTrue(FString::Printf(TEXT("volume properties apply through reflection (%s)"), *Applied.ErrorMessage),
+		Applied.bSuccess);
+	if (!Applied.bSuccess) { Remove(LayoutId); return false; }
+
+	// --- the values really landed on the live actors ---
+	auto CheckLive = [&](const TCHAR* What)
+	{
+		APainCausingVolume* Pain = Cast<APainCausingVolume>(ActorForEntry(LayoutId, TEXT("lava")));
+		TestNotNull(*FString::Printf(TEXT("%s: the pain volume is in the level"), What), Pain);
+		if (Pain)
+		{
+			TestEqual(*FString::Printf(TEXT("%s: DamagePerSec"), What),
+				static_cast<double>(Pain->DamagePerSec), Damage);
+			TestFalse(*FString::Printf(TEXT("%s: bPainCausing was turned off"), What), (bool)Pain->bPainCausing);
+		}
+		AAudioVolume* Audio = Cast<AAudioVolume>(ActorForEntry(LayoutId, TEXT("reverb")));
+		TestNotNull(*FString::Printf(TEXT("%s: the audio volume is in the level"), What), Audio);
+		if (Audio)
+		{
+			TestEqual(*FString::Printf(TEXT("%s: Priority"), What),
+				static_cast<double>(Audio->GetPriority()), Priority);
+		}
+	};
+	CheckLive(TEXT("after apply"));
+
+	// --- capture: the properties come back, in their canonical spelling ---------
+	FMonolithActionResult First = Exec(TEXT("capture_level_layout"), CaptureParams(LayoutId));
+	TestTrue(FString::Printf(TEXT("capture succeeds (%s)"), *First.ErrorMessage), First.bSuccess);
+	if (!First.bSuccess) { Remove(LayoutId); return false; }
+
+	const TSharedPtr<FJsonObject> FirstBody = BodyOf(First);
+	{
+		const TSharedPtr<FJsonObject> Bag = BagOf(EntryById(FirstBody, TEXT("lava")), TEXT("properties"));
+		TestTrue(TEXT("the pain volume captured a `properties` bag"), Bag.IsValid());
+		if (Bag.IsValid())
+		{
+			double Captured = 0.0;
+			TestTrue(TEXT("DamagePerSec is read back"), Bag->TryGetNumberField(TEXT("DamagePerSec"), Captured));
+			TestEqual(TEXT("with the value the level holds"), Captured, Damage);
+			bool bCausing = true;
+			TestTrue(TEXT("bPainCausing is read back"), Bag->TryGetBoolField(TEXT("bPainCausing"), bCausing));
+			TestFalse(TEXT("as the non-default value"), bCausing);
+			TestFalse(TEXT("a property still at its default is not restated"), Bag->HasField(TEXT("PainInterval")));
+		}
+
+		const TSharedPtr<FJsonObject> AudioBag = BagOf(EntryById(FirstBody, TEXT("reverb")), TEXT("properties"));
+		TestTrue(TEXT("the audio volume captured a `properties` bag"), AudioBag.IsValid());
+		if (AudioBag.IsValid())
+		{
+			double CapturedPriority = 0.0;
+			TestTrue(TEXT("Priority is read back"), AudioBag->TryGetNumberField(TEXT("Priority"), CapturedPriority));
+			TestEqual(TEXT("with the value the level holds"), CapturedPriority, Priority);
+		}
+	}
+
+	// --- re-apply + re-capture must be identical --------------------------------
+	Remove(LayoutId);
+	FMonolithActionResult ReApplied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, FirstBody));
+	TestTrue(FString::Printf(TEXT("the captured document re-applies (%s)"), *ReApplied.ErrorMessage),
+		ReApplied.bSuccess);
+	if (!ReApplied.bSuccess) { Remove(LayoutId); return false; }
+	CheckLive(TEXT("after re-apply"));
+
+	FMonolithActionResult Second = Exec(TEXT("capture_level_layout"), CaptureParams(LayoutId));
+	TestTrue(FString::Printf(TEXT("the second capture succeeds (%s)"), *Second.ErrorMessage), Second.bSuccess);
+	if (Second.bSuccess)
+	{
+		TestEqual(TEXT("THE ROUND TRIP: a volume with properties re-captures IDENTICALLY"),
+			Canonicalise(BodyOf(Second)), Canonicalise(FirstBody));
+	}
+	Remove(LayoutId);
+
+	// --- COMPATIBILITY: the curated snake_case aliases still work ---------------
+	// They are the shape every existing caller and every saved document uses. They
+	// are translated, not deprecated, and a capture of the result is canonical — so
+	// an old document upgrades itself the first time it is captured.
+	{
+		const FString AliasLayout = TEXT("monolith_test_volume_alias");
+		Remove(AliasLayout);
+
+		TSharedPtr<FJsonObject> Old = Entry(TEXT("lava"), TEXT("volume"));
+		Old->SetStringField(TEXT("type"), TEXT("pain"));
+		Old->SetArrayField(TEXT("location"), Vec(600.0, 300.0, 0.0));
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("damage_per_sec"), Damage);
+		Props->SetBoolField(TEXT("pain_causing"), false);
+		Old->SetObjectField(TEXT("properties"), Props);
+
+		FMonolithActionResult R = Exec(TEXT("apply_level_layout"), ApplyParams(AliasLayout, Body({ Old })));
+		TestTrue(FString::Printf(TEXT("a document written with the old aliases still applies (%s)"),
+			*R.ErrorMessage), R.bSuccess);
+
+		if (R.bSuccess)
+		{
+			APainCausingVolume* Pain = Cast<APainCausingVolume>(ActorForEntry(AliasLayout, TEXT("lava")));
+			TestNotNull(TEXT("the alias document placed its volume"), Pain);
+			if (Pain)
+			{
+				TestEqual(TEXT("`damage_per_sec` still means DamagePerSec"),
+					static_cast<double>(Pain->DamagePerSec), Damage);
+				TestFalse(TEXT("`pain_causing` still means bPainCausing"), (bool)Pain->bPainCausing);
+			}
+
+			FMonolithActionResult Cap = Exec(TEXT("capture_level_layout"), CaptureParams(AliasLayout));
+			TestTrue(FString::Printf(TEXT("and it captures (%s)"), *Cap.ErrorMessage), Cap.bSuccess);
+			if (Cap.bSuccess)
+			{
+				const TSharedPtr<FJsonObject> Bag =
+					BagOf(EntryById(BodyOf(Cap), TEXT("lava")), TEXT("properties"));
+				TestTrue(TEXT("into a bag"), Bag.IsValid());
+				if (Bag.IsValid())
+				{
+					TestTrue(TEXT("written in the canonical spelling"), Bag->HasField(TEXT("DamagePerSec")));
+					TestFalse(TEXT("not the alias — a capture is what upgrades an old document"),
+						Bag->HasField(TEXT("damage_per_sec")));
+				}
+			}
+		}
+		Remove(AliasLayout);
+	}
+
+	// --- and mesh.spawn_volume called directly honours both spellings ------------
+	{
+		UWorld* World = GetTestWorld();
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("type"), TEXT("pain"));
+		P->SetArrayField(TEXT("location"), Vec(900.0, 0.0, 0.0));
+		P->SetStringField(TEXT("name"), TEXT("MonolithAliasSpawnVolume"));
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("damage_per_sec"), 12.0);
+		P->SetObjectField(TEXT("properties"), Props);
+
+		FMonolithActionResult R = Exec(TEXT("spawn_volume"), P);
+		TestTrue(FString::Printf(TEXT("spawn_volume takes an alias key (%s)"), *R.ErrorMessage), R.bSuccess);
+		if (R.bSuccess)
+		{
+			const TArray<TSharedPtr<FJsonValue>>* Applied2 = nullptr;
+			if (R.Result->TryGetArrayField(TEXT("properties_set"), Applied2) && Applied2 && Applied2->Num() == 1)
+			{
+				TestEqual(TEXT("and reports the canonical property it actually wrote"),
+					(*Applied2)[0]->AsString(), FString(TEXT("DamagePerSec")));
+			}
+			else
+			{
+				AddError(TEXT("spawn_volume did not report exactly one applied property"));
+			}
+
+			FString FindError;
+			if (AActor* Spawned = MonolithMeshUtils::FindActorByName(TEXT("MonolithAliasSpawnVolume"), FindError))
+			{
+				if (APainCausingVolume* Pain = Cast<APainCausingVolume>(Spawned))
+				{
+					TestEqual(TEXT("the value landed"), static_cast<double>(Pain->DamagePerSec), 12.0);
+				}
+				if (World) { World->EditorDestroyActor(Spawned, false); }
+			}
+		}
+	}
+
+	// --- a key that is not a property AND not an alias is still refused ---------
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("type"), TEXT("pain"));
+		P->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("DamagePerSecond"), 1.0);
+		P->SetObjectField(TEXT("properties"), Props);
+
+		FMonolithActionResult R = Exec(TEXT("spawn_volume"), P);
+		TestFalse(TEXT("an unknown volume property is refused"), R.bSuccess);
+		TestTrue(TEXT("the error says nothing was spawned"), R.ErrorMessage.Contains(TEXT("Nothing was spawned")));
+		TestTrue(TEXT("and offers the name that was meant"), R.ErrorMessage.Contains(TEXT("DamagePerSec")));
+	}
+
 	return true;
 }
 
