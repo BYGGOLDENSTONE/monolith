@@ -419,3 +419,24 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Ek şart: MonolithDev'de uygun bir Blueprint asset'i yoksa **uydurma bağımlılık yaratılmayacak** — test kendi minimal Blueprint'ini üretecek (MonolithUI testlerinde emsali var), gönderilen demo yerleşimi var olmayabilecek asset'lerden uzak tutulacak. Ayrıca Blueprint'ler erişilebilir olunca, önceki işçinin test edilmemiş bıraktığı SimpleConstructionScript geri alma yolu artık TEST EDİLECEK.
 - Commit: -
 - Sıradaki: Görev 18 raporu.
+
+## [05:02] Görev 18 TAMAM — turdaki son iki kayıp kapandı (250/250)
+- Durum: done
+- Ne oldu: (1) `mesh.spawn_actor` artık sınıfı yol ile kabul ediyor: StaticMesh yolu (eskisi gibi), `/Game/Foo/BP_Thing` (UBlueprint → `GeneratedClass`), `/Game/Foo/BP_Thing.BP_Thing_C` (üretilen sınıfın kendisi), `/Script/Engine.PointLight` gibi native yollar ve eskiden olduğu gibi sınıf ADLARI. Yakalama her zaman `..._C` yol biçimini yazıyor (`UClass::GetPathName()`) — yeniden yakalamanın aynı çıkmasını sağlayan şey bu. Blueprint aktörleri artık `skipped[]` yerine gerçek girdi üretiyor. (2) `spawn_volume`'un torbası reflection kanalına çevrildi, volume'lar tura girdi. 3 yeni test, 247→250.
+- **Uyumluluk kararı: takma adlar KORUNDU, eşlendi, kaldırılmadı** (`damage_per_sec→DamagePerSec`, `pain_causing→bPainCausing`, `priority→Priority`, `unbound→bUnbound`, `blend_radius→BlendRadius`, `blend_weight→BlendWeight`). Gerekçe: bunlar mevcut kamusal sözleşme ve kayıtlı yerleşim belgelerinde yaşıyorlar; kırmak altı satır kazandırır, her mevcut çağırana mal olur. Yakalama onları kanonik biçime yeniden yazıyor, yani eski belge ilk yakalandığında kendini yükseltiyor. Reflection'ın yan etkisi: torba artık volume aktöründeki HERHANGİ bir UPROPERTY'yi kabul ediyor — genişleme, kırılma değil.
+- Karar: Kabul. Kontrol ajanı **paketi İKİ KEZ koştu** (yeni test diske `BP_MonolithLayoutFixture.uasset` yazıyor; bu gecenin başında düzeltilen çökme sınıfının aynısı) → ikisi de 250/0/0 ve 250 "Test Completed", yani tekrar koşulabilir. Canlı: `demo_lit_room` → 15 yerleşti, AudioVolume aralarında; yakalama → 15 girdi, `valid=true`, **`warnings=[]`, `skipped=[]`**; **eski snake_case çağrısı BAŞARILI** (`damage_per_sec`+`pain_causing` → `properties_set: ["bPainCausing","DamagePerSec"]`), bozuk anahtar did-you-mean'li düzgün hata verdi. Ayrıca: d3f9e6d HEAD'de, ağaç temiz, 9 dosya, `Monolith.uplugin`/`MonolithSettings.h` dokunulmamış, build yeşil. `demo_lit_room` artık 15 girdi (actor 5, light 5, atmosphere 3, volume 2); `readback` bölümleri: actor, actor_component, atmosphere_actor, volume_pain, volume_audio.
+- Commit: d3f9e6d
+- Sıradaki: Görev 19 — PoseSearch'te kalan iki bloke eden okuma.
+
+### notes_for_next_worker (görev 18 işçisinden — turda KALAN kayıplar)
+- (a) Mesh'i ya da Blueprint üretilen sınıfı geçici pakette olan aktör — adlandırılacak yol yok, hâlâ `skipped[]`. (b) Işık/atmosfer/volume'da birim dışı ölçek — o aksiyonlarda `scale` parametresi yok, hâlâ uyarı. (c) Kutu kurucusuyla kurulmamış volume brush'ı — `extent` geri alınamıyor. (d) Yazma yolunun reddedeceği değer. (e) `kind: volume` + `type: post_process` girdisi `kind: atmosphere` olarak geri yakalanıyor — aynı dünya, farklı belge metni; tur boyunca metin-özdeş olmayan tek girdi bu.
+- `readback.volume_post_process` KASTEN yok: `TokenForActor` bir `APostProcessVolume`'u önce `kind: atmosphere` olarak sınıflandırıyor, o bölüm ölü veri olurdu.
+- Test paketi artık `D:\UnrealProjects\MonolithDev\Content\Tests\Monolith\Mesh\BP_MonolithLayoutFixture.uasset` yazıyor; `FullyLoad()` + `FindObject` desenini izliyor, silmek güvenli.
+
+## [05:06] Görev 19 gönderildi — PoseSearch'teki son iki donma noktası
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. `HandleGetDatabaseStats` (~594) ve `HandleValidatePoseSearchDatabase` (~1895) koşulsuz `WaitForCompletion` yapıp editörü (ve tek şeritli sunucuyu) donduruyor.
+- Karar: Görev 9 işçisinin yargısına saygı gösterilmesi söylendi — ikisi de OKUMA, bir okumayı varsayılan-async yapmak yanlış sözleşme; çözüm beklemeyen bir yol + dürüst raporlama (`index_built:false` gibi, düzyazı değil dallanılabilir bir alan). Eski davranış görev 9'la AYNI yazımla (`wait`, varsayılan false) açık tercih olarak kalacak ki iki aksiyon birbiriyle çelişmesin.
+- Ek şart: motorun `FAsyncPoseSearchDatabasesManagement` API'sinin gerçekte ne yaptığı varsayılmayacak, doğrulanacak (görev 9 onu oyun-iş-parçacığına bağlı bulmuştu).
+- Commit: -
+- Sıradaki: Görev 19 raporu.
