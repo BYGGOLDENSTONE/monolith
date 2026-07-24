@@ -1,9 +1,12 @@
 #include "MonolithMeshSceneActions.h"
 #include "MonolithMeshUtils.h"
+#include "MonolithMeshLightActions.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithJsonUtils.h"
+#include "MonolithBulkFillTypes.h"
+#include "Reflection/MonolithReflectionWalker.h"
 
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
@@ -13,6 +16,8 @@
 #include "GameFramework/Actor.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/SceneComponent.h"
+#include "UObject/UnrealType.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Editor.h"
@@ -110,7 +115,13 @@ void FMonolithMeshSceneActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Build());
 
 	Registry.RegisterAction(TEXT("mesh"), TEXT("spawn_actor"),
-		TEXT("Spawn an actor in the editor world. Path starting with '/' spawns StaticMeshActor with that mesh; otherwise spawns by class name."),
+		TEXT("Spawn an actor in the editor world. Path starting with '/' spawns StaticMeshActor with that mesh; "
+			 "otherwise spawns by class name. Any UPROPERTY can be set at spawn time through two bags: "
+			 "`properties` targets the ACTOR (e.g. bEnableAutoLODGeneration, Tags) and `component_properties` "
+			 "targets its ROOT COMPONENT (e.g. Mobility, CastShadow, bReceivesDecals — the StaticMeshComponent "
+			 "for a mesh path). Both are validated against the class BEFORE anything spawns: an unknown name is "
+			 "an error listing did-you-mean candidates, there are never partial writes, and a rejected bag leaves "
+			 "no actor behind."),
 		FMonolithActionHandler::CreateStatic(&FMonolithMeshSceneActions::SpawnActor),
 		FParamSchemaBuilder()
 			.Required(TEXT("class_or_mesh"), TEXT("string"), TEXT("Asset path for mesh (starts with '/') or class name"))
@@ -119,6 +130,10 @@ void FMonolithMeshSceneActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Optional(TEXT("scale"), TEXT("array"), TEXT("Scale [x, y, z]"), TEXT("[1,1,1]"))
 			.Optional(TEXT("name"), TEXT("string"), TEXT("Optional label for the spawned actor"))
 			.OptionalAssetPath(TEXT("folder"), TEXT("Actor folder path in the outliner"))
+			.Optional(TEXT("properties"), TEXT("object"),
+				TEXT("UPROPERTYs to set on the spawned ACTOR itself, {name: value} — e.g. {\"bEnableAutoLODGeneration\": false}"))
+			.Optional(TEXT("component_properties"), TEXT("object"),
+				TEXT("UPROPERTYs to set on the actor's ROOT COMPONENT, {name: value} — e.g. {\"Mobility\": \"Movable\", \"CastShadow\": false}"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("mesh"), TEXT("move_actor"),
@@ -288,6 +303,287 @@ FMonolithActionResult FMonolithMeshSceneActions::GetActorInfo(const TSharedPtr<F
 }
 
 // ============================================================================
+// spawn_actor's free-form property channel
+//
+// Same machinery and same contract as mesh.place_light's `properties` channel:
+// InspectTree (strict, scratch buffer) -> bail on ANY error -> Modify +
+// PreEditChange per key -> WriteTree -> PostEditChangeProperty per key -> dirty.
+// "No partial writes" comes free from validating the whole tree first.
+//
+// The one thing that is NOT shared with place_light is the addressing: a light
+// action can only mean the light component, while spawn_actor spawns arbitrary
+// classes, so it names the two targets explicitly — `properties` for the actor,
+// `component_properties` for its root component. See the header for why.
+// ============================================================================
+
+bool FMonolithMeshSceneActions::ReadPropertyBag(
+	const TSharedPtr<FJsonObject>& Params,
+	const TCHAR* Key,
+	TSharedPtr<FJsonObject>& OutTree,
+	FString& OutError)
+{
+	OutTree.Reset();
+	if (!Params.IsValid() || !Params->HasField(Key))
+	{
+		return true;
+	}
+
+	const TSharedPtr<FJsonObject>* Obj = nullptr;
+	if (!Params->TryGetObjectField(Key, Obj) || !Obj || !(*Obj).IsValid())
+	{
+		OutError = FString::Printf(
+			TEXT("Param '%s' must be a JSON object of {UPROPERTY name: value}, e.g. "
+				 "{\"Mobility\": \"Movable\", \"CastShadow\": false}."), Key);
+		return false;
+	}
+
+	// An empty bag is a no-op, not an error — a generated document may legitimately
+	// emit `"properties": {}` for an entry that ended up with no overrides.
+	if ((*Obj)->Values.Num() > 0)
+	{
+		OutTree = *Obj;
+	}
+	return true;
+}
+
+bool FMonolithMeshSceneActions::InspectPropertyTree(
+	const TSharedPtr<FJsonObject>& Tree,
+	UStruct* TargetStruct,
+	const void* Container,
+	const FString& WhatLabel,
+	FString& OutError)
+{
+	OutError.Reset();
+	if (!Tree.IsValid() || Tree->Values.Num() == 0 || !TargetStruct || !Container)
+	{
+		return true;
+	}
+
+	FBulkFillSpec Spec;
+	Spec.TargetNamespace = TEXT("mesh");
+	Spec.Tree = Tree;
+	Spec.bStrict = true;
+
+	const FDryRunReport DryRun = FMonolithReflectionWalker::InspectTree(Tree, TargetStruct, Container, Spec);
+	if (DryRun.Errors == 0)
+	{
+		return true;
+	}
+
+	TArray<FString> Problems;
+	for (const FBulkFillFieldWrite& W : DryRun.FieldWrites)
+	{
+		if (W.bOk)
+		{
+			continue;
+		}
+		FString Line = FString::Printf(TEXT("'%s': %s"), *W.Path, *W.Reason);
+		const TArray<FString> Hints = FMonolithMeshLightActions::SuggestPropertyNames(TargetStruct, W.Path);
+		if (W.Reason.Contains(TEXT("unknown field")) && Hints.Num() > 0)
+		{
+			Line += FString::Printf(TEXT(" (did you mean: %s?)"), *FString::Join(Hints, TEXT(", ")));
+		}
+		Problems.Add(Line);
+	}
+
+	OutError = FString::Printf(
+		TEXT("%d %s property write(s) rejected on %s — NOTHING was applied and no actor was left behind. %s. "
+			 "Use mesh.get_actor_properties to list the exact UPROPERTY names this %s supports."),
+		Problems.Num(), *WhatLabel, *TargetStruct->GetName(),
+		*FString::Join(Problems, TEXT("; ")), *WhatLabel);
+	return false;
+}
+
+bool FMonolithMeshSceneActions::ApplyPropertyTree(
+	UObject* Target,
+	const TSharedPtr<FJsonObject>& Tree,
+	const FString& WhatLabel,
+	TArray<FString>& OutApplied,
+	FString& OutError)
+{
+	OutApplied.Reset();
+	OutError.Reset();
+
+	if (!Tree.IsValid() || Tree->Values.Num() == 0)
+	{
+		return true; // nothing asked for — not an error
+	}
+	if (!Target)
+	{
+		OutError = FString::Printf(TEXT("No %s to write %d property/properties onto."),
+			*WhatLabel, Tree->Values.Num());
+		return false;
+	}
+
+	UClass* TargetClass = Target->GetClass();
+
+	// --- Validate BEFORE mutating. ---
+	if (!InspectPropertyTree(Tree, TargetClass, Target, WhatLabel, OutError))
+	{
+		return false;
+	}
+
+	// --- Commit inside the edit cradle. ---
+	Target->Modify();
+
+	TArray<FProperty*> Touched;
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Tree->Values)
+	{
+		if (FProperty* Prop = FMonolithReflectionWalker::FindPropertyForwarding(TargetClass, Pair.Key))
+		{
+			Touched.Add(Prop);
+#if WITH_EDITOR
+			Target->PreEditChange(Prop);
+#endif
+		}
+	}
+
+	FBulkFillSpec Spec;
+	Spec.TargetNamespace = TEXT("mesh");
+	Spec.Tree = Tree;
+	Spec.bStrict = true;
+
+	const FDryRunReport Report = FMonolithReflectionWalker::WriteTree(Tree, TargetClass, Target, Target, Spec);
+
+#if WITH_EDITOR
+	for (FProperty* Prop : Touched)
+	{
+		FPropertyChangedEvent Event(Prop);
+		Target->PostEditChangeProperty(Event);
+	}
+#endif
+
+	if (UActorComponent* AsComponent = Cast<UActorComponent>(Target))
+	{
+		AsComponent->MarkRenderStateDirty();
+		if (AActor* Owner = AsComponent->GetOwner())
+		{
+			Owner->MarkPackageDirty();
+		}
+	}
+	else
+	{
+		Target->MarkPackageDirty();
+	}
+
+	if (Report.Errors > 0)
+	{
+		// The dry run passed, so the live write disagreed with the scratch write.
+		// Surface it rather than reporting a success the caller cannot trust.
+		TArray<FString> Problems;
+		for (const FBulkFillFieldWrite& W : Report.FieldWrites)
+		{
+			if (!W.bOk)
+			{
+				Problems.Add(FString::Printf(TEXT("'%s': %s"), *W.Path, *W.Reason));
+			}
+		}
+		OutError = FString::Printf(
+			TEXT("%d %s property write(s) failed after validation passed on %s: %s"),
+			Problems.Num(), *WhatLabel, *TargetClass->GetName(), *FString::Join(Problems, TEXT("; ")));
+		return false;
+	}
+
+	for (const FBulkFillFieldWrite& W : Report.FieldWrites)
+	{
+		if (W.bOk && !W.Path.Contains(TEXT(".")) && !W.Path.Contains(TEXT("[")))
+		{
+			OutApplied.AddUnique(W.Path);
+		}
+	}
+	return true;
+}
+
+bool FMonolithMeshSceneActions::ValidateSpawnProperties(
+	const TSharedPtr<FJsonObject>& Params, UClass* ActorClass, FString& OutError)
+{
+	OutError.Reset();
+
+	TSharedPtr<FJsonObject> ActorTree;
+	TSharedPtr<FJsonObject> ComponentTree;
+	if (!ReadPropertyBag(Params, TEXT("properties"), ActorTree, OutError)) { return false; }
+	if (!ReadPropertyBag(Params, TEXT("component_properties"), ComponentTree, OutError)) { return false; }
+
+	if (!ActorTree.IsValid() && !ComponentTree.IsValid())
+	{
+		return true;
+	}
+	if (!ActorClass)
+	{
+		// No class resolved yet — the caller reports that failure on its own.
+		return true;
+	}
+
+	AActor* CDO = Cast<AActor>(ActorClass->GetDefaultObject());
+	if (!CDO)
+	{
+		return true;
+	}
+
+	if (!InspectPropertyTree(ActorTree, ActorClass, CDO, TEXT("actor"), OutError))
+	{
+		return false;
+	}
+
+	if (ComponentTree.IsValid())
+	{
+		// Native classes build their root in the constructor, so the CDO has one and
+		// the whole bag is checkable before anything spawns. A Blueprint class whose
+		// root comes from the SimpleConstructionScript does not: that case falls
+		// through to the post-spawn write, which rolls the spawn back on rejection.
+		if (USceneComponent* Root = CDO->GetRootComponent())
+		{
+			if (!InspectPropertyTree(ComponentTree, Root->GetClass(), Root, TEXT("root component"), OutError))
+			{
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
+bool FMonolithMeshSceneActions::ApplySpawnProperties(
+	AActor* Actor,
+	const TSharedPtr<FJsonObject>& Params,
+	TArray<FString>& OutActorApplied,
+	TArray<FString>& OutComponentApplied,
+	FString& OutError)
+{
+	OutActorApplied.Reset();
+	OutComponentApplied.Reset();
+
+	TSharedPtr<FJsonObject> ActorTree;
+	TSharedPtr<FJsonObject> ComponentTree;
+	if (!ReadPropertyBag(Params, TEXT("properties"), ActorTree, OutError)) { return false; }
+	if (!ReadPropertyBag(Params, TEXT("component_properties"), ComponentTree, OutError)) { return false; }
+
+	if (!ApplyPropertyTree(Actor, ActorTree, TEXT("actor"), OutActorApplied, OutError))
+	{
+		return false;
+	}
+
+	if (ComponentTree.IsValid())
+	{
+		USceneComponent* Root = Actor ? Actor->GetRootComponent() : nullptr;
+		if (!Root)
+		{
+			OutError = FString::Printf(
+				TEXT("component_properties was given but '%s' has no root component to write them onto. "
+					 "Use `properties` for UPROPERTYs that live on the actor itself."),
+				Actor ? *Actor->GetClass()->GetName() : TEXT("<null>"));
+			return false;
+		}
+		if (!ApplyPropertyTree(Root, ComponentTree, TEXT("root component"), OutComponentApplied, OutError))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// ============================================================================
 // 2. spawn_actor
 // ============================================================================
 
@@ -394,6 +690,18 @@ FMonolithActionResult FMonolithMeshSceneActions::SpawnActor(const TSharedPtr<FJs
 		}
 	}
 
+	// The property bags are checked against the class default object here — BEFORE
+	// the transaction opens and before anything is spawned — so the common failure
+	// (a typo) costs exactly nothing and mutates nothing.
+	{
+		UClass* EffectiveClass = MeshToSpawn ? AStaticMeshActor::StaticClass() : ClassToSpawn;
+		FString PropertyError;
+		if (!ValidateSpawnProperties(Params, EffectiveClass, PropertyError))
+		{
+			return FMonolithActionResult::Error(PropertyError);
+		}
+	}
+
 	// All validation passed — open transaction and spawn
 	SceneActionHelpers::FScopedMeshTransaction Transaction(FText::FromString(TEXT("Monolith: Spawn Actor")));
 
@@ -428,6 +736,24 @@ FMonolithActionResult FMonolithMeshSceneActions::SpawnActor(const TSharedPtr<FJs
 		SpawnedClassName = ClassToSpawn->GetName();
 	}
 
+	// Free-form property channel. A rejection here rolls the spawn BACK: destroy
+	// first, then cancel, so the undo buffer never keeps a reference to a
+	// half-configured actor regardless of which side actually rolls it back. Under
+	// mesh.batch_execute / mesh.apply_level_layout the transaction is owned by the
+	// caller, so Cancel() is a deliberate no-op there and only the destroy runs —
+	// that is what keeps the layout's single outer transaction balanced.
+	TArray<FString> ActorPropsApplied;
+	TArray<FString> ComponentPropsApplied;
+	{
+		FString PropertyError;
+		if (!ApplySpawnProperties(SpawnedActor, Params, ActorPropsApplied, ComponentPropsApplied, PropertyError))
+		{
+			World->DestroyActor(SpawnedActor);
+			Transaction.Cancel();
+			return FMonolithActionResult::Error(PropertyError);
+		}
+	}
+
 	// Set optional label
 	if (!OptionalName.IsEmpty())
 	{
@@ -448,6 +774,15 @@ FMonolithActionResult FMonolithMeshSceneActions::SpawnActor(const TSharedPtr<FJs
 	Result->SetStringField(TEXT("actor_name"), SpawnedActor->GetActorNameOrLabel());
 	Result->SetStringField(TEXT("class"), SpawnedClassName);
 	Result->SetArrayField(TEXT("location"), SceneActionHelpers::VectorToJsonArray(SpawnedActor->GetActorLocation()));
+
+	auto ToStringArray = [](const TArray<FString>& In)
+	{
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		for (const FString& S : In) { Arr.Add(MakeShared<FJsonValueString>(S)); }
+		return Arr;
+	};
+	Result->SetArrayField(TEXT("properties_set"), ToStringArray(ActorPropsApplied));
+	Result->SetArrayField(TEXT("component_properties_set"), ToStringArray(ComponentPropsApplied));
 
 	return FMonolithActionResult::Success(Result);
 }

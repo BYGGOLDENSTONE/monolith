@@ -18,6 +18,11 @@ class UWorld;
  * ---------------------------------------------------------------------------
  *   - `mesh.spawn_actor`      — spawn any actor class by name, or a StaticMeshActor
  *                               from a mesh asset path. Generic, one at a time.
+ *                               (It had NO property channel when this file was
+ *                               written, which is why `kind: "actor"` could not set
+ *                               arbitrary properties. Fixed upstream since: it now
+ *                               takes `properties` + `component_properties`, and the
+ *                               layout gained them for free via pass-through.)
  *   - `mesh.place_light`      — typed light spawn incl. presets + free-form
  *                               reflection properties (slice 1).
  *   - `mesh.spawn_atmosphere` — post_process / height_fog / sky_atmosphere with
@@ -74,12 +79,15 @@ class UWorld;
  *         "entries": [
  *           { "id": "floor", "kind": "actor",
  *             "class": "/Engine/BasicShapes/Cube.Cube",
- *             "location": [0,0,-50], "scale": [8,8,1] },
+ *             "location": [0,0,-50], "scale": [8,8,1],
+ *             "component_properties": { "Mobility": "Static", "CastShadow": true } },
  *           { "id": "sun", "kind": "light", "type": "directional",
  *             "preset": "sun_golden_hour",
  *             "location": [0,0,900], "rotation": [-38,145,0] },
  *           { "id": "fog", "kind": "atmosphere", "type": "height_fog",
- *             "preset": "fog_morning_haze", "location": [0,0,0] }
+ *             "preset": "fog_morning_haze", "location": [0,0,0] },
+ *           { "id": "entry_trigger", "kind": "volume", "type": "trigger",
+ *             "location": [-480,0,100], "extent": [60,200,100] }
  *         ]
  *       }
  *     }
@@ -89,6 +97,8 @@ class UWorld;
  *       actor      -> mesh.spawn_actor
  *       light      -> mesh.place_light
  *       atmosphere -> mesh.spawn_atmosphere
+ *       volume     -> mesh.spawn_volume   (type: trigger | blocking | kill | pain |
+ *                                          nav_modifier | audio | post_process)
  *   Every other key on an entry is FORWARDED VERBATIM to that action. That is the
  *   whole mapping: there is no per-parameter translation table to drift out of
  *   date, and a layout automatically gains any parameter those actions gain. The
@@ -98,6 +108,23 @@ class UWorld;
  *   Composability is therefore free: an entry says `"preset": "bulb_warm_60w"`
  *   rather than restating fifteen light properties, because `preset` is just a
  *   forwarded parameter of mesh.place_light.
+ *
+ *   FREE-FORM PROPERTIES. Pass-through means a layout can only set what the target
+ *   action exposes, so the property channels are per-kind and each one is the target
+ *   action's own:
+ *       light      -> `properties`  = UPROPERTYs on the light COMPONENT
+ *       atmosphere -> `properties`  = fields of the atmosphere settings struct
+ *       actor      -> `properties`            = UPROPERTYs on the ACTOR
+ *                     `component_properties`  = UPROPERTYs on its ROOT COMPONENT
+ *                     (Mobility, CastShadow, ... — the StaticMeshComponent for a
+ *                      mesh path). Both were added to mesh.spawn_actor for this;
+ *                      the layout gets them for free because it forwards verbatim.
+ *       volume     -> `properties`  = spawn_volume's CURATED keys (damage_per_sec,
+ *                     pain_causing, priority, unbound, blend_radius, blend_weight),
+ *                     which are aliases rather than UPROPERTY names.
+ *   All four are validated in phase 1 against the real engine class (or, for volumes,
+ *   against spawn_volume's honoured-key table), so a mistyped property name fails the
+ *   apply before anything is placed — see the partial-failure contract below.
  *
  * ---------------------------------------------------------------------------
  * IDENTITY / IDEMPOTENCY
@@ -125,10 +152,15 @@ class UWorld;
  *   broken one the author then has to diff by hand. So:
  *     Phase 1 resolves and validates EVERY entry without touching the world (ids,
  *     kinds, required params of the target action, unknown params, vector shapes,
- *     actor classes and mesh assets, light/atmosphere type tokens, preset names and
- *     preset/type compatibility). Any problem fails the call, reports EVERY failing
- *     entry with its reason, and leaves the level untouched — the common failure
- *     (a typo) costs nothing and is reported all at once.
+ *     actor classes and mesh assets, light/atmosphere/volume type tokens, preset
+ *     names and preset/type compatibility, and every key of an actor or volume
+ *     entry's property bags — the actor bags against the class default object, the
+ *     volume bag against spawn_volume's honoured-key table). Any problem fails the
+ *     call, reports EVERY failing entry with its reason, and leaves the level
+ *     untouched — the common failure (a typo) costs nothing and is reported at once.
+ *     Note the entry-level unknown-key check (FMonolithParamSchema::FindUnknownKeys)
+ *     is TOP-LEVEL only, so declaring `properties` in the target action's schema
+ *     makes the bag legal without relaxing the check on any sibling key.
  *     Phase 2 places. The previous instance is removed only AFTER every entry has
  *     been created, so if the engine still refuses a spawn, everything this call
  *     created is destroyed, the transaction is cancelled, and the previous instance

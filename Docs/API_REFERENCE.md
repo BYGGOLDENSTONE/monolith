@@ -900,13 +900,25 @@ truth; the actions below only make the level match it.
   layout id defined there overrides a built-in with that id). Same built-in + user-override
   mechanism as the light and atmosphere preset libraries.
 - **Shape** — `layouts.<layout_id>` = `{description?, folder?, origin?, entries: [...]}`.
-  An entry is `{id, kind, ...}` where `kind` is `actor` | `light` | `atmosphere`, selecting
-  which existing action places it (`mesh.spawn_actor` / `mesh.place_light` /
-  `mesh.spawn_atmosphere`). **Every other key on the entry is forwarded to that action
-  verbatim**, so anything those actions accept works in a layout — including `preset`,
-  so a layout references a light or atmosphere recipe by name instead of restating its
-  property values. `class` is the layout spelling of `spawn_actor`'s `class_or_mesh`;
+  An entry is `{id, kind, ...}` where `kind` is `actor` | `light` | `atmosphere` | `volume`,
+  selecting which existing action places it (`mesh.spawn_actor` / `mesh.place_light` /
+  `mesh.spawn_atmosphere` / `mesh.spawn_volume`). **Every other key on the entry is forwarded
+  to that action verbatim**, so anything those actions accept works in a layout — including
+  `preset`, so a layout references a light or atmosphere recipe by name instead of restating
+  its property values. `class` is the layout spelling of `spawn_actor`'s `class_or_mesh`;
   `name`/`label` set the actor label (default `<layout_id>.<entry_id>`).
+- **Free-form properties per kind** — because forwarding is verbatim, an entry can only set
+  what its target action exposes:
+  `light` → `properties` (UPROPERTYs on the light component);
+  `atmosphere` → `properties` (fields of the atmosphere settings struct);
+  `actor` → `properties` (UPROPERTYs on the **actor**) and `component_properties`
+  (UPROPERTYs on its **root component** — `Mobility`, `CastShadow`, … which for a mesh path
+  is the StaticMeshComponent). Both bags were added to `mesh.spawn_actor` itself, so they
+  work outside layouts too;
+  `volume` → `properties`, which for `spawn_volume` is a **curated key set**, not UPROPERTY
+  names: `damage_per_sec` / `pain_causing` (pain), `priority` (audio), `unbound` /
+  `blend_radius` / `blend_weight` / `priority` (post_process). A key the volume type does not
+  honour is now an **error** — previously it was silently dropped.
 - **Identity** — every placed actor is tagged `Monolith.Layout:<layout_id>` and
   `Monolith.LayoutEntry:<entry_id>`, and put in outliner folder `Monolith/Layouts/<layout_id>`.
   The tags are the identity: they survive save/load and are visible in the details panel.
@@ -916,7 +928,10 @@ truth; the actions below only make the level match it.
   `on_existing="skip"` places only entries that have no tagged actor yet.
 - **All-or-nothing** — every entry is resolved against the live engine *before* anything is
   placed (ids, kinds, the target action's required/unknown params, actor classes and mesh
-  assets, light/atmosphere type tokens, preset names and preset/type compatibility). One bad
+  assets, light/atmosphere/volume type tokens, preset names and preset/type compatibility,
+  and every key of an `actor` or `volume` entry's property bags — the actor bags against the
+  class default object, so a mistyped UPROPERTY name is caught with an actionable
+  did-you-mean and zero world mutation). One bad
   entry fails the call, reports *every* problem, and leaves the level untouched. The previous
   instance is retired only after the new one is fully built, so a late engine-side refusal
   also rolls back cleanly.

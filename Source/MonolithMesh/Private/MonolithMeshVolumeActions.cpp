@@ -140,6 +140,94 @@ UClass* FMonolithMeshVolumeActions::ResolveVolumeClass(const FString& TypeStr, F
 }
 
 // ============================================================================
+// spawn_volume's `properties` bag — curated keys, strictly checked
+//
+// This bag predates the reflection channel and its keys are hand-mapped aliases
+// (`damage_per_sec` -> APainCausingVolume::DamagePerSec), so FMonolithReflectionWalker
+// cannot validate it. Until this commit an unrecognised key was SILENTLY DROPPED,
+// which is fine for a one-shot call the caller can re-read but not for a layout
+// document: mesh.apply_level_layout would report having applied a `volume` entry
+// whose properties never landed. The table below is the single source of truth for
+// what the handler below actually reads, and it is checked before anything spawns.
+// ============================================================================
+
+TArray<FString> FMonolithMeshVolumeActions::GetHonouredVolumePropertyKeys(const UClass* VolumeClass)
+{
+	TArray<FString> Keys;
+	if (!VolumeClass)
+	{
+		return Keys;
+	}
+	if (VolumeClass->IsChildOf(APainCausingVolume::StaticClass()))
+	{
+		Keys.Add(TEXT("damage_per_sec"));
+		Keys.Add(TEXT("pain_causing"));
+	}
+	if (VolumeClass->IsChildOf(AAudioVolume::StaticClass()))
+	{
+		Keys.Add(TEXT("priority"));
+	}
+	if (VolumeClass->IsChildOf(APostProcessVolume::StaticClass()))
+	{
+		Keys.Add(TEXT("unbound"));
+		Keys.Add(TEXT("blend_radius"));
+		Keys.Add(TEXT("blend_weight"));
+		Keys.Add(TEXT("priority"));
+	}
+	return Keys;
+}
+
+bool FMonolithMeshVolumeActions::ValidateVolumeProperties(
+	const UClass* VolumeClass, const TSharedPtr<FJsonObject>& Params, FString& OutError)
+{
+	OutError.Reset();
+	if (!Params.IsValid() || !Params->HasField(TEXT("properties")))
+	{
+		return true;
+	}
+
+	const TSharedPtr<FJsonObject>* PropsObj = nullptr;
+	if (!Params->TryGetObjectField(TEXT("properties"), PropsObj) || !PropsObj || !(*PropsObj).IsValid())
+	{
+		OutError = TEXT("Param 'properties' must be a JSON object of {key: value}, "
+						"e.g. {\"damage_per_sec\": 20} on a pain volume.");
+		return false;
+	}
+
+	const TArray<FString> Honoured = GetHonouredVolumePropertyKeys(VolumeClass);
+
+	TArray<FString> Unknown;
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*PropsObj)->Values)
+	{
+		bool bFound = false;
+		for (const FString& K : Honoured)
+		{
+			if (Pair.Key.Equals(K, ESearchCase::IgnoreCase)) { bFound = true; break; }
+		}
+		if (!bFound) { Unknown.Add(Pair.Key); }
+	}
+
+	if (Unknown.Num() == 0)
+	{
+		return true;
+	}
+
+	const FString ClassName = VolumeClass ? VolumeClass->GetName() : TEXT("<unknown volume>");
+	OutError = Honoured.Num() > 0
+		? FString::Printf(
+			TEXT("%d unsupported key(s) in `properties` for %s: %s. This volume type honours: %s. "
+				 "Nothing was spawned. For post-process exposure/bloom/grading/Lumen use "
+				 "mesh.spawn_atmosphere type=post_process; for generic actor or component UPROPERTYs use "
+				 "mesh.set_actor_properties."),
+			Unknown.Num(), *ClassName, *FString::Join(Unknown, TEXT(", ")), *FString::Join(Honoured, TEXT(", ")))
+		: FString::Printf(
+			TEXT("%d key(s) in `properties` (%s), but %s honours no `properties` keys at all. Nothing was "
+				 "spawned. Use mesh.set_actor_properties on the spawned volume instead."),
+			Unknown.Num(), *FString::Join(Unknown, TEXT(", ")), *ClassName);
+	return false;
+}
+
+// ============================================================================
 // Property reflection helpers
 // ============================================================================
 
@@ -187,7 +275,11 @@ void FMonolithMeshVolumeActions::RegisterActions(FMonolithToolRegistry& Registry
 			.Optional(TEXT("rotation"), TEXT("array"), TEXT("Rotation [pitch, yaw, roll]"), TEXT("[0,0,0]"))
 			.Optional(TEXT("name"), TEXT("string"), TEXT("Optional label for the volume actor"))
 			.OptionalAssetPath(TEXT("folder"), TEXT("Actor folder path in the outliner"))
-			.Optional(TEXT("properties"), TEXT("object"), TEXT("Type-specific properties (e.g. damage_per_sec for pain, reverb_effect for audio)"))
+			.Optional(TEXT("properties"), TEXT("object"),
+				TEXT("Type-specific properties. Honoured keys, per type: pain -> damage_per_sec, pain_causing; "
+					 "audio -> priority; post_process -> unbound, blend_radius, blend_weight, priority. "
+					 "trigger/blocking/kill/nav_modifier honour none. An unlisted key is an ERROR (nothing is "
+					 "spawned), never a silent no-op."))
 			.Build());
 
 	// 2. get_actor_properties
@@ -298,6 +390,16 @@ FMonolithActionResult FMonolithMeshVolumeActions::SpawnVolume(const TSharedPtr<F
 	if (!VolumeClass)
 	{
 		return FMonolithActionResult::Error(ClassError);
+	}
+
+	// Check the property bag before anything is spawned — a key this type does not
+	// honour must fail the call, not vanish. Zero world mutation on the way out.
+	{
+		FString PropertyError;
+		if (!ValidateVolumeProperties(VolumeClass, Params, PropertyError))
+		{
+			return FMonolithActionResult::Error(PropertyError);
+		}
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();

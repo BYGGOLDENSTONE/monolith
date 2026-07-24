@@ -3,12 +3,14 @@
 #include "MonolithMeshAtmosphereActions.h"
 #include "MonolithMeshLightActions.h"
 #include "MonolithMeshSceneActions.h"
+#include "MonolithMeshVolumeActions.h"
 #include "MonolithMeshUtils.h"
 #include "MonolithParamSchema.h"
 #include "MonolithToolRegistry.h"
 
 #include "Editor.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
@@ -275,6 +277,7 @@ const TArray<FMonolithMeshLayoutActions::FKind>& FMonolithMeshLayoutActions::Get
 		{ TEXT("actor"),      TEXT("mesh"), TEXT("spawn_actor")      },
 		{ TEXT("light"),      TEXT("mesh"), TEXT("place_light")      },
 		{ TEXT("atmosphere"), TEXT("mesh"), TEXT("spawn_atmosphere") },
+		{ TEXT("volume"),     TEXT("mesh"), TEXT("spawn_volume")     },
 	};
 	return Kinds;
 }
@@ -482,6 +485,42 @@ bool FMonolithMeshLayoutActions::ResolveLayout(
 			if (!FMonolithMeshSceneActions::ResolveSpawnTarget(ClassOrMesh, Cls, Mesh, ResolveError))
 			{
 				KindProblem = ResolveError;
+			}
+			else
+			{
+				// The free-form `properties` / `component_properties` bags are checked
+				// against the class default object here, in phase 1. Without this a
+				// mistyped UPROPERTY name would only be caught mid-placement, and
+				// all-or-nothing would then have to unwind a half-built layout instead
+				// of never starting one.
+				UClass* EffectiveClass = Mesh ? AStaticMeshActor::StaticClass() : Cls;
+				FString PropertyError;
+				if (!FMonolithMeshSceneActions::ValidateSpawnProperties(Forward, EffectiveClass, PropertyError))
+				{
+					KindProblem = PropertyError;
+				}
+			}
+		}
+		else if (Kind->Token == TEXT("volume"))
+		{
+			FString TypeStr;
+			Forward->TryGetStringField(TEXT("type"), TypeStr);
+			FString TypeError;
+			UClass* VolumeClass = FMonolithMeshVolumeActions::ResolveVolumeClass(TypeStr, TypeError);
+			if (!VolumeClass)
+			{
+				KindProblem = TypeError;
+			}
+			else
+			{
+				// spawn_volume's `properties` are curated aliases, not UPROPERTY names,
+				// so they are checked against its honoured-key table rather than through
+				// the reflection walker. Same phase-1 guarantee either way.
+				FString PropertyError;
+				if (!FMonolithMeshVolumeActions::ValidateVolumeProperties(VolumeClass, Forward, PropertyError))
+				{
+					KindProblem = PropertyError;
+				}
 			}
 		}
 		else if (Kind->Token == TEXT("light"))

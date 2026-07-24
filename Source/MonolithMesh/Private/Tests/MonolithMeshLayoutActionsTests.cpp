@@ -28,6 +28,14 @@
 //   - SCALE: a 150-entry layout is applied and its wall time logged (see the
 //     LargeLayoutTiming test output) — the measurement behind the decision to keep
 //     apply synchronous instead of routing it through the Phase 1 job system.
+//   - the FREE-FORM PROPERTY CHANNEL on `kind: "actor"`: mesh.spawn_actor's two
+//     bags (`properties` -> the actor, `component_properties` -> its root
+//     component) are written by reflection, read back off the placed objects, and
+//     a mistyped name is refused in PHASE 1 with a did-you-mean and zero world
+//     mutation — both called directly and through a layout.
+//   - `kind: "volume"`: a layout places real ATriggerVolume/APainCausingVolume
+//     actors through mesh.spawn_volume, and a property key that volume type does
+//     not honour is an error rather than a silent no-op.
 //
 // WHAT THESE TESTS DO NOT PROVE
 //   - anything about rendered output. The nightly suite runs `-nullrhi`. Whether
@@ -53,10 +61,20 @@
 #include "MonolithToolRegistry.h"
 #include "Reflection/MonolithReflectionWalker.h"
 
+#include "MonolithMeshVolumeActions.h"
+
 #include "Components/LightComponentBase.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/SceneComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Editor.h"
+#include "EngineUtils.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+#include "Engine/TriggerVolume.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "Reflection/MonolithReflectionReader.h"
 #include "HAL/FileManager.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -87,6 +105,10 @@ namespace MonolithLayoutTestUtils
 		if (!Registry.HasAction(TEXT("mesh"), TEXT("spawn_atmosphere")))
 		{
 			FMonolithMeshAtmosphereActions::RegisterActions(Registry);
+		}
+		if (!Registry.HasAction(TEXT("mesh"), TEXT("spawn_volume")))
+		{
+			FMonolithMeshVolumeActions::RegisterActions(Registry);
 		}
 		// Layout actions must register AFTER the actions they resolve schemas against.
 		if (!Registry.HasAction(TEXT("mesh"), TEXT("apply_level_layout")))
@@ -254,22 +276,96 @@ bool FMonolithMeshLayoutShippedDataTest::RunTest(const FString& /*Parameters*/)
 		}
 		TestTrue(FString::Printf(TEXT("shipped layout '%s' has entries"), *Pair.Key), Resolved.Num() > 0);
 
-		// Deeper canary: every UPROPERTY name in an entry's `properties` bag must
+		// Deeper canary: every UPROPERTY name in an entry's property bags must
 		// resolve on the real engine struct the write would target. ResolveLayout
-		// deliberately does not do this (a user's properties are validated by the
-		// write path), but shipped data must never name a property that moved.
+		// now validates the ACTOR and VOLUME bags itself (so bOk above already
+		// covers those), but the light/atmosphere bags are validated by their write
+		// path at apply time, and shipped data must never name a property that moved.
+		auto CheckBag = [&](const FString& EntryId, const TCHAR* BagName,
+			const TSharedPtr<FJsonObject>& Bag, UStruct* Target)
+		{
+			TestNotNull(*FString::Printf(
+				TEXT("'%s.%s': could resolve the struct its `%s` are written into"),
+				*Pair.Key, *EntryId, BagName), Target);
+			if (!Target || !Bag.IsValid())
+			{
+				return;
+			}
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Prop : Bag->Values)
+			{
+				TestNotNull(*FString::Printf(TEXT("'%s.%s': %s property '%s' exists on %s"),
+					*Pair.Key, *EntryId, BagName, *Prop.Key, *Target->GetName()),
+					FMonolithReflectionWalker::FindPropertyForwarding(Target, Prop.Key));
+			}
+		};
+
 		for (const FMonolithMeshLayoutActions::FResolvedEntry& E : Resolved)
 		{
+			FString TypeStr;
+			E.Params->TryGetStringField(TEXT("type"), TypeStr);
+
+			// spawn_volume's `properties` are curated snake_case aliases, not
+			// UPROPERTY names, so there is nothing to look up by reflection. Their
+			// canary is ResolveLayout's own honoured-key check, asserted above.
+			if (E.KindToken == TEXT("volume"))
+			{
+				continue;
+			}
+
 			const TSharedPtr<FJsonObject>* PropsPtr = nullptr;
-			if (!E.Params->TryGetObjectField(TEXT("properties"), PropsPtr) || !PropsPtr)
+			const bool bHasProps = E.Params->TryGetObjectField(TEXT("properties"), PropsPtr) && PropsPtr;
+
+			if (E.KindToken == TEXT("actor"))
+			{
+				// Two bags, two targets: `properties` -> the actor class,
+				// `component_properties` -> its root component class.
+				const TSharedPtr<FJsonObject>* CompPtr = nullptr;
+				const bool bHasComp =
+					E.Params->TryGetObjectField(TEXT("component_properties"), CompPtr) && CompPtr;
+				if (!bHasProps && !bHasComp)
+				{
+					continue;
+				}
+
+				FString ClassOrMesh;
+				E.Params->TryGetStringField(TEXT("class_or_mesh"), ClassOrMesh);
+				UClass* Cls = nullptr;
+				UStaticMesh* Mesh = nullptr;
+				FString ResolveErr;
+				UClass* ActorClass = nullptr;
+				if (FMonolithMeshSceneActions::ResolveSpawnTarget(ClassOrMesh, Cls, Mesh, ResolveErr))
+				{
+					ActorClass = Mesh ? AStaticMeshActor::StaticClass() : Cls;
+				}
+
+				if (bHasProps)
+				{
+					CheckBag(E.EntryId, TEXT("properties"), *PropsPtr, ActorClass);
+				}
+				if (bHasComp)
+				{
+					UStruct* CompClass = nullptr;
+					if (ActorClass)
+					{
+						if (AActor* CDO = Cast<AActor>(ActorClass->GetDefaultObject()))
+						{
+							if (USceneComponent* Root = CDO->GetRootComponent())
+							{
+								CompClass = Root->GetClass();
+							}
+						}
+					}
+					CheckBag(E.EntryId, TEXT("component_properties"), *CompPtr, CompClass);
+				}
+				continue;
+			}
+
+			if (!bHasProps)
 			{
 				continue;
 			}
 
 			UStruct* Target = nullptr;
-			FString TypeStr;
-			E.Params->TryGetStringField(TEXT("type"), TypeStr);
-
 			if (E.KindToken == TEXT("light"))
 			{
 				FString Err;
@@ -290,20 +386,7 @@ bool FMonolithMeshLayoutShippedDataTest::RunTest(const FString& /*Parameters*/)
 				Target = FMonolithMeshAtmosphereActions::ResolveSectionStruct(TypeStr);
 			}
 
-			TestNotNull(*FString::Printf(
-				TEXT("'%s.%s': could resolve the struct its `properties` are written into"),
-				*Pair.Key, *E.EntryId), Target);
-			if (!Target)
-			{
-				continue;
-			}
-
-			for (const TPair<FString, TSharedPtr<FJsonValue>>& Prop : (*PropsPtr)->Values)
-			{
-				TestNotNull(*FString::Printf(TEXT("'%s.%s': property '%s' exists on %s"),
-					*Pair.Key, *E.EntryId, *Prop.Key, *Target->GetName()),
-					FMonolithReflectionWalker::FindPropertyForwarding(Target, Prop.Key));
-			}
+			CheckBag(E.EntryId, TEXT("properties"), *PropsPtr, Target);
 		}
 	}
 
@@ -1009,6 +1092,376 @@ bool FMonolithMeshLayoutSaveTest::RunTest(const FString& /*Parameters*/)
 
 	IFileManager::Get().Delete(*FilePath, false, true, true);
 	TestFalse(TEXT("cleanup removed the layout file"), IFileManager::Get().FileExists(*FilePath));
+	return true;
+}
+
+// ============================================================================
+// 13. mesh.spawn_actor's property channel, called DIRECTLY.
+//
+// Lives in this file because the channel exists for the layout system: `kind:
+// "actor"` could not set arbitrary properties, and the fix had to be upstream in
+// spawn_actor. Tested here at the source before test 14 tests it through a layout.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshSpawnActorPropertyChannelTest,
+	"Monolith.Mesh.Scene.SpawnActorPropertyChannel",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshSpawnActorPropertyChannelTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+
+	UWorld* World = GetTestWorld();
+	if (!World)
+	{
+		AddWarning(TEXT("no editor world — skipping"));
+		return true;
+	}
+
+	auto CountActorsLabelled = [World](const FString& Label)
+	{
+		int32 Count = 0;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (IsValid(*It) && It->GetActorLabel() == Label) { ++Count; }
+		}
+		return Count;
+	};
+
+	// --- 1. Valid bags land on the right two objects. ---
+	const FString GoodLabel = TEXT("monolith_test_props_ok");
+	{
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetBoolField(TEXT("bEnableAutoLODGeneration"), false);
+
+		auto CompProps = MakeShared<FJsonObject>();
+		CompProps->SetStringField(TEXT("Mobility"), TEXT("Movable"));
+		CompProps->SetBoolField(TEXT("bReceivesDecals"), false);
+
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("class_or_mesh"), TEXT("StaticMeshActor"));
+		P->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		P->SetStringField(TEXT("name"), GoodLabel);
+		P->SetObjectField(TEXT("properties"), Props);
+		P->SetObjectField(TEXT("component_properties"), CompProps);
+
+		FMonolithActionResult R = Exec(TEXT("spawn_actor"), P);
+		TestTrue(FString::Printf(TEXT("spawn_actor with valid property bags succeeds (%s)"), *R.ErrorMessage),
+			R.bSuccess);
+
+		if (R.bSuccess)
+		{
+			const TArray<TSharedPtr<FJsonValue>>* ActorSet = nullptr;
+			const TArray<TSharedPtr<FJsonValue>>* CompSet = nullptr;
+			TestTrue(TEXT("the result reports which ACTOR properties were set"),
+				R.Result->TryGetArrayField(TEXT("properties_set"), ActorSet) && ActorSet && ActorSet->Num() == 1);
+			TestTrue(TEXT("the result reports which COMPONENT properties were set"),
+				R.Result->TryGetArrayField(TEXT("component_properties_set"), CompSet) && CompSet && CompSet->Num() == 2);
+
+			AActor* Spawned = nullptr;
+			for (TActorIterator<AActor> It(World); It; ++It)
+			{
+				if (IsValid(*It) && It->GetActorLabel() == GoodLabel) { Spawned = *It; }
+			}
+			TestNotNull(TEXT("the actor is in the level"), Spawned);
+			if (Spawned)
+			{
+				TestFalse(TEXT("the ACTOR bag really wrote onto the actor (bEnableAutoLODGeneration)"),
+					Spawned->bEnableAutoLODGeneration);
+
+				USceneComponent* Root = Spawned->GetRootComponent();
+				TestNotNull(TEXT("the actor has a root component"), Root);
+				if (Root)
+				{
+					TestEqual(TEXT("the COMPONENT bag really wrote onto the root component (Mobility)"),
+						static_cast<int32>(Root->Mobility.GetValue()),
+						static_cast<int32>(EComponentMobility::Movable));
+					if (UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(Root))
+					{
+						TestFalse(TEXT("and the second component key landed too (bReceivesDecals)"),
+							Prim->bReceivesDecals);
+					}
+				}
+				World->EditorDestroyActor(Spawned, true);
+			}
+		}
+	}
+
+	// --- 2. An unknown key on the ACTOR bag: error, did-you-mean, nothing spawned. ---
+	const FString BadLabel = TEXT("monolith_test_props_bad");
+	{
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetBoolField(TEXT("bEnableAutoLODGenaration"), false); // typo
+
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("class_or_mesh"), TEXT("StaticMeshActor"));
+		P->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		P->SetStringField(TEXT("name"), BadLabel);
+		P->SetObjectField(TEXT("properties"), Props);
+
+		FMonolithActionResult R = Exec(TEXT("spawn_actor"), P);
+		TestFalse(TEXT("an unknown ACTOR property name is refused"), R.bSuccess);
+		TestTrue(TEXT("the error names the offending key"),
+			R.ErrorMessage.Contains(TEXT("bEnableAutoLODGenaration")));
+		TestTrue(TEXT("the error carries a did-you-mean candidate"),
+			R.ErrorMessage.Contains(TEXT("did you mean")) &&
+			R.ErrorMessage.Contains(TEXT("bEnableAutoLODGeneration")));
+		TestEqual(TEXT("NOTHING was left behind by the refused spawn"), CountActorsLabelled(BadLabel), 0);
+	}
+
+	// --- 3. Same for the COMPONENT bag — and the rollback really is a rollback:
+	//        the actor bag is fine, so the actor DOES get spawned before the
+	//        component bag is rejected, and it must be destroyed again. ---
+	{
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetBoolField(TEXT("bEnableAutoLODGeneration"), false);
+
+		auto CompProps = MakeShared<FJsonObject>();
+		CompProps->SetStringField(TEXT("Mobilty"), TEXT("Movable")); // typo
+
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("class_or_mesh"), TEXT("StaticMeshActor"));
+		P->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		P->SetStringField(TEXT("name"), BadLabel);
+		P->SetObjectField(TEXT("properties"), Props);
+		P->SetObjectField(TEXT("component_properties"), CompProps);
+
+		FMonolithActionResult R = Exec(TEXT("spawn_actor"), P);
+		TestFalse(TEXT("an unknown COMPONENT property name is refused"), R.bSuccess);
+		TestTrue(TEXT("the component error names the offending key"), R.ErrorMessage.Contains(TEXT("Mobilty")));
+		TestTrue(TEXT("the component error suggests Mobility"), R.ErrorMessage.Contains(TEXT("Mobility")));
+		TestEqual(TEXT("nothing was left behind by the refused component write either"),
+			CountActorsLabelled(BadLabel), 0);
+	}
+
+	// --- 4. A non-object bag is a clean parameter error. ---
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("class_or_mesh"), TEXT("StaticMeshActor"));
+		P->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		P->SetStringField(TEXT("name"), BadLabel);
+		P->SetStringField(TEXT("properties"), TEXT("Mobility=Movable"));
+
+		FMonolithActionResult R = Exec(TEXT("spawn_actor"), P);
+		TestFalse(TEXT("a non-object `properties` is refused"), R.bSuccess);
+		TestTrue(TEXT("the error says what shape is expected"), R.ErrorMessage.Contains(TEXT("JSON object")));
+		TestEqual(TEXT("and nothing spawned"), CountActorsLabelled(BadLabel), 0);
+	}
+
+	return true;
+}
+
+// ============================================================================
+// 14. The two gaps closed THROUGH A LAYOUT: kind "actor" + properties, and
+//     the new kind "volume".
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutActorPropertiesTest,
+	"Monolith.Mesh.Layouts.ActorPropertiesThroughLayout",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutActorPropertiesTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+
+	const FString LayoutId = TEXT("monolith_test_actor_props");
+	Remove(LayoutId);
+
+	auto MakeEntry = [](const TCHAR* CompKey)
+	{
+		TSharedPtr<FJsonObject> E = Entry(TEXT("pedestal"), TEXT("actor"));
+		E->SetStringField(TEXT("class"), TEXT("StaticMeshActor"));
+		E->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetBoolField(TEXT("bEnableAutoLODGeneration"), false);
+		E->SetObjectField(TEXT("properties"), Props);
+
+		auto CompProps = MakeShared<FJsonObject>();
+		CompProps->SetStringField(CompKey, TEXT("Movable"));
+		CompProps->SetBoolField(TEXT("bReceivesDecals"), false);
+		E->SetObjectField(TEXT("component_properties"), CompProps);
+		return E;
+	};
+
+	// --- The good document: both bags travel through the layout untouched. ---
+	FMonolithActionResult R =
+		Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ MakeEntry(TEXT("Mobility")) })));
+	TestTrue(FString::Printf(TEXT("a layout entry with property bags applies (%s)"), *R.ErrorMessage), R.bSuccess);
+	if (!R.bSuccess) { Remove(LayoutId); return false; }
+
+	TestEqual(TEXT("the entry was placed"), CountInLevel(LayoutId), 1);
+
+	for (AActor* Actor : FMonolithMeshLayoutActions::FindLayoutActors(GetTestWorld(), LayoutId))
+	{
+		TestFalse(TEXT("the layout's `properties` bag reached the ACTOR"), Actor->bEnableAutoLODGeneration);
+
+		USceneComponent* Root = Actor->GetRootComponent();
+		TestNotNull(TEXT("the placed actor has a root component"), Root);
+		if (Root)
+		{
+			TestEqual(TEXT("the layout's `component_properties` bag reached the ROOT COMPONENT"),
+				static_cast<int32>(Root->Mobility.GetValue()), static_cast<int32>(EComponentMobility::Movable));
+		}
+
+		// The layout tag must survive a bag that rewrites actor-level state.
+		TestFalse(TEXT("the actor still carries its entry tag"),
+			FMonolithMeshLayoutActions::GetEntryId(Actor).IsEmpty());
+	}
+
+	Remove(LayoutId);
+	TestEqual(TEXT("cleanup removed the layout"), CountInLevel(LayoutId), 0);
+
+	// --- Phase 1 catches a bad property key with ZERO world mutation. ---
+	{
+		FMonolithActionResult Bad =
+			Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ MakeEntry(TEXT("Mobilty")) })));
+		TestFalse(TEXT("a mistyped component property fails the apply"), Bad.bSuccess);
+		TestTrue(TEXT("the error names the entry"), Bad.ErrorMessage.Contains(TEXT("pedestal")));
+		TestTrue(TEXT("the error names the mistyped key"), Bad.ErrorMessage.Contains(TEXT("Mobilty")));
+		TestTrue(TEXT("the error carries a did-you-mean"), Bad.ErrorMessage.Contains(TEXT("did you mean")));
+		TestTrue(TEXT("the failure is reported as a PHASE 1 refusal (nothing placed)"),
+			Bad.ErrorMessage.Contains(TEXT("NOTHING was placed")));
+		TestEqual(TEXT("no actor was created by the refused apply"), CountInLevel(LayoutId), 0);
+	}
+
+	// --- Same for a bad ACTOR-bag key, and describe reports it without touching anything. ---
+	{
+		TSharedPtr<FJsonObject> E = Entry(TEXT("pedestal"), TEXT("actor"));
+		E->SetStringField(TEXT("class"), TEXT("StaticMeshActor"));
+		E->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetBoolField(TEXT("bEnableAutoLODGenaration"), false);
+		E->SetObjectField(TEXT("properties"), Props);
+
+		auto DescribeParams = ApplyParams(LayoutId, Body({ E }));
+		FMonolithActionResult Describe = Exec(TEXT("describe_level_layout"), DescribeParams);
+		TestTrue(TEXT("describe still succeeds on a broken document"), Describe.bSuccess);
+		if (Describe.bSuccess)
+		{
+			bool bValid = true;
+			Describe.Result->TryGetBoolField(TEXT("valid"), bValid);
+			TestFalse(TEXT("describe reports the document as invalid"), bValid);
+
+			const TArray<TSharedPtr<FJsonValue>>* Problems = nullptr;
+			Describe.Result->TryGetArrayField(TEXT("problems"), Problems);
+			const FString Joined = Problems && Problems->Num() > 0 ? (*Problems)[0]->AsString() : FString();
+			TestTrue(TEXT("the dry run names the bad actor property"),
+				Joined.Contains(TEXT("bEnableAutoLODGenaration")));
+		}
+		TestEqual(TEXT("describe placed nothing"), CountInLevel(LayoutId), 0);
+	}
+
+	Remove(LayoutId);
+	return true;
+}
+
+// ============================================================================
+// 15. kind "volume".
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutVolumeKindTest,
+	"Monolith.Mesh.Layouts.VolumeKind",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutVolumeKindTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+
+	// The kind table must name the real action, and it must be registered.
+	TestNotNull(TEXT("the 'volume' kind exists"), FMonolithMeshLayoutActions::FindKind(TEXT("volume")));
+	if (const FMonolithMeshLayoutActions::FKind* Kind = FMonolithMeshLayoutActions::FindKind(TEXT("volume")))
+	{
+		TestEqual(TEXT("the volume kind places through mesh.spawn_volume"), Kind->Action, FString(TEXT("spawn_volume")));
+	}
+
+	const FString LayoutId = TEXT("monolith_test_volume");
+	Remove(LayoutId);
+
+	// --- A trigger volume + a post-process volume with a honoured property key. ---
+	TSharedPtr<FJsonObject> Trigger = Entry(TEXT("doorway"), TEXT("volume"));
+	Trigger->SetStringField(TEXT("type"), TEXT("trigger"));
+	Trigger->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 100.0));
+	Trigger->SetArrayField(TEXT("extent"), Vec(60.0, 200.0, 110.0));
+
+	TSharedPtr<FJsonObject> Pain = Entry(TEXT("lava"), TEXT("volume"));
+	Pain->SetStringField(TEXT("type"), TEXT("pain"));
+	Pain->SetArrayField(TEXT("location"), Vec(400.0, 0.0, 0.0));
+	{
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("damage_per_sec"), 25.0);
+		Pain->SetObjectField(TEXT("properties"), Props);
+	}
+
+	FMonolithActionResult R = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ Trigger, Pain })));
+	TestTrue(FString::Printf(TEXT("a layout with volume entries applies (%s)"), *R.ErrorMessage), R.bSuccess);
+	if (!R.bSuccess) { Remove(LayoutId); return false; }
+
+	TestEqual(TEXT("both volumes were placed and tagged"), CountInLevel(LayoutId), 2);
+
+	bool bFoundTrigger = false;
+	for (AActor* Actor : FMonolithMeshLayoutActions::FindLayoutActors(GetTestWorld(), LayoutId))
+	{
+		if (FMonolithMeshLayoutActions::GetEntryId(Actor) == TEXT("doorway"))
+		{
+			bFoundTrigger = true;
+			TestTrue(TEXT("the 'trigger' type really spawned an ATriggerVolume"),
+				Actor->IsA(ATriggerVolume::StaticClass()));
+			TestEqual(TEXT("the volume is labelled from the layout"),
+				Actor->GetActorLabel(), FString::Printf(TEXT("%s.doorway"), *LayoutId));
+		}
+	}
+	TestTrue(TEXT("the trigger entry is present"), bFoundTrigger);
+
+	Remove(LayoutId);
+	TestEqual(TEXT("cleanup removed the volumes"), CountInLevel(LayoutId), 0);
+
+	// --- An unknown volume type is refused in phase 1. ---
+	{
+		TSharedPtr<FJsonObject> E = Entry(TEXT("nope"), TEXT("volume"));
+		E->SetStringField(TEXT("type"), TEXT("teleport"));
+		E->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		FMonolithActionResult Bad = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ E })));
+		TestFalse(TEXT("an unknown volume type is refused"), Bad.bSuccess);
+		TestTrue(TEXT("the error lists the valid volume types"),
+			Bad.ErrorMessage.Contains(TEXT("nav_modifier")));
+		TestEqual(TEXT("nothing placed"), CountInLevel(LayoutId), 0);
+	}
+
+	// --- A property key the volume type does not honour is refused in phase 1,
+	//     rather than being silently dropped (which would make the layout lie). ---
+	{
+		TSharedPtr<FJsonObject> E = Entry(TEXT("doorway"), TEXT("volume"));
+		E->SetStringField(TEXT("type"), TEXT("trigger"));
+		E->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("damage_per_sec"), 10.0);
+		E->SetObjectField(TEXT("properties"), Props);
+
+		FMonolithActionResult Bad = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ E })));
+		TestFalse(TEXT("a property key this volume type does not honour is refused"), Bad.bSuccess);
+		TestTrue(TEXT("the error names the key"), Bad.ErrorMessage.Contains(TEXT("damage_per_sec")));
+		TestEqual(TEXT("nothing placed"), CountInLevel(LayoutId), 0);
+	}
+
+	// --- And the same check guards mesh.spawn_volume called directly. ---
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("type"), TEXT("trigger"));
+		P->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("blend_radius"), 100.0);
+		P->SetObjectField(TEXT("properties"), Props);
+
+		FMonolithActionResult Bad = Exec(TEXT("spawn_volume"), P);
+		TestFalse(TEXT("spawn_volume refuses an unhonoured properties key"), Bad.bSuccess);
+		TestTrue(TEXT("the error says nothing was spawned"), Bad.ErrorMessage.Contains(TEXT("Nothing was spawned")));
+	}
+
+	Remove(LayoutId);
 	return true;
 }
 

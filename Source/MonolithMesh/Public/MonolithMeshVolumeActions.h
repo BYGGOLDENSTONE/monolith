@@ -20,6 +20,33 @@ public:
 	/** Register all 7 level design core actions with the tool registry */
 	static void RegisterActions(FMonolithToolRegistry& Registry);
 
+	/**
+	 * Resolve a volume `type` token to its UClass. Returns nullptr + an OutError that
+	 * lists every valid token. Public because callers that VALIDATE a spawn before
+	 * committing to it (mesh.apply_level_layout's `volume` kind) must get exactly the
+	 * answer the spawn itself would give.
+	 */
+	static UClass* ResolveVolumeClass(const FString& TypeStr, FString& OutError);
+
+	/**
+	 * The keys `spawn_volume`'s `properties` bag actually honours for a volume class.
+	 *
+	 * Unlike mesh.place_light / mesh.spawn_actor, this bag is NOT a reflection channel:
+	 * the keys are curated snake_case aliases (`damage_per_sec`), not UPROPERTY names,
+	 * so the reflection walker cannot validate them. This table is what makes them
+	 * checkable instead of silently ignored.
+	 */
+	static TArray<FString> GetHonouredVolumePropertyKeys(const UClass* VolumeClass);
+
+	/**
+	 * Validate a `properties` bag against a volume class WITHOUT touching the world.
+	 * An unhonoured key is an error listing the keys this volume type does honour —
+	 * a silently dropped key would make mesh.apply_level_layout claim it applied a
+	 * document it did not.
+	 */
+	static bool ValidateVolumeProperties(
+		const UClass* VolumeClass, const TSharedPtr<FJsonObject>& Params, FString& OutError);
+
 private:
 	static FMonolithActionResult SpawnVolume(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult GetActorProperties(const TSharedPtr<FJsonObject>& Params);
@@ -30,9 +57,6 @@ private:
 	static FMonolithActionResult SetCollisionPreset(const TSharedPtr<FJsonObject>& Params);
 
 	// --- Helpers ---
-
-	/** Resolve a volume type string to its UClass. Returns nullptr + sets OutError if invalid. */
-	static UClass* ResolveVolumeClass(const FString& TypeStr, FString& OutError);
 
 	/** Read a single FProperty value as string via ExportText_Direct */
 	static bool ExportPropertyValue(const FProperty* Prop, const void* ContainerPtr, FString& OutValue);
