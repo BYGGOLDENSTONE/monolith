@@ -396,3 +396,26 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Ek şartlar: yuvarlak yolculuk sadakati DÜRÜST olacak — ifade edilemeyen aktör ya da okunamayan property sessizce düşürülmeyecek, açık uyarı verilecek; aktör başına yüzlerce motor varsayılanı dökülmeyecek (diff'lenemez belge işe yaramaz) — hangi filtre seçildiyse gerekçelendirilecek; okuma için mevcut `FMonolithReflectionReader` ve preset readback anahtar kümeleri kullanılacak, paralel okuyucu yazılmayacak; yazma mevcut `save_level_layout` yolundan geçecek (o zaten yazmadan önce doğruluyor).
 - Commit: -
 - Sıradaki: Görev 17 raporu.
+
+## [04:34] Görev 17 TAMAM — yerleşim yakalama, tur kapandı (247/247)
+- Durum: done
+- Ne oldu: Yeni aksiyon `mesh.capture_level_layout`. Kaynaklar: etiketli yerleşim aktörleri, açık ad listesi (bir yazım hatası TÜM çağrıyı düşürüyor — istenenden küçük bir yerleşim hatadan beterdir), ve editör seçimi (`GEditor->GetSelectedActors()` — `mesh.select_actors`'ın kullandığı çağrının aynısı, ikinci bir "seçim" kavramı icat edilmedi). 8 yeni test, 239→247.
+- **Property filtresi**: izin listesi (veri, üç JSON dosyasında) ∧ **arketipten** farklı olma (`GetArchetype()`, sınıf CDO'su değil — taze bir spawn'ın ürettiği şey bu), `FProperty::Identical` ile karşılaştırılıyor. Yakalanan her değer ayrıca `InspectTree`'den geçiriliyor; yazıcının reddedeceği her şey **adı verilen bir uyarıyla** düşürülüyor.
+- **`FPostProcessSettings` readback listesiyle değil `bOverride_` bitleriyle yakalanıyor** — kapalı bir override'ın arkasındaki alan yürürlükte değil, onu yakalamak yeniden uygulamada sessizce etkinleştirirdi.
+- **Preset eşleşmesi uygulandı ve tam eşleşme**: preset'in JSON'u `WriteLeaf` ile scratch tampona yazılıp `FProperty::Identical` ile karşılaştırılıyor. Çalışmasını sağlayan şey bu — JSON karşılaştırması her float preset'i ıskalardı (`0.5357 != (double)0.5357f`). Canlıda 14 girdinin 7'si preset referansına çöktü.
+- **Bulunan gerçek hata**: `AActor::PostSpawnInitialize` `RootTransform * UserSpawnTransform` yapıyor ve `ADirectionalLight`/`ASpotLight` kökünde −46°/−90° pitch taşıyor; bu yüzden `place_light` `rotation` parametresini **hiç onurlandırmamış** — `demo_lit_room`'un güneşi −35 isteyip −81 alıyormuş ve her yakala→yeniden uygula turunda −46 daha kayıyormuş. Spawn sonrası `SetActorRotation` ile düzeltildi. **Kullanıcıya görünür**: mevcut directional/spot girdileri artık belgelerinin söylediği yöne bakıyor.
+- Karar: Kabul. Kontrol ajanı **tam turu canlı koştu**: uygula (14) → yakala (#1: 14 girdi, geçerli, 0 uyarı, 7 preset) → sil (14) → yakalanan belgeyi uygula (14) → tekrar yakala (#2: aynı sayılar) → **iki belge aynı** (girdi sırası farklı, veri birebir aynı — işçinin önceden bildirdiği tek fark). Güneşin yakalanan rotasyonu **[-35, 150, 0]**, yani yazılan değer; eski bozuk −81 değil. Ayrıca: f2bdb66 HEAD'de, ağaç temiz, 9 dosya, `Monolith.uplugin`/`MonolithSettings.h` dokunulmamış, 247/0/0 ve 247 "Test Completed", 8 yeni test + tüm diğer aileler `{Success}`, build yeşil.
+- Commit: f2bdb66
+- Sıradaki: Görev 18 — turda kalan kayıp durumları.
+
+### notes_for_next_worker (görev 17 işçisinden — kalan kayıplar)
+- **Kayıp ve kullanıcıya söyleniyor** (yanıtta `warnings`, belgede `capture.warnings`/`capture.not_captured`): Blueprint sınıfları ve geçici paket mesh'leri (aktör başına `skipped`; yakalama güvenilmez girdi üretmektense reddediyor), ışık/atmosfer/volume'da arketip dışı ölçek (o aksiyonlarda `scale` yok), `UCubeBuilder` ile kurulmamış brush'lar, `spawn_volume`'un küratörlü takma adları (UPROPERTY adı değiller, reflection okuyamıyor), izin listesi dışı her şey. **Tek sınırlı yaklaşıklık**: transform sayıları 6 ondalığa yuvarlanıyor ki belgeler diff'lenebilir kalsın; property değerleri asla yuvarlanmıyor.
+- Küçük gözlem: `mesh.select_actors sub_action=focus`, `editor.capture_viewport`'un yakaladığı viewport'u hareket ettirmedi (4 viewport istemcisi var, capture index 1'i alıyor). Betikli kadraj isteyen bir işçi buna bakmalı.
+
+## [04:40] Görev 18 gönderildi — turdaki kayıp durumların kapatılması
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. İki iş: (1) `mesh.spawn_actor` sınıfı yol ile kabul etsin (`/Game/...BP_Thing_C`) — böylece Blueprint aktörleri yerleştirilebilir olur ve yakalama onları atlamak yerine gerçek girdi üretir; (2) `spawn_volume`'un küratörlü takma ad torbası reflection kanalına çevrilsin ki volume'lar da tura girsin.
+- Karar: (2) bir UYUMLULUK kararı içerdiği için işçiye açıkça bırakıldı ama şart kondu: çalışan bir çağrı biçimini göç yolu bırakmadan kırmak, biraz eşleme kodu yazmaktan beterdir. Ne seçilirse `Docs/API_REFERENCE.md` net söyleyecek.
+- Ek şart: MonolithDev'de uygun bir Blueprint asset'i yoksa **uydurma bağımlılık yaratılmayacak** — test kendi minimal Blueprint'ini üretecek (MonolithUI testlerinde emsali var), gönderilen demo yerleşimi var olmayabilecek asset'lerden uzak tutulacak. Ayrıca Blueprint'ler erişilebilir olunca, önceki işçinin test edilmemiş bıraktığı SimpleConstructionScript geri alma yolu artık TEST EDİLECEK.
+- Commit: -
+- Sıradaki: Görev 18 raporu.
