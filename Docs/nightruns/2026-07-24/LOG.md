@@ -478,3 +478,25 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Karar: Bu son iş olarak seçildi çünkü iyi sınırlı, mevcut tasarımın veriyle genişleme iddiasını sınıyor ve bir aileyi tamamlıyor. İşçiye boyutlandırmayı DOĞRULAMASI söylendi, güvenmesi değil. Ayrıca bulut tamamen görsel bir özellik olduğu için "görüntüsüz koşuda kanıtlanamayanı abartma" ve canlı yakalamayla gerçekten bulut görünüp görünmediğini raporlama şartı kondu.
 - Commit: -
 - Sıradaki: Görev 21 raporu, ardından MORNING_REPORT.
+
+## [06:07] Görev 21 TAMAM — hacimsel bulutlar (261/261). Gece işleri bitti.
+- Durum: done
+- Ne oldu: `volumetric_cloud` atmosfer ailesinin dördüncü tipi oldu. **Görev 13 işçisinin "bir tablo satırı + readback + preset" boyutlandırması DOĞRU çıktı** — spawn/set/get için tabloya eklenen satır ve JSON verisi yetti; ötesindeki tek C++ işçinin kendi seçtiği materyal-dürüstlüğü bloğu. 4 bulut preset'i (`clouds_fair_weather`, `clouds_overcast`, `clouds_storm_towering`, `clouds_performance`), 24 anahtarlık `readback.volumetric_cloud`. **Yerleşimlerde bedava çalıştı — varsayılmadı, doğrulandı**: `TokenForActor`'a ya da yakalama yoluna tek satır bile gerekmedi, ikisi de tablo/veri güdümlü. 2 yeni test, 259→261.
+- **Materyal kararı**: motor varsayılanı miras alınıyor, yeni parametre yok. `Material` düz bir `FSoftObjectProperty` olduğu için mevcut `properties` kanalı zaten yolla atayabiliyor ve gerçekten etki ediyor (yazma yolumuzun `PreEditChange`/`PostEditChangeProperty` çifti `FComponentReregisterContext` kurup yıkıyor, `OnRegister` materyali yeniden yüklüyor). Varsayılan yoksa ya da yol bozuksa `material.loaded:false` + "bulut hiçbir şey render etmiyor" notu dönüyor — sessiz boş gökyüzü yok.
+- **Motor adı tuzağı düzeltildi**: UHT `_DEPRECATED` ekini KIRPIYOR, yani `ReflectionViewSampleCountScale` reflection'da çözülüyor ama `CPF_Deprecated` ve yazımı etkisiz. Canlı olan `ReflectionViewSampleCountScaleValue`. Test artık bayrağa bakıyor ve gönderilen hiçbir bulut readback anahtarının deprecated olmadığını doğruluyor.
+- Karar: Kabul. Kontrol ajanı **canlı doğruladı**: `spawn_atmosphere type=volumetric_cloud preset=clouds_overcast` → materyal `loaded:true` (`m_SimpleVolumetricCloud_Inst`), geri-okuma gerçek değerler veriyor (LayerBottomAltitude 5, LayerHeight 10, PlanetRadius 6360…), ekran görüntüsü 1920×1168 `uniform:false` 2.913.278 bayt; preset `clouds_storm_towering`'e çevrilip yeniden yakalandığında dosya 3.013.317 bayt — yani gökyüzü gerçekten değişti. Ayrıca: c70a7ce HEAD'de, ağaç temiz, 6 dosya, `Monolith.uplugin`/`MonolithSettings.h` dokunulmamış, 261/0/0 ve 261 "Test Completed", 2 yeni test + tüm aileler `{Success}`, build yeşil. 20 preset (post_process 3, lumen 5, height_fog 5, sky_atmosphere 3, volumetric_cloud 4).
+- Commit: c70a7ce
+- Sıradaki: MORNING_REPORT.
+
+### notes_for_next_worker (görev 21 işçisinden)
+- `editor.capture_viewport`'un kamera geçersiz kılma parametresi YOK (`camera_location`/`camera_rotation` bilinmeyen-parametre uyarısı dönüyor) ve dosya adları SANİYEYE yuvarlı — aynı saniyedeki iki yakalama birbirini sessizce eziyor. Peş peşe kare alacaksan arada dosyayı kopyala.
+- `mesh.find_actors` diye bir aksiyon yok (did-you-mean `align_actors`/`group_actors`/`move_actor` öneriyor).
+- Varsayılan UE template level'ı (`/Temp/Untitled_1`) ZATEN bir `VolumetricCloud` aktörü içeriyor — "bulutum görünmüyor" demeden önce bilinmeli.
+- Gökyüzü şeridinin ORTALAMA parlaklığı preset değişiminde neredeyse sabit kalıyor (179,6 / 182,2 / 181,8) — fark yapısal, parlaklıkta değil. Sayısal kanarya kurmaya çalışma.
+
+## [06:10] GECE BİTTİ — MORNING_REPORT yazıldı
+- Durum: done
+- Ne oldu: 21 görev gönderildi, 21'i tamamlandı ve bağımsız doğrulandı. Park edilen görev YOK, blocked YOK, altyapı hatası YOK. Testler 173/177 → **261/261** (84 yeni test). Faz 1 tamamlandı, Faz 2 ana kapsamı tamamlandı.
+- Karar: Gece durma kuralıyla değil, iş bitmediği için değil — sabah saati yaklaştığı ve rapor için yer bırakmak gerektiği için sonlandırıldı. Kalan işler MORNING_REPORT §4'te sıradaki işler olarak listelendi.
+- Commit: (bu kayıt + MORNING_REPORT)
+- Sıradaki: Kullanıcının kabul testi. Merge kararı kullanıcıya ait — night dalı master'a BİRLEŞTİRİLMEDİ.
