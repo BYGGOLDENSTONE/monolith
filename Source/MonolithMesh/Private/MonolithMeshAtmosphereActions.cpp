@@ -15,7 +15,11 @@
 #include "Engine/RendererSettings.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
+// AVolumetricCloud is declared in the COMPONENT header, exactly like ASkyAtmosphere.
+// There is no "VolumetricCloud.h" in Engine/Classes.
+#include "Components/VolumetricCloudComponent.h"
 #include "Components/ActorComponent.h"
+#include "Materials/MaterialInterface.h"
 #include "Components/BrushComponent.h"
 #include "Builders/CubeBuilder.h"
 #include "ActorFactories/ActorFactory.h"
@@ -55,6 +59,7 @@ namespace MonolithAtmosphereTypes
 			{ TEXT("post_process"),   APostProcessVolume::StaticClass(),    nullptr                                     },
 			{ TEXT("height_fog"),     AExponentialHeightFog::StaticClass(), UExponentialHeightFogComponent::StaticClass() },
 			{ TEXT("sky_atmosphere"), ASkyAtmosphere::StaticClass(),        USkyAtmosphereComponent::StaticClass()       },
+			{ TEXT("volumetric_cloud"), AVolumetricCloud::StaticClass(),  UVolumetricCloudComponent::StaticClass()     },
 		};
 		return Entries;
 	}
@@ -78,6 +83,12 @@ namespace MonolithAtmosphereTypes
 			{ TEXT("askyatmosphere"),              TEXT("sky_atmosphere") },
 			{ TEXT("skyatmospherecomponent"),      TEXT("sky_atmosphere") },
 			{ TEXT("atmosphere"),                  TEXT("sky_atmosphere") },
+			{ TEXT("cloud"),                       TEXT("volumetric_cloud") },
+			{ TEXT("clouds"),                      TEXT("volumetric_cloud") },
+			{ TEXT("cloudlayer"),                  TEXT("volumetric_cloud") },
+			{ TEXT("volumetricclouds"),            TEXT("volumetric_cloud") },
+			{ TEXT("avolumetriccloud"),            TEXT("volumetric_cloud") },
+			{ TEXT("volumetriccloudcomponent"),    TEXT("volumetric_cloud") },
 		};
 		return Entries;
 	}
@@ -410,6 +421,60 @@ namespace MonolithAtmosphereHelpers
 			const void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(Container);
 			Obj->SetField(Prop->GetName(), FMonolithReflectionReader::PropertyToJsonValue(Prop, ValuePtr, Owner));
 		}
+		return Obj;
+	}
+
+	/**
+	 * The volumetric cloud's material honesty block, or null for any other type.
+	 *
+	 * A cloud is the only atmosphere type that renders THROUGH an asset: with no
+	 * loadable Volume-domain material on UVolumetricCloudComponent::Material the
+	 * actor exists, reports success, and draws absolutely nothing.
+	 *
+	 * The decision made here is to INHERIT the engine default rather than invent a
+	 * `material` parameter. Reasons, in order:
+	 *   - UVolumetricCloudComponent's constructor already assigns
+	 *     /Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst as a SOFT
+	 *     reference, so a plain spawn is already a visible cloud;
+	 *   - `Material` is a normal reflected FSoftObjectProperty, so the EXISTING
+	 *     `properties` channel already sets it by asset path
+	 *     (properties={"Material": "/Game/Sky/M_MyCloud"}). A dedicated parameter
+	 *     would be a second spelling for a thing that already works, and the layout
+	 *     system forwards `properties` for free while a new parameter would have to
+	 *     be plumbed;
+	 *   - the write path re-registers the component (PreEditChange installs an
+	 *     FComponentReregisterContext, PostEditChangeProperty tears it down), and
+	 *     UVolumetricCloudComponent::OnRegister re-runs Material.LoadSynchronous() —
+	 *     so a reflected write really does take effect, it is not an inert setter.
+	 *
+	 * What is reported instead is the truth about the current material: its path and
+	 * whether it actually resolved. If an engine install is missing the default, or
+	 * a caller names a path that does not exist, `loaded` comes back false with a
+	 * note saying the cloud will be invisible — rather than a silent empty sky.
+	 */
+	static TSharedPtr<FJsonObject> ReadCloudMaterial(const AActor* Actor)
+	{
+		const UVolumetricCloudComponent* Cloud =
+			Actor ? Actor->FindComponentByClass<UVolumetricCloudComponent>() : nullptr;
+		if (!Cloud)
+		{
+			return nullptr;
+		}
+
+		const FString Path = Cloud->Material.ToSoftObjectPath().ToString();
+		const bool bLoaded = Cloud->GetMaterial() != nullptr;
+
+		auto Obj = MakeShared<FJsonObject>();
+		Obj->SetStringField(TEXT("path"), Path);
+		Obj->SetBoolField(TEXT("loaded"), bLoaded);
+		Obj->SetStringField(TEXT("note"), bLoaded
+			? TEXT("Inherited/assigned cloud material resolved. Set another with "
+				   "properties={\"Material\": \"/Game/Path/M_MyCloud\"} — it must be a Volume domain material.")
+			: (Path.IsEmpty()
+				? TEXT("NO cloud material is assigned, so this cloud renders nothing. Assign one with "
+					   "properties={\"Material\": \"/Game/Path/M_MyCloud\"} (Volume domain).")
+				: TEXT("The assigned cloud material could not be loaded, so this cloud renders nothing. "
+					   "Check the asset path, or assign another with properties={\"Material\": \"...\"}.")));
 		return Obj;
 	}
 }
@@ -790,14 +855,17 @@ void FMonolithMeshAtmosphereActions::RegisterActions(FMonolithToolRegistry& Regi
 {
 	Registry.RegisterAction(TEXT("mesh"), TEXT("spawn_atmosphere"),
 		TEXT("Spawn and configure an atmosphere actor: post_process (APostProcessVolume), "
-			 "height_fog (AExponentialHeightFog) or sky_atmosphere (ASkyAtmosphere). "
+			 "height_fog (AExponentialHeightFog), sky_atmosphere (ASkyAtmosphere) or "
+			 "volumetric_cloud (AVolumetricCloud). "
 			 "'preset' applies a data-driven recipe (mesh.list_atmosphere_presets); 'properties' sets ANY "
 			 "UPROPERTY on the target settings by name via reflection. For a post-process volume the target is "
 			 "APostProcessVolume::Settings and each written key also enables its bOverride_ bit, which is what "
-			 "makes the change actually visible."),
+			 "makes the change actually visible. A volumetric_cloud inherits the engine default cloud material "
+			 "and reports it back in 'material' — set your own with properties={\"Material\": \"/Game/...\"} "
+			 "(must be a Volume domain material; without a loadable one a cloud renders nothing)."),
 		FMonolithActionHandler::CreateStatic(&FMonolithMeshAtmosphereActions::SpawnAtmosphere),
 		FParamSchemaBuilder()
-			.Required(TEXT("type"), TEXT("string"), TEXT("Atmosphere type: post_process, height_fog, sky_atmosphere"))
+			.Required(TEXT("type"), TEXT("string"), TEXT("Atmosphere type: post_process, height_fog, sky_atmosphere, volumetric_cloud"))
 			.Optional(TEXT("location"), TEXT("array"), TEXT("World location [x, y, z]"), TEXT("[0,0,0]"))
 			.Optional(TEXT("rotation"), TEXT("array"), TEXT("Rotation [pitch, yaw, roll]"), TEXT("[0,0,0]"))
 			.Optional(TEXT("extent"), TEXT("array"), TEXT("post_process only — brush half-extents [x, y, z]"), TEXT("[500,500,300]"))
@@ -809,7 +877,7 @@ void FMonolithMeshAtmosphereActions::RegisterActions(FMonolithToolRegistry& Regi
 			.Build());
 
 	Registry.RegisterAction(TEXT("mesh"), TEXT("set_atmosphere_properties"),
-		TEXT("Modify an existing post_process / height_fog / sky_atmosphere actor. 'preset' applies a "
+		TEXT("Modify an existing post_process / height_fog / sky_atmosphere / volumetric_cloud actor. 'preset' applies a "
 			 "data-driven recipe; 'properties' sets ANY UPROPERTY on its settings target by name via "
 			 "reflection; 'actor_properties' targets the actor's own UPROPERTYs. On a post-process volume "
 			 "the matching bOverride_ bits are enabled automatically."),
@@ -840,7 +908,7 @@ void FMonolithMeshAtmosphereActions::RegisterActions(FMonolithToolRegistry& Regi
 			 "Plugins/Monolith/Saved/Monolith/AtmospherePresets/ to add or override presets without rebuilding."),
 		FMonolithActionHandler::CreateStatic(&FMonolithMeshAtmosphereActions::ListAtmospherePresets),
 		FParamSchemaBuilder()
-			.Optional(TEXT("type"), TEXT("string"), TEXT("Filter by type: post_process, height_fog, sky_atmosphere, lumen"))
+			.Optional(TEXT("type"), TEXT("string"), TEXT("Filter by type: post_process, height_fog, sky_atmosphere, volumetric_cloud, lumen"))
 			.Optional(TEXT("include_properties"), TEXT("boolean"), TEXT("Include each preset's full property set"), TEXT("true"))
 			.Build());
 
@@ -990,6 +1058,10 @@ FMonolithActionResult FMonolithMeshAtmosphereActions::SpawnAtmosphere(const TSha
 	Result->SetArrayField(TEXT("properties_set"), MonolithAtmosphereHelpers::StringsToJson(Applied));
 	Result->SetArrayField(TEXT("overrides_enabled"), MonolithAtmosphereHelpers::StringsToJson(Overrides));
 	Result->SetArrayField(TEXT("actor_properties_set"), MonolithAtmosphereHelpers::StringsToJson(ActorApplied));
+	if (const TSharedPtr<FJsonObject> Mat = MonolithAtmosphereHelpers::ReadCloudMaterial(Actor))
+	{
+		Result->SetObjectField(TEXT("material"), Mat);
+	}
 	return FMonolithActionResult::Success(Result);
 }
 
@@ -1048,6 +1120,10 @@ FMonolithActionResult FMonolithMeshAtmosphereActions::SetAtmosphereProperties(co
 	Result->SetArrayField(TEXT("properties_set"), MonolithAtmosphereHelpers::StringsToJson(Applied));
 	Result->SetArrayField(TEXT("overrides_enabled"), MonolithAtmosphereHelpers::StringsToJson(Overrides));
 	Result->SetArrayField(TEXT("actor_properties_set"), MonolithAtmosphereHelpers::StringsToJson(ActorApplied));
+	if (const TSharedPtr<FJsonObject> Mat = MonolithAtmosphereHelpers::ReadCloudMaterial(Actor))
+	{
+		Result->SetObjectField(TEXT("material"), Mat);
+	}
 	return FMonolithActionResult::Success(Result);
 }
 
@@ -1179,6 +1255,10 @@ FMonolithActionResult FMonolithMeshAtmosphereActions::GetAtmosphereProperties(co
 	{
 		Result->SetObjectField(TEXT("overrides"),
 			MonolithAtmosphereHelpers::ReadOverrides(Target.Struct, Target.Container, Target.CradleObject, Reported));
+	}
+	if (const TSharedPtr<FJsonObject> Mat = MonolithAtmosphereHelpers::ReadCloudMaterial(Actor))
+	{
+		Result->SetObjectField(TEXT("material"), Mat);
 	}
 	return FMonolithActionResult::Success(Result);
 }

@@ -8,6 +8,7 @@
 		"lumen": "FPostProcessSettings, restricted to the Lumen / GI / reflection keys listed under readback.lumen",
 		"height_fog": "UExponentialHeightFogComponent",
 		"sky_atmosphere": "USkyAtmosphereComponent",
+		"volumetric_cloud": "UVolumetricCloudComponent (AVolumetricCloud) — NOTE: a cloud renders through its 'Material' (a Volume domain material asset). The engine default is inherited on spawn; set another with properties={\"Material\": \"/Game/...\"}. Distances on this component are in KILOMETRES, not centimetres.",
 		"project": "URendererSettings — READ ONLY, diagnostic only. Monolith never writes project renderer settings."
 	},
 
@@ -106,6 +107,32 @@
 			"HeightFogContribution",
 			"TransmittanceMinLightElevationAngle",
 			"AerialPerspectiveStartDepth"
+		],
+		"volumetric_cloud": [
+			"LayerBottomAltitude",
+			"LayerHeight",
+			"TracingStartMaxDistance",
+			"TracingStartDistanceFromCamera",
+			"TracingMaxDistanceMode",
+			"TracingMaxDistance",
+			"PlanetRadius",
+			"GroundAlbedo",
+			"Material",
+			"bUsePerSampleAtmosphericLightTransmittance",
+			"SkyLightCloudBottomOcclusion",
+			"ViewSampleCountScale",
+			"ReflectionViewSampleCountScaleValue",
+			"ShadowViewSampleCountScale",
+			"ShadowReflectionViewSampleCountScaleValue",
+			"ShadowTracingDistance",
+			"StopTracingTransmittanceThreshold",
+			"AerialPespectiveRayleighScatteringStartDistance",
+			"AerialPespectiveRayleighScatteringFadeDistance",
+			"AerialPespectiveMieScatteringStartDistance",
+			"AerialPespectiveMieScatteringFadeDistance",
+			"bHoldout",
+			"bRenderInMainPass",
+			"bVisibleInRealTimeSkyCaptures"
 		],
 		"project": [
 			"DynamicGlobalIllumination",
@@ -234,6 +261,72 @@
 				"MieExponentialDistribution": 3.0,
 				"HeightFogContribution": 1.0,
 				"AerialPespectiveViewDistanceScale": 2.0
+			}
+		},
+
+		"clouds_fair_weather": {
+			"type": "volumetric_cloud",
+			"description": "Scattered fair-weather cumulus: a thin layer high enough to see under, cheap to trace. The everyday sky. Needs a directional light (sun) and a sky atmosphere to be lit.",
+			"properties": {
+				"LayerBottomAltitude": 3.0,
+				"LayerHeight": 3.5,
+				"TracingStartMaxDistance": 350.0,
+				"TracingMaxDistance": 40.0,
+				"SkyLightCloudBottomOcclusion": 0.3,
+				"ViewSampleCountScale": 1.0,
+				"ShadowViewSampleCountScale": 1.0,
+				"ShadowTracingDistance": 15.0,
+				"StopTracingTransmittanceThreshold": 0.005,
+				"bUsePerSampleAtmosphericLightTransmittance": false
+			}
+		},
+		"clouds_overcast": {
+			"type": "volumetric_cloud",
+			"description": "Low, flat, unbroken overcast deck. Kills direct sun, darkens the ground and flattens contrast — the light you get on a grey day.",
+			"properties": {
+				"LayerBottomAltitude": 1.2,
+				"LayerHeight": 2.5,
+				"TracingStartMaxDistance": 350.0,
+				"TracingMaxDistance": 30.0,
+				"SkyLightCloudBottomOcclusion": 0.9,
+				"ViewSampleCountScale": 1.2,
+				"ShadowViewSampleCountScale": 1.0,
+				"ShadowTracingDistance": 20.0,
+				"StopTracingTransmittanceThreshold": 0.01,
+				"bUsePerSampleAtmosphericLightTransmittance": true
+			}
+		},
+		"clouds_storm_towering": {
+			"type": "volumetric_cloud",
+			"description": "Tall storm towers standing from near ground level to high altitude. Dramatic and expensive: deep layer, long traces, doubled sample counts.",
+			"properties": {
+				"LayerBottomAltitude": 0.8,
+				"LayerHeight": 12.0,
+				"TracingStartMaxDistance": 500.0,
+				"TracingMaxDistance": 120.0,
+				"SkyLightCloudBottomOcclusion": 1.0,
+				"ViewSampleCountScale": 2.0,
+				"ShadowViewSampleCountScale": 2.0,
+				"ShadowTracingDistance": 30.0,
+				"StopTracingTransmittanceThreshold": 0.003,
+				"bUsePerSampleAtmosphericLightTransmittance": true
+			}
+		},
+		"clouds_performance": {
+			"type": "volumetric_cloud",
+			"description": "Cheapest layer that still reads as sky: halved primary sample counts, much cheaper reflection/shadow samples, short traces and an early transmittance cutout. Start here on a GPU budget, then raise ViewSampleCountScale until it looks right.",
+			"properties": {
+				"LayerBottomAltitude": 5.0,
+				"LayerHeight": 6.0,
+				"TracingStartMaxDistance": 200.0,
+				"TracingMaxDistance": 25.0,
+				"ViewSampleCountScale": 0.5,
+				"ReflectionViewSampleCountScaleValue": 0.35,
+				"ShadowViewSampleCountScale": 0.5,
+				"ShadowReflectionViewSampleCountScaleValue": 0.35,
+				"ShadowTracingDistance": 8.0,
+				"StopTracingTransmittanceThreshold": 0.05,
+				"bUsePerSampleAtmosphericLightTransmittance": false
 			}
 		},
 

@@ -25,9 +25,10 @@ class FProperty;
  *     only comments and a scene-capture mention in MonolithMeshLightingActions.
  *
  * WHAT THIS FILE ADDS:
- *   1. A typed atmosphere surface over three actor types — `post_process`
- *      (APostProcessVolume), `height_fog` (AExponentialHeightFog) and
- *      `sky_atmosphere` (ASkyAtmosphere) — spawn + configure + read back.
+ *   1. A typed atmosphere surface over four actor types — `post_process`
+ *      (APostProcessVolume), `height_fog` (AExponentialHeightFog),
+ *      `sky_atmosphere` (ASkyAtmosphere) and `volumetric_cloud`
+ *      (AVolumetricCloud) — spawn + configure + read back.
  *   2. Override-aware writes. Every FPostProcessSettings field is inert unless its
  *      sibling `bOverride_<Field>` bit is set; a naive reflection write therefore
  *      "succeeds" and changes nothing on screen. Writing a key through this surface
@@ -54,6 +55,29 @@ class FProperty;
  *     (c) CVARS / scalability (r.Lumen.*): NOT covered at all. Transient,
  *         session-scoped, and not part of a level.
  *
+ * THE VOLUMETRIC CLOUD'S MATERIAL DEPENDENCY (the one thing clouds have that the
+ * other three types do not):
+ *   A cloud renders through UVolumetricCloudComponent::Material — a Volume domain
+ *   material asset. With no loadable material the actor exists, every call reports
+ *   success, and the sky stays empty.
+ *   DECISION: inherit the engine default, do NOT add a `material` parameter.
+ *     - The component constructor already assigns
+ *       /Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst as a SOFT
+ *       reference, so a bare spawn is already a visible cloud and nothing is
+ *       force-loaded that the caller did not ask for.
+ *     - `Material` is a plain reflected FSoftObjectProperty, so the EXISTING
+ *       `properties` channel sets it by path already:
+ *       properties={"Material": "/Game/Sky/M_MyCloud"}. A dedicated parameter would
+ *       be a second spelling of a thing that works, and layouts forward `properties`
+ *       for free while a new parameter would need plumbing on both sides.
+ *     - The write really takes effect: PreEditChange installs an
+ *       FComponentReregisterContext and PostEditChangeProperty tears it down, so
+ *       UVolumetricCloudComponent::OnRegister re-runs Material.LoadSynchronous().
+ *   HONESTY: spawn_atmosphere / set_atmosphere_properties / get_atmosphere_properties
+ *   return a `material` block for cloud actors — {path, loaded, note}. If the engine
+ *   default is missing, or a caller names a path that does not exist, `loaded` is
+ *   false and the note says the cloud will render nothing. Nothing is silently empty.
+ *
  * Everything here is a synchronous game-thread call — spawning an actor and writing
  * a handful of UPROPERTYs is microseconds, so nothing is handed to the job system.
  */
@@ -67,7 +91,7 @@ public:
 	// Type tables — shared with the tests.
 	// ------------------------------------------------------------------
 
-	/** Canonical SPAWNABLE atmosphere tokens: post_process, height_fog, sky_atmosphere. */
+	/** Canonical SPAWNABLE atmosphere tokens: post_process, height_fog, sky_atmosphere, volumetric_cloud. */
 	static const TArray<FString>& GetAtmosphereTokens();
 
 	/**
@@ -86,8 +110,9 @@ public:
 
 	/**
 	 * Resolve a SECTION token to the UStruct its property names must resolve against.
-	 * post_process/lumen -> FPostProcessSettings, height_fog/sky_atmosphere -> the
-	 * component class, project -> URendererSettings. nullptr for an unknown token.
+	 * post_process/lumen -> FPostProcessSettings, height_fog/sky_atmosphere/
+	 * volumetric_cloud -> the component class, project -> URendererSettings.
+	 * nullptr for an unknown token.
 	 * This is what the shipped-data validation test walks.
 	 */
 	static UStruct* ResolveSectionStruct(const FString& Token);

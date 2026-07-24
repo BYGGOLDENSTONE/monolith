@@ -6,9 +6,13 @@
 // Phase 2 (Goldenstone roadmap), slice 2 — atmosphere + global illumination.
 //
 // WHAT THESE TESTS PROVE HEADLESS
-//   - each of the three atmosphere types spawns with the expected ACTOR class and
-//     resolves to the expected settings target (component for fog/sky, the
+//   - each of the four atmosphere types spawns with the expected ACTOR class and
+//     resolves to the expected settings target (component for fog/sky/cloud, the
 //     FPostProcessSettings struct member for a post-process volume),
+//   - the volumetric cloud specifically: it spawns as an AVolumetricCloud, its
+//     component properties round-trip, its shipped presets apply, and its MATERIAL
+//     (the one dependency the other three types do not have) is reported honestly
+//     and can be re-pointed through the ordinary `properties` channel,
 //   - `properties` writes go through UE reflection and read back with
 //     `mesh.get_atmosphere_properties`,
 //   - writing a post-process key also flips its bOverride_ bit — the difference
@@ -24,8 +28,11 @@
 //
 // WHAT THESE TESTS DO NOT PROVE
 //   - anything about rendered output. The nightly suite runs `-nullrhi`, so
-//     "the fog looks right" / "Lumen bounce light appears" is NOT assertable here.
-//     That is the human acceptance step.
+//     "the fog looks right" / "Lumen bounce light appears" / "clouds appear in the
+//     sky" is NOT assertable here. That is the human acceptance step, and it bites
+//     hardest for volumetric_cloud: clouds are a purely visual feature, so every
+//     assertion below is about DATA (classes, property values, material paths),
+//     never about pixels.
 //   - that the project renderer settings block matches what the Project Settings UI
 //     shows; it is read from the URendererSettings CDO, which is the same source,
 //     but no UI is instantiated headless.
@@ -50,9 +57,12 @@
 #include "Engine/Scene.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
+#include "Components/VolumetricCloudComponent.h"
+#include "Materials/MaterialInterface.h"
 #include "GameFramework/Actor.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "UObject/UnrealType.h"
 
 namespace MonolithAtmosphereTestUtils
 {
@@ -127,6 +137,7 @@ namespace MonolithAtmosphereTestUtils
 		if (Token == TEXT("post_process"))   { return APostProcessVolume::StaticClass(); }
 		if (Token == TEXT("height_fog"))     { return AExponentialHeightFog::StaticClass(); }
 		if (Token == TEXT("sky_atmosphere")) { return ASkyAtmosphere::StaticClass(); }
+		if (Token == TEXT("volumetric_cloud")) { return AVolumetricCloud::StaticClass(); }
 		return nullptr;
 	}
 
@@ -136,6 +147,7 @@ namespace MonolithAtmosphereTestUtils
 		if (Token == TEXT("post_process"))   { return FPostProcessSettings::StaticStruct(); }
 		if (Token == TEXT("height_fog"))     { return UExponentialHeightFogComponent::StaticClass(); }
 		if (Token == TEXT("sky_atmosphere")) { return USkyAtmosphereComponent::StaticClass(); }
+		if (Token == TEXT("volumetric_cloud")) { return UVolumetricCloudComponent::StaticClass(); }
 		return nullptr;
 	}
 }
@@ -157,7 +169,7 @@ bool FMonolithMeshAtmosphereSpawnEveryTypeTest::RunTest(const FString& /*Paramet
 	}
 
 	const TArray<FString>& Tokens = FMonolithMeshAtmosphereActions::GetAtmosphereTokens();
-	TestEqual(TEXT("Three canonical atmosphere types are exposed"), Tokens.Num(), 3);
+	TestEqual(TEXT("Four canonical atmosphere types are exposed"), Tokens.Num(), 4);
 
 	for (const FString& Token : Tokens)
 	{
@@ -726,6 +738,23 @@ bool FMonolithMeshAtmosphereErrorPathsTest::RunTest(const FString& /*Parameters*
 		FMonolithMeshAtmosphereActions::ResolveAtmosphereActorClass(TEXT("PostProcessVolume"), AliasError));
 	TestNotNull(TEXT("'SkyAtmosphere' resolves as an alias"),
 		FMonolithMeshAtmosphereActions::ResolveAtmosphereActorClass(TEXT("SkyAtmosphere"), AliasError));
+	{
+		const TCHAR* CloudAliases[] = {
+			TEXT("cloud"), TEXT("clouds"), TEXT("cloud_layer"), TEXT("VolumetricCloud"),
+			TEXT("volumetric_cloud"), TEXT("AVolumetricCloud"), TEXT("VolumetricCloudComponent") };
+		for (const TCHAR* Alias : CloudAliases)
+		{
+			TestTrue(*FString::Printf(TEXT("'%s' resolves to AVolumetricCloud"), Alias),
+				FMonolithMeshAtmosphereActions::ResolveAtmosphereActorClass(Alias, AliasError)
+					== AVolumetricCloud::StaticClass());
+		}
+		// 'atmosphere' must still mean the SKY, not the newest member of the family.
+		TestTrue(TEXT("'atmosphere' still resolves to ASkyAtmosphere"),
+			FMonolithMeshAtmosphereActions::ResolveAtmosphereActorClass(TEXT("atmosphere"), AliasError)
+				== ASkyAtmosphere::StaticClass());
+	}
+	TestTrue(TEXT("unknown-type error lists volumetric_cloud too"),
+		TypeError.Contains(TEXT("volumetric_cloud")));
 
 	// --- No open level ---
 	FString WorldError;
@@ -798,8 +827,8 @@ bool FMonolithMeshAtmosphereErrorPathsTest::RunTest(const FString& /*Parameters*
 		const double TotalCount = All.Result->GetNumberField(TEXT("total_count"));
 		TestTrue(TEXT("presets were listed"), TotalCount > 0.0);
 		TestEqual(TEXT("unfiltered count equals total"), All.Result->GetNumberField(TEXT("count")), TotalCount);
-		TestEqual(TEXT("atmosphere_types is advertised (3 spawnable + lumen)"),
-			All.Result->GetArrayField(TEXT("atmosphere_types")).Num(), 4);
+		TestEqual(TEXT("atmosphere_types is advertised (4 spawnable + lumen)"),
+			All.Result->GetArrayField(TEXT("atmosphere_types")).Num(), 5);
 
 		TSharedPtr<FJsonObject> Filtered = MonolithAtmosphereTestUtils::MakeParams();
 		Filtered->SetStringField(TEXT("type"), TEXT("lumen"));
@@ -827,6 +856,261 @@ bool FMonolithMeshAtmosphereErrorPathsTest::RunTest(const FString& /*Parameters*
 	TestFalse(TEXT("the read-only project section is not a preset filter"),
 		MonolithAtmosphereTestUtils::Exec(TEXT("list_atmosphere_presets"), ProjectFilter).bSuccess);
 
+	return true;
+}
+
+// ============================================================================
+// 9. Volumetric cloud — the fourth atmosphere type.
+//
+//    Clouds are a purely VISUAL feature and the suite runs `-nullrhi`, so nothing
+//    below claims a cloud was drawn. What it does claim is everything a headless
+//    run can honestly know: the right actor, the right settings target, values
+//    that land and read back, the shipped presets applying, the two engine naming
+//    traps this component carries, and the material — the one dependency that can
+//    turn a "successful" cloud into an empty sky.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshAtmosphereVolumetricCloudTest,
+	"Monolith.Mesh.Atmosphere.VolumetricCloudRoundTrip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshAtmosphereVolumetricCloudTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithAtmosphereTestUtils;
+
+	if (!TestNotNull(TEXT("Editor world available"), GetTestWorld()))
+	{
+		return false;
+	}
+
+	// --- spawn with properties -------------------------------------------
+	TSharedPtr<FJsonObject> Props = MakeShared<FJsonObject>();
+	Props->SetNumberField(TEXT("LayerBottomAltitude"), 2.5);
+	Props->SetNumberField(TEXT("LayerHeight"), 6.25);
+	Props->SetNumberField(TEXT("ViewSampleCountScale"), 1.5);
+	Props->SetBoolField(TEXT("bUsePerSampleAtmosphericLightTransmittance"), true);
+
+	FMonolithActionResult SpawnRes;
+	AActor* Actor = MonolithAtmosphereTestUtils::Spawn(
+		TEXT("cloud"), TEXT("MonolithTestAtmos_Cloud"), Props, FString(), SpawnRes);
+	if (!TestTrue(FString::Printf(TEXT("spawn_atmosphere type=cloud succeeded (%s)"), *SpawnRes.ErrorMessage),
+			SpawnRes.bSuccess)
+		|| !TestNotNull(TEXT("spawned cloud actor found"), Actor))
+	{
+		Destroy(Actor);
+		return false;
+	}
+
+	TestTrue(TEXT("the 'cloud' alias spawned a real AVolumetricCloud"),
+		Actor->GetClass() == AVolumetricCloud::StaticClass());
+	TestEqual(TEXT("the canonical type is reported, not the alias"),
+		SpawnRes.Result->GetStringField(TEXT("atmosphere_type")), FString(TEXT("volumetric_cloud")));
+	TestEqual(TEXT("the settings target is the cloud COMPONENT"),
+		SpawnRes.Result->GetStringField(TEXT("target_struct")), FString(TEXT("VolumetricCloudComponent")));
+	TestFalse(TEXT("a cloud is not a brush volume — no extent is reported"),
+		SpawnRes.Result->HasField(TEXT("extent")));
+
+	UVolumetricCloudComponent* Cloud = Actor->FindComponentByClass<UVolumetricCloudComponent>();
+	if (!TestNotNull(TEXT("cloud component present"), Cloud))
+	{
+		Destroy(Actor);
+		return false;
+	}
+	TestEqual(TEXT("LayerBottomAltitude landed on the component"), Cloud->LayerBottomAltitude, 2.5f, 0.0001f);
+	TestEqual(TEXT("LayerHeight landed on the component"), Cloud->LayerHeight, 6.25f, 0.0001f);
+	TestEqual(TEXT("ViewSampleCountScale landed on the component"), Cloud->ViewSampleCountScale, 1.5f, 0.0001f);
+	TestTrue(TEXT("the per-sample transmittance bit landed"),
+		Cloud->bUsePerSampleAtmosphericLightTransmittance != 0);
+
+	// --- the material block: the one dependency clouds have --------------
+	{
+		const TSharedPtr<FJsonObject>* Mat = nullptr;
+		if (TestTrue(TEXT("a cloud spawn reports its material"),
+				SpawnRes.Result->TryGetObjectField(TEXT("material"), Mat) && Mat != nullptr))
+		{
+			const FString Path = (*Mat)->GetStringField(TEXT("path"));
+			TestTrue(TEXT("the inherited engine default cloud material has a path"), !Path.IsEmpty());
+			TestTrue(TEXT("the inherited default is the engine's volumetric cloud material"),
+				Path.Contains(TEXT("VolumetricCloud")));
+			// `loaded` is reported, never assumed: an install without the engine sky
+			// content is exactly the case the block exists to make visible.
+			TestTrue(TEXT("the material block reports whether it loaded"), (*Mat)->HasField(TEXT("loaded")));
+			TestTrue(TEXT("the material block carries an actionable note"),
+				!(*Mat)->GetStringField(TEXT("note")).IsEmpty());
+		}
+	}
+
+	// --- read back through the action ------------------------------------
+	{
+		TSharedPtr<FJsonObject> ReadParams = MakeParams();
+		ReadParams->SetStringField(TEXT("actor_name"), Actor->GetActorNameOrLabel());
+		FMonolithActionResult Read = Exec(TEXT("get_atmosphere_properties"), ReadParams);
+		if (TestTrue(FString::Printf(TEXT("default cloud read-back succeeded (%s)"), *Read.ErrorMessage),
+				Read.bSuccess))
+		{
+			TestEqual(TEXT("read-back names the cloud type"),
+				Read.Result->GetStringField(TEXT("atmosphere_type")), FString(TEXT("volumetric_cloud")));
+			const TSharedPtr<FJsonObject> Out = Read.Result->GetObjectField(TEXT("properties"));
+			TestEqual(TEXT("LayerBottomAltitude round-tripped"),
+				Out->GetNumberField(TEXT("LayerBottomAltitude")), 2.5, 0.0001);
+			TestEqual(TEXT("LayerHeight round-tripped"), Out->GetNumberField(TEXT("LayerHeight")), 6.25, 0.0001);
+			TestTrue(TEXT("the shipped read-back set includes the Material path"),
+				Out->HasField(TEXT("Material")));
+			TestFalse(TEXT("no read-back key went unresolved on this engine build"),
+				Out->HasField(TEXT("__unresolved")));
+			TestFalse(TEXT("a component target reports no override block"), Read.Result->HasField(TEXT("overrides")));
+			TestTrue(TEXT("the read also reports the material"), Read.Result->HasField(TEXT("material")));
+		}
+	}
+
+	// --- the two engine naming traps this component carries ---------------
+	//     Neither is guesswork; both were read out of UVolumetricCloudComponent.h.
+	//
+	//     TRAP 1 — the DEPRECATED TWIN. The header declares
+	//     `ReflectionViewSampleCountScale_DEPRECATED` next to the live
+	//     `ReflectionViewSampleCountScaleValue`. UHT strips the `_DEPRECATED`
+	//     suffix, so the reflected property really is called
+	//     `ReflectionViewSampleCountScale` — the obvious name RESOLVES, writes
+	//     "succeed", and changes nothing the renderer reads. The only thing that
+	//     tells them apart is CPF_Deprecated, so that is what is asserted, and the
+	//     shipped read-back set must contain no deprecated key at all.
+	//
+	//     TRAP 2 — Epic's "AerialPespective" typo (missing 'r'), four times on this
+	//     component, exactly as on USkyAtmosphereComponent.
+	{
+		auto ReadOne = [this, Actor](const TCHAR* Name)
+		{
+			TSharedPtr<FJsonObject> P = MakeParams();
+			P->SetStringField(TEXT("actor_name"), Actor->GetActorNameOrLabel());
+			TArray<TSharedPtr<FJsonValue>> Names;
+			Names.Add(MakeShared<FJsonValueString>(Name));
+			P->SetArrayField(TEXT("properties"), Names);
+			return Exec(TEXT("get_atmosphere_properties"), P);
+		};
+
+		UStruct* CloudStruct = UVolumetricCloudComponent::StaticClass();
+		FProperty* Live = FMonolithReflectionWalker::FindPropertyForwarding(
+			CloudStruct, TEXT("ReflectionViewSampleCountScaleValue"));
+		FProperty* Twin = FMonolithReflectionWalker::FindPropertyForwarding(
+			CloudStruct, TEXT("ReflectionViewSampleCountScale"));
+		if (TestNotNull(TEXT("ReflectionViewSampleCountScaleValue is a real property"), Live))
+		{
+			TestFalse(TEXT("...ScaleValue is the LIVE one (not deprecated)"),
+				Live->HasAnyPropertyFlags(CPF_Deprecated));
+		}
+		if (TestNotNull(TEXT("the un-suffixed twin also resolves — UHT strips '_DEPRECATED'"), Twin))
+		{
+			TestTrue(TEXT("...but it is flagged CPF_Deprecated, so writing it does nothing visible"),
+				Twin->HasAnyPropertyFlags(CPF_Deprecated));
+		}
+
+		TArray<FString> KeyWarnings;
+		const TArray<FString> CloudKeys =
+			FMonolithMeshAtmosphereActions::LoadReadbackKeys(TEXT("volumetric_cloud"), KeyWarnings);
+		TestTrue(TEXT("the shipped cloud read-back set is non-empty"), CloudKeys.Num() > 0);
+		for (const FString& Key : CloudKeys)
+		{
+			FProperty* Prop = FMonolithReflectionWalker::FindPropertyForwarding(CloudStruct, Key);
+			if (TestNotNull(*FString::Printf(TEXT("cloud read-back key '%s' exists"), *Key), Prop))
+			{
+				TestFalse(*FString::Printf(TEXT("cloud read-back key '%s' is not a deprecated twin"), *Key),
+					Prop->HasAnyPropertyFlags(CPF_Deprecated));
+			}
+		}
+
+		TestTrue(TEXT("Epic's 'AerialPespective' spelling is the real one"),
+			ReadOne(TEXT("AerialPespectiveMieScatteringStartDistance")).bSuccess);
+		const FMonolithActionResult Corrected = ReadOne(TEXT("AerialPerspectiveMieScatteringStartDistance"));
+		TestFalse(TEXT("the correctly-spelled 'AerialPerspective...' does NOT exist"), Corrected.bSuccess);
+		TestTrue(TEXT("that miss offers a did-you-mean candidate"),
+			Corrected.ErrorMessage.Contains(TEXT("did you mean")));
+	}
+
+	// --- a shipped cloud preset applies end to end ------------------------
+	{
+		TArray<FString> Warnings;
+		const TMap<FString, FMonolithJsonPreset> Loaded =
+			FMonolithMeshAtmosphereActions::Presets().LoadPresets(Warnings);
+
+		const FMonolithJsonPreset* Chosen = nullptr;
+		int32 CloudPresetCount = 0;
+		for (const TPair<FString, FMonolithJsonPreset>& Pair : Loaded)
+		{
+			if (Pair.Value.TypeToken != TEXT("volumetric_cloud")) { continue; }
+			++CloudPresetCount;
+			if (!Chosen && Pair.Value.Properties.IsValid() && Pair.Value.Properties->HasField(TEXT("LayerHeight")))
+			{
+				Chosen = &Pair.Value;
+			}
+		}
+		TestTrue(TEXT("more than one genuinely different cloud preset ships"), CloudPresetCount >= 3);
+
+		if (TestNotNull(TEXT("a volumetric_cloud preset with a LayerHeight ships"), Chosen))
+		{
+			const double Expected = Chosen->Properties->GetNumberField(TEXT("LayerHeight"));
+
+			TSharedPtr<FJsonObject> SetParams = MakeParams();
+			SetParams->SetStringField(TEXT("actor_name"), Actor->GetActorNameOrLabel());
+			SetParams->SetStringField(TEXT("preset"), Chosen->Name);
+			FMonolithActionResult Set = Exec(TEXT("set_atmosphere_properties"), SetParams);
+			if (TestTrue(FString::Printf(TEXT("cloud preset '%s' applied (%s)"), *Chosen->Name, *Set.ErrorMessage),
+					Set.bSuccess))
+			{
+				TestEqual(TEXT("the preset's LayerHeight landed on the component"),
+					static_cast<double>(Cloud->LayerHeight), Expected, 0.0001);
+			}
+		}
+
+		// A cloud preset must NOT be applicable to a sky atmosphere, and vice versa.
+		TestFalse(TEXT("a cloud preset is not valid on a sky atmosphere"),
+			FMonolithMeshAtmosphereActions::IsPresetCompatible(
+				TEXT("volumetric_cloud"), TEXT("sky_atmosphere")));
+		TestTrue(TEXT("a cloud preset is valid on a cloud"),
+			FMonolithMeshAtmosphereActions::IsPresetCompatible(
+				TEXT("volumetric_cloud"), TEXT("volumetric_cloud")));
+	}
+
+	// --- the material is settable through the ordinary properties channel --
+	//     This is the whole material decision: no new parameter, the reflected
+	//     FSoftObjectProperty write goes through the component's re-register so
+	//     the LOADED material really changes, not just the stored path.
+	{
+		const TCHAR* BasePath = TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud.m_SimpleVolumetricCloud");
+		UMaterialInterface* BaseMaterial = LoadObject<UMaterialInterface>(nullptr, BasePath);
+		if (BaseMaterial)
+		{
+			TSharedPtr<FJsonObject> MatProps = MakeShared<FJsonObject>();
+			MatProps->SetStringField(TEXT("Material"), BasePath);
+			TSharedPtr<FJsonObject> SetParams = MakeParams();
+			SetParams->SetStringField(TEXT("actor_name"), Actor->GetActorNameOrLabel());
+			SetParams->SetObjectField(TEXT("properties"), MatProps);
+
+			FMonolithActionResult Set = Exec(TEXT("set_atmosphere_properties"), SetParams);
+			if (TestTrue(FString::Printf(TEXT("Material is writable through `properties` (%s)"), *Set.ErrorMessage),
+					Set.bSuccess))
+			{
+				TestEqual(TEXT("the stored soft path is the one that was asked for"),
+					Cloud->Material.ToSoftObjectPath().ToString(), FString(BasePath));
+				TestTrue(TEXT("the LOADED material followed the write (the component re-registered)"),
+					Cloud->GetMaterial() == BaseMaterial);
+				const TSharedPtr<FJsonObject>* Mat = nullptr;
+				if (Set.Result->TryGetObjectField(TEXT("material"), Mat) && Mat)
+				{
+					TestTrue(TEXT("the response reports the new material as loaded"),
+						(*Mat)->GetBoolField(TEXT("loaded")));
+				}
+			}
+		}
+		else
+		{
+			AddInfo(FString::Printf(
+				TEXT("Skipped the material-write assertions: '%s' is not present in this engine install."),
+				BasePath));
+		}
+	}
+
+	Destroy(Actor);
 	return true;
 }
 

@@ -36,6 +36,10 @@
 //   - `kind: "volume"`: a layout places real ATriggerVolume/APainCausingVolume
 //     actors through mesh.spawn_volume, and a property key that volume type does
 //     not honour is an error rather than a silent no-op.
+//   - PURE PASS-THROUGH, PROVEN NOT ASSUMED: the newest atmosphere type
+//     (`volumetric_cloud`) works inside a layout with no layout-side change — by
+//     preset AND by raw properties AND by alias — and captures back as a canonical
+//     `kind: atmosphere` / `type: volumetric_cloud` entry instead of being skipped.
 //
 // WHAT THESE TESTS DO NOT PROVE
 //   - anything about rendered output. The nightly suite runs `-nullrhi`. Whether
@@ -64,6 +68,7 @@
 #include "MonolithMeshVolumeActions.h"
 
 #include "Components/LightComponentBase.h"
+#include "Components/VolumetricCloudComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -1688,6 +1693,152 @@ bool FMonolithMeshLayoutVolumeKindTest::RunTest(const FString& /*Parameters*/)
 	}
 
 	Remove(LayoutId);
+	return true;
+}
+
+// ============================================================================
+// 13b. `kind: "atmosphere"` + `type: "volumetric_cloud"` — the newest atmosphere
+//      type through a layout, both directions.
+//
+// The layout system forwards every non-`kind` key straight to the target action,
+// so a new atmosphere type is SUPPOSED to work here for free. "Supposed to" is not
+// evidence: this test applies one, checks a real AVolumetricCloud was placed and
+// tagged, and captures it back to make sure the classifier (TokenForActor) names
+// the cloud rather than dropping it into `skipped`.
+//
+// Not proven: that anything was drawn. `-nullrhi`.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutVolumetricCloudTest,
+	"Monolith.Mesh.Layouts.VolumetricCloudEntry",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutVolumetricCloudTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	// Pick a shipped cloud preset out of the DATA rather than naming one in C++.
+	TArray<FString> Warnings;
+	const TMap<FString, FMonolithJsonPreset> Presets =
+		FMonolithMeshAtmosphereActions::Presets().LoadPresets(Warnings);
+	FString CloudPreset;
+	double PresetLayerHeight = 0.0;
+	for (const TPair<FString, FMonolithJsonPreset>& Pair : Presets)
+	{
+		if (Pair.Value.TypeToken == TEXT("volumetric_cloud") && Pair.Value.Properties.IsValid()
+			&& Pair.Value.Properties->HasField(TEXT("LayerHeight")))
+		{
+			CloudPreset = Pair.Value.Name;
+			PresetLayerHeight = Pair.Value.Properties->GetNumberField(TEXT("LayerHeight"));
+			break;
+		}
+	}
+	if (!TestTrue(TEXT("a shipped volumetric_cloud preset with a LayerHeight exists"), !CloudPreset.IsEmpty()))
+	{
+		return false;
+	}
+
+	const FString LayoutId = TEXT("monolith_test_cloud");
+	Remove(LayoutId);
+
+	// One cloud from a preset, one from raw properties, plus the sun a cloud needs
+	// to be lit at all — the smallest layout that is a real sky.
+	TSharedPtr<FJsonObject> Sun = Entry(TEXT("sun"), TEXT("light"));
+	Sun->SetStringField(TEXT("type"), TEXT("directional"));
+	Sun->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 2000.0));
+	Sun->SetArrayField(TEXT("rotation"), Vec(-35.0, 150.0, 0.0));
+
+	TSharedPtr<FJsonObject> Sky = Entry(TEXT("sky"), TEXT("atmosphere"));
+	Sky->SetStringField(TEXT("type"), TEXT("sky_atmosphere"));
+
+	TSharedPtr<FJsonObject> PresetCloud = Entry(TEXT("weather"), TEXT("atmosphere"));
+	PresetCloud->SetStringField(TEXT("type"), TEXT("volumetric_cloud"));
+	PresetCloud->SetStringField(TEXT("preset"), CloudPreset);
+
+	TSharedPtr<FJsonObject> RawCloud = Entry(TEXT("high_cirrus"), TEXT("atmosphere"));
+	RawCloud->SetStringField(TEXT("type"), TEXT("cloud"));   // alias, straight through
+	{
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("LayerBottomAltitude"), 7.75);
+		Props->SetNumberField(TEXT("LayerHeight"), 1.5);
+		RawCloud->SetObjectField(TEXT("properties"), Props);
+	}
+
+	FMonolithActionResult R =
+		Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ Sun, Sky, PresetCloud, RawCloud })));
+	TestTrue(FString::Printf(TEXT("a layout with volumetric_cloud entries applies (%s)"), *R.ErrorMessage),
+		R.bSuccess);
+	if (!R.bSuccess) { Remove(LayoutId); return false; }
+
+	TestEqual(TEXT("every entry was placed and tagged"), CountInLevel(LayoutId), 4);
+
+	AActor* PresetActor = ActorForEntry(LayoutId, TEXT("weather"));
+	if (TestNotNull(TEXT("the preset cloud entry placed an actor"), PresetActor))
+	{
+		TestTrue(TEXT("the entry really placed an AVolumetricCloud"),
+			PresetActor->IsA(AVolumetricCloud::StaticClass()));
+		TestEqual(TEXT("the placed cloud classifies back as volumetric_cloud"),
+			FMonolithMeshAtmosphereActions::TokenForActor(PresetActor), FString(TEXT("volumetric_cloud")));
+		if (UVolumetricCloudComponent* Comp = PresetActor->FindComponentByClass<UVolumetricCloudComponent>())
+		{
+			TestEqual(TEXT("the preset's LayerHeight reached the component through the layout"),
+				static_cast<double>(Comp->LayerHeight), PresetLayerHeight, 0.0001);
+		}
+	}
+
+	AActor* RawActor = ActorForEntry(LayoutId, TEXT("high_cirrus"));
+	if (TestNotNull(TEXT("the alias-typed cloud entry placed an actor"), RawActor))
+	{
+		TestTrue(TEXT("the 'cloud' alias works inside a layout"),
+			RawActor->IsA(AVolumetricCloud::StaticClass()));
+		if (UVolumetricCloudComponent* Comp = RawActor->FindComponentByClass<UVolumetricCloudComponent>())
+		{
+			TestEqual(TEXT("a raw properties bag reached the cloud component"),
+				Comp->LayerBottomAltitude, 7.75f, 0.0001f);
+		}
+	}
+
+	// --- and the reverse direction: capture must not drop the clouds ------
+	{
+		FMonolithActionResult Cap = Exec(TEXT("capture_level_layout"), CaptureParams(LayoutId));
+		if (TestTrue(FString::Printf(TEXT("capture_level_layout succeeded (%s)"), *Cap.ErrorMessage), Cap.bSuccess))
+		{
+			double SkippedCount = -1.0;
+			Cap.Result->TryGetNumberField(TEXT("skipped_count"), SkippedCount);
+			TestEqual(TEXT("no actor was skipped by the capture"), static_cast<int32>(SkippedCount), 0);
+
+			const TSharedPtr<FJsonObject> Doc = BodyOf(Cap);
+			const TSharedPtr<FJsonObject> Captured = EntryById(Doc, TEXT("high_cirrus"));
+			if (TestTrue(TEXT("the cloud entry came back in the captured document"), Captured.IsValid()))
+			{
+				TestEqual(TEXT("it captured as an atmosphere entry"),
+					Captured->GetStringField(TEXT("kind")), FString(TEXT("atmosphere")));
+				TestEqual(TEXT("it captured as the CANONICAL type, not the alias"),
+					Captured->GetStringField(TEXT("type")), FString(TEXT("volumetric_cloud")));
+				const TSharedPtr<FJsonObject> Bag = BagOf(Captured, TEXT("properties"));
+				if (TestTrue(TEXT("the non-default cloud values were captured"), Bag.IsValid()))
+				{
+					TestEqual(TEXT("LayerBottomAltitude survived the round trip"),
+						Bag->GetNumberField(TEXT("LayerBottomAltitude")), 7.75, 0.0001);
+				}
+			}
+
+			// The preset-driven cloud must collapse back to its preset name, exactly
+			// like the fog/sky entries do — otherwise cloud documents would bloat.
+			const TSharedPtr<FJsonObject> CapturedPreset = EntryById(Doc, TEXT("weather"));
+			if (CapturedPreset.IsValid())
+			{
+				FString Name;
+				CapturedPreset->TryGetStringField(TEXT("preset"), Name);
+				TestEqual(TEXT("the preset-driven cloud captured back as its preset"), Name, CloudPreset);
+			}
+		}
+	}
+
+	Remove(LayoutId);
+	TestEqual(TEXT("cleanup removed the layout"), CountInLevel(LayoutId), 0);
 	return true;
 }
 
