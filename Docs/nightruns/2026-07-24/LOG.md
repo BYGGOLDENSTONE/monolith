@@ -328,3 +328,25 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Ek şartlar: mevcut `capture_*` ailesinin envanteri önce çıkarılacak (roadmap bu gece ÜÇ kez yanıldı, körü körüne "yok" kabul edilmeyecek); görüntüsüz/RHI'siz durumda boş ya da çöp görüntü DÖNDÜRÜLMEYECEK, dürüst hata verilecek; pratikse `launch_editor.ps1` ile pencereli modda gerçek bir yakalama denenip gözlem raporlanacak.
 - Commit: -
 - Sıradaki: Görev 14 raporu.
+
+## [03:12] Görev 14 TAMAM — canlı viewport ekran görüntüsü (224/224). Görsel halka KAPANDI.
+- Durum: done
+- Ne oldu: Yeni aksiyon `editor.capture_viewport` — açık haritanın, kullanıcının o an gördüğü hâliyle (show flag'ler, seçim, ızgara dahil) ekran görüntüsü. Envanter çıkarıldı ve roadmap bu sefer HAKLIYDI: mevcut `capture_*` ailesinin hiçbiri bunu yapmıyormuş — `capture_scene_preview`/`capture_material_grid`/`capture_with_overlay`/`capture_sequence_frames`/`capture_anim_frames` izole `FPreviewScene` + sentetik kamera/ışık kullanıyor; `capture_pie_movement_clip` canlı PIE oturumu gerektiriyor; `mesh.capture_floor_plan`/`capture_building_views` açık level'a bakıyor ama geçici `USceneCaptureComponent2D` ile ve `building_id` istiyor (editör show flag'lerini/seçimi/kullanıcı kamerasını atlıyor). `editor.get_viewport_info` en yakın akrabaymış: kamerayı okuyor ama piksel üretmiyor. 7 yeni test, 217→224. Üç yeni ayar "Capture" kategorisinde.
+- **Görüntüsüz davranış açık reddetme, asla boş görüntü**: sıralı kapılar — önce parametre doğrulama (bozuk çağrı `-nullrhi`'de bile bozuk raporlanır), sonra `!GEditor`, sonra `!FApp::CanEverRender()` (nullrhi dalı), sonra viewport yok, null `FViewport`, sıfır boyutlu render target, okuma hatası ve son olarak tek-renk kare kapısı (dosya YAZILMAZ; `allow_uniform=true` ile devre dışı).
+- Karar: Kabul. Kontrol ajanı bu sefer en güçlü kanıtı üretti — **kendi gerçek yakalamasını yaptı**: pencereli editörü açtı (pid 2040, port 9316, 9 sn açılış, 1338 araç kayıtlı), `editor_query action=capture_viewport` çağırdı, dönen JSON'u ve **diskteki dosyayı** doğruladı: `20260724_031426.png`, **2.995.351 bayt, 1920×1168** (viewport 1968×1197'den ölçeklenmiş), `uniform:false` (boş değil), `was_active_viewport:true`, 239 ms. İşçinin bildirdiği viewport çözünürlüğüyle birebir aynı. Ayrıca: HEAD=7fad7a6 (üstünde orkestratörün doc/LOG commit'leri), ağaç temiz, 7 dosya, kendi koşusunda 224/0/0 ve 224 "Test Completed", 7 yeni test + atmosfer/ışık/job testleri hepsi `{Success}`, build yeşil.
+- Commit: 7fad7a6
+- Sıradaki: Görev 15 — data-driven level yerleşim sistemi (Faz 2'nin ana parçası).
+
+### notes_for_next_worker (görev 14 işçisinden — kritik tuzak)
+- **Kodlayıcı tuzağı**: `FImageUtils::SaveImageAutoFormat` dosya uzantısını SESSİZCE değiştiriyor — `shot.jpg` `shot.png` oluyor (`ImageUtils.cpp:79-87`). Komşu tüm capture aksiyonları bunu kullanıyor ve yalnızca hepsi `.png` geçtiği için yakayı sıyırmışlar. `FImageUtils::SaveImageByExtension` kullanılmalı. Bu ancak canlı testle bulundu; otomasyon asla yakalayamazdı.
+- Çıktı tam nitelikli yola dönüyor (`ConvertRelativePathToFull`) — eski capture aksiyonları göreli yol döndürüyor ki uzak istemci için işe yaramaz.
+- **Jobs kasten kullanılmadı**: canlı editörde ölçüldü, yakalama 30-250 ms (250 ms native 1968×1197 PNG'de). Proxy'nin 30 sn sınırının çok altında.
+- **Mevcut, dokunulmamış kusur (takip işi)**: `editor.get_viewport_info` körlemesine `GetLevelViewportClients()[0]` okuyor; bu editörde o gizli 0×0 bir viewport ve fonksiyon `resolution 0x0, camera [0,0,0], fov 90` değerlerini gerçekmiş gibi döndürüyor. `capture_viewport` bunun yerine `GCurrentLevelEditingViewportClient` tercih ediyor ve 0×0 viewport'u reddediyor. `get_viewport_info`'yu aynı çözüme geçirmek küçük ve bariz doğru bir düzeltme olur.
+
+## [03:15] Görev 15 gönderildi — data-driven level yerleşim sistemi (Faz 2 ana parçası)
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. Roadmap'in tanımı: level düzenleri VERİ olarak tanımlanır, Claude o veriyi üretir + uygular + görsel doğrular. Üç ayağın üçü de artık mevcut (yerleştirme aksiyonları, preset sistemleri, ve dün geceye kadar olmayan `capture_viewport`).
+- Karar: Kapsam açıkça bölündü — olmazsa olmaz çekirdek (format, uygula aksiyonu, kimlik/idempotenlik mekanizması, listele/açıkla aksiyonu, testler) ile "çekirdek sağlamsa" ekleri (mevcut level'dan yerleşim çıkarma, silme, yeniden uygula/diff). Yarım kablolu özellik bırakmak yasak; bitmezse `partial` + neyin kaldığı.
+- Ek şartlar: aynı yerleşimi iki kez uygulamak kopya üretmemeli ve önceki uygulamanın ne yarattığı bilinebilmeli; kısmi başarısızlık sözleşmesi (hep-ya-hiç mi, yapabildiğini yap-ve-bildir mi) seçilip gerekçelendirilip yanıtta gözlemlenebilir olmalı; yüzlerce aktörlük yerleşim editörü uzun süre bloke ederse Faz 1 job sistemine bağlanmalı, etmiyorsa sayıyla söylenmeli.
+- Commit: -
+- Sıradaki: Görev 15 raporu.
