@@ -33,13 +33,15 @@ Bu doküman, fork'un kendi ihtiyaçlarımıza göre geliştirme planıdır. Ama�
 
 Kuruldu ve insansız doğrulandı (commit fcebb24; kullanım: `Scripts/nightrun/README.md`). Prova (kuru gece) da geçti — kayıt `Docs/nightruns/2026-07-23-prova/`. Doğrulanan taban: derleme yeşil, editör görüntülü ~15 sn / görüntüsüz ~7 sn açılıyor, MCP smoke 5/5, test paketi 173/177 (4 kırmızı = çökmenin maskelediği önceden var olan hatalar; ilk gece ısınma görevi). Ekran görüntüsü görüntülü modda çalışıyor; gece varsayılanı görüntülü mod.
 
-### Faz 1 — İş Yöneticisi (Job System)
+### Faz 1 — İş Yöneticisi (Job System) ✅ TAMAMLANDI (2026-07-24 gecesi)
 
-Multitasking'in temeli. Plan kullanıcıya sunuldu ve onay bekliyor durumda değil — kullanıcı yönü onayladı, uygulama sonraki oturumda.
+Multitasking'in temeli. Beş maddenin tamamı uygulandı; kayıt: `Docs/nightruns/2026-07-24/`.
+Uygulama sırası roadmap sırasından farklıydı — madde 5 (çalıştırma katmanı) madde 3'ten (ilk dönüşüm)
+önce yapıldı, çünkü çalıştırma mekanizması olmadan hiçbir aksiyon job'a çevrilemezdi.
 
 1. `FMonolithJobManager` (MonolithCore içine) — `FPieSmokeSessionManager`'ın genelleştirilmiş klonu: Meyers singleton, `TMap<FString, FMonolithJob>`, tek `FTSTicker` pompası, monoton id. Durumlar: running / complete / error / cancelled; ilerleme mesajı + sonuç payload'ı.
 2. Yeni `jobs` namespace: `list`, `poll`, `cancel`, `clear`.
-3. Bloke eden işlerin dönüşümü — ilk hedef: PoseSearch `build_search_index` (`MonolithPoseSearchActions.cpp:594` — WaitForCompletion ile editörü donduruyor); kaynak reindex'e job id ver.
+3. Bloke eden işlerin dönüşümü — **düzeltme (2026-07-24):** `build_search_index` diye bir aksiyon YOK ve satır 594 aslında `get_database_stats` içinde. Dönüştürülen gerçek aksiyon `animation.rebuild_pose_search_index` oldu: varsayılan async, `{job_id}` döner, `wait:true` eski bloke eden yolu verir, job başlatılamazsa inline'a düşer. **Hâlâ bloke eden iki okuma kaldı** (koşulsuz bekliyorlar, ayrı çözüm gerekiyor — bir okumayı varsayılan-async yapmak yanlış sözleşme olur): `HandleGetDatabaseStats` (~594), `HandleValidatePoseSearchDatabase` (~1895).
 4. Proxy düzeltmesi — 30 sn aşan işte "editör kapalı" yerine dürüst "iş sürüyor, job_id ile sorgula" cevabı; yinelenen istek tuzağını kapat. Hem C++ proxy (`Tools/MonolithProxy/monolith_proxy.cpp`) hem Python fallback (`Scripts/monolith_proxy.py`, TIMEOUT=30 satır 37) elden geçecek.
 5. CPU-bound işler için `FRunnableThread` + `AsyncTask(GameThread)` kalıbı (`MonolithIndexSubsystem` örneği); UObject işleri için FTSTicker dilimleme.
 
@@ -49,8 +51,9 @@ Multitasking'in temeli. Plan kullanıcıya sunuldu ve onay bekliyor durumda değ
 
 Kullanıcının birincil ihtiyacı: detaylı level tasarımlarını Claude'a yaptırabilmek.
 
-- Işık aksiyonları: DirectionalLight, PointLight, SpotLight, RectLight, SkyLight, PostProcessVolume, ExponentialHeightFog spawn/ayar; Lumen ayarları okuma/yazma.
-- Canlı editör viewport ekran görüntüsü (açık haritanın o anki hali) — mevcut capture_* ailesine ek.
+- ✅ Işık aksiyonları (2026-07-24 gecesi). **Düzeltme:** ışık yerleştirme zaten VARDI (`mesh.place_light` + 6 analiz aksiyonu); gerçek boşluklar SkyLight'ın erişilemez olması (`USkyLightComponent` `ULightComponentBase`'ten türüyor, tüm yollar onu atlıyordu), küratörlü ~12 property dışına çıkılamaması, tipli geri-okuma ve preset kavramının olmaması idi. Dördü de kapatıldı; preset verisi `Config/MonolithLightPresets.json`.
+- ✅ PostProcessVolume + ExponentialHeightFog + SkyAtmosphere + Lumen (2026-07-24 gecesi). **Düzeltme:** `mesh.spawn_volume type=post_process` vardı ama `APostProcessVolume::Settings`'e hiç dokunamıyordu. **Kritik motor davranışı:** `FPostProcessSettings` alanları kardeş `bOverride_<Alan>` biti açılmadıkça etkisiz — yazma yolu bunları otomatik enjekte ediyor. Lumen kapsamı: volume başına okuma+yazma var, proje `URendererSettings` yalnız okuma (config/restart gerektiren property'ler), `r.Lumen.*` cvar'ları kapsam dışı. Preset verisi `Config/MonolithAtmospherePresets.json`. Kalan: `AVolumetricCloud`.
+- Canlı editör viewport ekran görüntüsü (açık haritanın o anki hali) — mevcut capture_* ailesine ek. **Neden önemli:** yukarıdaki ışık/atmosfer işinin görünüşü hiçbir şekilde makine tarafından doğrulanamıyor; bu halka kapanmadan Claude ürettiği level'ı göremiyor.
 - Data-driven level yerleşim sistemi: level düzenleri DataAsset/DataTable ile tanımlanır (hardcoded değil), Claude bu verileri üretir + uygular + görsel doğrular.
 - Ağır işler (ışık bake, büyük yerleşim) Faz 1 job sistemi üstünde koşar.
 
