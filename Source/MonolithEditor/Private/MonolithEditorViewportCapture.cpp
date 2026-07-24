@@ -402,6 +402,107 @@ namespace
 }
 
 // ============================================================================
+// Shared viewport resolution (declared in MonolithEditorViewportCapture.h)
+// ============================================================================
+
+namespace MonolithViewportCapture
+{
+	bool ResolveLevelViewport(
+		int32 RequestedIndex,
+		const TCHAR* ActionName,
+		FResolvedViewport& Out,
+		FString& OutError,
+		int32& OutErrorCode,
+		const TCHAR* ExtraHintWhenNoneOpen)
+	{
+		Out = FResolvedViewport();
+		OutError.Reset();
+		OutErrorCode = -32603; // environment problem unless a caller index is at fault
+
+		if (!GEditor)
+		{
+			OutError = FString::Printf(
+				TEXT("%s requires an editor context (GEditor is null)."), ActionName);
+			return false;
+		}
+
+		const TArray<FLevelEditorViewportClient*>& Clients = GEditor->GetLevelViewportClients();
+		Out.Count = Clients.Num();
+
+		if (Clients.Num() == 0)
+		{
+			OutError = FString::Printf(
+				TEXT("No level editor viewport is open. %s reads the level viewport of the open map; "
+					 "open one (Window > Viewports > Viewport 1) and retry.%s"),
+				ActionName,
+				ExtraHintWhenNoneOpen ? ExtraHintWhenNoneOpen : TEXT(""));
+			return false;
+		}
+
+		int32 Index = RequestedIndex;
+		if (Index == INDEX_NONE)
+		{
+			// The editor's focused viewport is what the user means by "the
+			// viewport". Index 0 is only a fallback for a session where nothing
+			// has been focused yet — it is NOT a synonym for "the active one".
+			Index = Clients.IndexOfByKey(GCurrentLevelEditingViewportClient);
+			if (Index == INDEX_NONE)
+			{
+				Index = 0;
+			}
+			else
+			{
+				Out.bWasActive = true;
+			}
+		}
+		else if (!Clients.IsValidIndex(Index))
+		{
+			OutErrorCode = -32602;
+			OutError = FString::Printf(
+				TEXT("'viewport_index' %d is out of range — %d level viewport(s) are open (valid 0..%d). "
+					 "Omit viewport_index to use the active one."),
+				Index, Clients.Num(), Clients.Num() - 1);
+			return false;
+		}
+
+		FLevelEditorViewportClient* ViewportClient = Clients[Index];
+		if (!ViewportClient)
+		{
+			OutError = FString::Printf(
+				TEXT("%s: level viewport %d is registered but null."), ActionName, Index);
+			return false;
+		}
+
+		FViewport* Viewport = ViewportClient->Viewport;
+		if (!Viewport)
+		{
+			OutError = FString::Printf(
+				TEXT("%s: level viewport %d has no render surface yet (FViewport is null) — it is registered "
+					 "but has not been realised on screen. Bring the viewport tab to the front and retry."),
+				ActionName, Index);
+			return false;
+		}
+
+		const FIntPoint Size = Viewport->GetRenderTargetTextureSizeXY();
+		if (Size.X <= 0 || Size.Y <= 0)
+		{
+			OutError = FString::Printf(
+				TEXT("%s: level viewport %d reports a zero-sized render target (%dx%d) — it is collapsed, "
+					 "hidden, or never rendered (a headless / -nullrhi session). Make the viewport visible "
+					 "and retry."),
+				ActionName, Index, Size.X, Size.Y);
+			return false;
+		}
+
+		Out.Client = ViewportClient;
+		Out.Index = Index;
+		Out.Size = Size;
+		Out.TypeName = ViewportTypeToString(ViewportClient->GetViewportType());
+		return true;
+	}
+}
+
+// ============================================================================
 // editor::capture_viewport
 // ============================================================================
 
@@ -441,69 +542,24 @@ FMonolithActionResult FMonolithEditorActions::HandleCaptureViewport(
 			-32603);
 	}
 
-	const TArray<FLevelEditorViewportClient*>& Clients = GEditor->GetLevelViewportClients();
-	if (Clients.Num() == 0)
-	{
-		return FMonolithActionResult::Error(
-			TEXT("No level editor viewport is open. capture_viewport photographs the level "
-				 "viewport of the open map; open one (Window > Viewports > Viewport 1) and retry. "
-				 "For an asset rendered in isolation use editor::capture_scene_preview instead."),
-			-32603);
-	}
-
 	// --- 3. Resolve which viewport -----------------------------------------
-	int32 Index = Request.ViewportIndex;
-	bool bUsedActive = false;
-	if (Index == INDEX_NONE)
+	// Shared with editor::get_viewport_info so the two actions can never
+	// disagree about which viewport (or which resolution) is "the" one.
+	FResolvedViewport Resolved;
+	FString ResolveError;
+	int32 ResolveCode = -32603;
+	if (!ResolveLevelViewport(
+			Request.ViewportIndex, TEXT("capture_viewport"), Resolved, ResolveError, ResolveCode,
+			TEXT(" For an asset rendered in isolation use editor::capture_scene_preview instead.")))
 	{
-		Index = Clients.IndexOfByKey(GCurrentLevelEditingViewportClient);
-		if (Index == INDEX_NONE)
-		{
-			Index = 0; // no viewport has focus yet — first one is the editor's own default
-		}
-		else
-		{
-			bUsedActive = true;
-		}
-	}
-	else if (!Clients.IsValidIndex(Index))
-	{
-		return FMonolithActionResult::Error(
-			FString::Printf(
-				TEXT("'viewport_index' %d is out of range — %d level viewport(s) are open (valid 0..%d). "
-					 "Omit viewport_index to capture the active one."),
-				Index, Clients.Num(), Clients.Num() - 1),
-			-32602);
+		return FMonolithActionResult::Error(ResolveError, ResolveCode);
 	}
 
-	FLevelEditorViewportClient* ViewportClient = Clients[Index];
-	if (!ViewportClient)
-	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Level viewport %d is registered but null."), Index), -32603);
-	}
-
+	const int32 Index = Resolved.Index;
+	const bool bUsedActive = Resolved.bWasActive;
+	FLevelEditorViewportClient* ViewportClient = Resolved.Client;
 	FViewport* Viewport = ViewportClient->Viewport;
-	if (!Viewport)
-	{
-		return FMonolithActionResult::Error(
-			FString::Printf(
-				TEXT("Level viewport %d has no render surface yet (FViewport is null) — it is registered "
-					 "but has not been realised on screen. Bring the viewport tab to the front and retry."),
-				Index),
-			-32603);
-	}
-
-	const FIntPoint Size = Viewport->GetRenderTargetTextureSizeXY();
-	if (Size.X <= 0 || Size.Y <= 0)
-	{
-		return FMonolithActionResult::Error(
-			FString::Printf(
-				TEXT("Level viewport %d reports a zero-sized render target (%dx%d) — it is collapsed or "
-					 "hidden. Make the viewport visible and retry."),
-				Index, Size.X, Size.Y),
-			-32603);
-	}
+	const FIntPoint Size = Resolved.Size;
 
 	const double StartTime = FPlatformTime::Seconds();
 
@@ -632,9 +688,9 @@ FMonolithActionResult FMonolithEditorActions::HandleCaptureViewport(
 	Result->SetBoolField(TEXT("downscaled"), bDownscaled);
 
 	Result->SetNumberField(TEXT("viewport_index"), Index);
-	Result->SetNumberField(TEXT("viewport_count"), Clients.Num());
+	Result->SetNumberField(TEXT("viewport_count"), Resolved.Count);
 	Result->SetBoolField(TEXT("was_active_viewport"), bUsedActive);
-	Result->SetStringField(TEXT("viewport_type"), ViewportTypeToString(ViewportClient->GetViewportType()));
+	Result->SetStringField(TEXT("viewport_type"), Resolved.TypeName);
 	Result->SetBoolField(TEXT("realtime"), ViewportClient->IsRealtime());
 	Result->SetBoolField(TEXT("uniform"), bUniform);
 

@@ -9,15 +9,16 @@
 // level-viewport screenshot (Faz 2, roadmap item "canli editor viewport ekran
 // goruntusu").
 //
-// Everything here is deliberately free of GEditor / FViewport / RHI so it can be
-// exercised by automation under -nullrhi, where no pixel can ever be produced.
-// The rendering half lives in MonolithEditorViewportCapture.cpp next to the
-// action body.
+// Everything here EXCEPT ResolveLevelViewport (bottom of the file) is deliberately
+// free of GEditor / FViewport / RHI so it can be exercised by automation under
+// -nullrhi, where no pixel can ever be produced. The rendering half lives in
+// MonolithEditorViewportCapture.cpp next to the action body.
 // =============================================================================
 
 #include "CoreMinimal.h"
 
 class FJsonObject;
+class FLevelEditorViewportClient;
 
 namespace MonolithViewportCapture
 {
@@ -95,4 +96,64 @@ namespace MonolithViewportCapture
 
 	/** Longest-side fit: returns the (W,H) Size scaled down so max(W,H) <= MaxDimension. */
 	FIntPoint FitToMaxDimension(FIntPoint Size, int32 MaxDimension);
+
+	// ------------------------------------------------------------------------
+	// Engine-bound (the ONLY part of this header that touches GEditor).
+	// ------------------------------------------------------------------------
+
+	/** The level viewport an action resolved to, plus the facts callers report. */
+	struct FResolvedViewport
+	{
+		/** Never null on success. */
+		FLevelEditorViewportClient* Client = nullptr;
+
+		/** Index into GEditor->GetLevelViewportClients(). */
+		int32 Index = INDEX_NONE;
+
+		/** How many level viewports are open. */
+		int32 Count = 0;
+
+		/**
+		 * Render-target size in pixels — the same figure capture_viewport reads
+		 * back over. Guaranteed > 0 in both axes on success.
+		 */
+		FIntPoint Size = FIntPoint::ZeroValue;
+
+		/**
+		 * True only when the caller left the index open AND the editor's focused
+		 * viewport (GCurrentLevelEditingViewportClient) is the one we resolved to,
+		 * i.e. "you got the active viewport because you did not pick one".
+		 */
+		bool bWasActive = false;
+
+		/** ELevelViewportType as a stable public string ("perspective", "ortho_top", ...). */
+		FString TypeName;
+	};
+
+	/**
+	 * Resolve which open level viewport an action should act on, and prove it is
+	 * usable — registered, realised on screen, and non-zero-sized.
+	 *
+	 * Shared by editor::capture_viewport and editor::get_viewport_info so the two
+	 * can never disagree about "the viewport". Reading GetLevelViewportClients()[0]
+	 * directly is the bug this exists to prevent: in a stock editor layout index 0
+	 * is frequently a hidden 0x0 client, and reporting its camera as the truth is a
+	 * silent lie.
+	 *
+	 * @param RequestedIndex        Explicit viewport index, or INDEX_NONE to prefer
+	 *                              the focused viewport (falling back to index 0).
+	 * @param ActionName            Named in every error message, e.g. "capture_viewport".
+	 * @param ExtraHintWhenNoneOpen Optional sentence appended to the "no viewport is
+	 *                              open" message; use it to point at an alternative action.
+	 * @return true on success (Out fully populated). On false, OutError carries an
+	 *         actionable plain message and OutErrorCode the JSON-RPC code (-32602 for
+	 *         a bad caller index, -32603 for an environment problem).
+	 */
+	bool ResolveLevelViewport(
+		int32 RequestedIndex,
+		const TCHAR* ActionName,
+		FResolvedViewport& Out,
+		FString& OutError,
+		int32& OutErrorCode,
+		const TCHAR* ExtraHintWhenNoneOpen = nullptr);
 }

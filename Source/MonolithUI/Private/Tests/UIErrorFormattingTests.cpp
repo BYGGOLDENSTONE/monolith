@@ -19,6 +19,12 @@
 //        whose body parses as the FUISpecError::ToLLMReport key:value shape and
 //        carries `valid_options` when the allowlist has entries for the type.
 //
+//   K5a2 MonolithUI.ErrorFormatting.SetWidgetPropertyValidOptionsListCuratedPaths
+//        The same rejection's valid_options must carry the TYPE's curated paths
+//        (TextBlock.Text, ...) and not just the common UWidget base props —
+//        i.e. the diagnostics build the allowlist token with the same
+//        MakeTokenFromClassName call the gate itself used.
+//
 //   K5b  MonolithUI.ErrorFormatting.SetAnchorPresetBadPresetEnumeratesValidOptions
 //        set_anchor_preset with an unknown preset name returns an error whose
 //        body lists every legal preset token in valid_options.
@@ -65,6 +71,12 @@
 #include "Misc/PackageName.h"
 
 #include "Tests/Hoisted/MonolithUITestFixtureUtils.h"
+
+// K5a2 — curated-vs-base valid_options assertions need the live registry and the
+// canonical token helper (the same one the allowlist gate uses).
+#include "MonolithUICommon.h"
+#include "Registry/MonolithUIRegistrySubsystem.h"
+#include "Registry/UIPropertyAllowlist.h"
 
 namespace MonolithUI::ErrorFormattingTests
 {
@@ -353,6 +365,87 @@ bool FMonolithUISetWidgetPropertyBadPathSurfacesValidOptionsTest::RunTest(const 
     // assert only that the body acknowledges the gate via category=Allowlist.
     TestTrue(TEXT("Error body categorises the failure as Allowlist (or Property)"),
         Body.Contains(TEXT("category: Allowlist")) || Body.Contains(TEXT("category: Property")));
+
+    return true;
+}
+
+
+// ============================================================================
+// K5a2 — the NotInAllowlist error lists the TYPE's curated paths, not just the
+//        common UWidget base props.
+//
+// Regression guard for the token-construction bug: the diagnostics block used
+// to build the allowlist token with FName(*Widget->GetClass()->GetName()) while
+// the gate that produced the rejection used
+// MonolithUI::MakeTokenFromClassName(). The two spellings only coincide by
+// luck (UClass::GetName() has already dropped the engine `U` prefix), and the
+// registry is keyed on the MakeTokenFromClassName spelling — so the diagnostics
+// must use the same call, not a look-alike.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FMonolithUISetWidgetPropertyValidOptionsListCuratedPathsTest,
+    "MonolithUI.ErrorFormatting.SetWidgetPropertyValidOptionsListCuratedPaths",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithUISetWidgetPropertyValidOptionsListCuratedPathsTest::RunTest(const FString& /*Parameters*/)
+{
+    using namespace MonolithUI::ErrorFormattingTests;
+
+    // Precondition, asserted rather than assumed: TextBlock carries curated
+    // mappings (Text/Font/ColorAndOpacity) under the registry's own token.
+    UMonolithUIRegistrySubsystem* Sub = UMonolithUIRegistrySubsystem::Get();
+    if (!TestNotNull(TEXT("UMonolithUIRegistrySubsystem available"), Sub))
+    {
+        return false;
+    }
+    const FName TextBlockToken = MonolithUI::MakeTokenFromClassName(UTextBlock::StaticClass());
+    TestEqual(TEXT("MakeTokenFromClassName agrees with the registry spelling"),
+        TextBlockToken.ToString(), FString(TEXT("TextBlock")));
+    if (!TestTrue(TEXT("TextBlock has curated allowlist entries to report"),
+            Sub->GetAllowlist().GetAllowedPaths(TextBlockToken).Contains(TEXT("Text"))))
+    {
+        return false;
+    }
+
+    UWidgetBlueprint* WBP = nullptr;
+    const FString AssetPath = CreateScratchWBP(
+        TEXT("CuratedValidOptions"), UTextBlock::StaticClass(),
+        FName(TEXT("Caption")), WBP);
+    if (!TestNotNull(TEXT("Test fixture WBP created"), WBP))
+    {
+        return false;
+    }
+
+    TSharedPtr<FJsonObject> Params = MakeStringParams({
+        { TEXT("asset_path"),    AssetPath },
+        { TEXT("widget_name"),   TEXT("Caption") },
+        // Not on any allowlist — trips the gate, which is what we want to read.
+        { TEXT("property_name"), TEXT("ThisPropertyDoesNotExist_K5a2") },
+        { TEXT("value"),         TEXT("doesntmatter") }
+    });
+
+    const FMonolithActionResult R = FMonolithToolRegistry::Get().ExecuteAction(
+        TEXT("ui"), TEXT("set_widget_property"), Params);
+
+    TestFalse(TEXT("Non-allowlisted path returns bSuccess=false"), R.bSuccess);
+
+    const FString& Body = R.ErrorMessage;
+    TestTrue(TEXT("Failure is categorised as an allowlist rejection"),
+        Body.Contains(TEXT("category: Allowlist")));
+    TestTrue(TEXT("Error body carries a valid_options block"),
+        Body.Contains(TEXT("valid_options:")));
+
+    // The curated, type-specific surface — the part the old token construction
+    // could never reach.
+    TestTrue(TEXT("valid_options lists the curated TextBlock path Text"),
+        Body.Contains(TEXT("- Text")));
+    TestTrue(TEXT("valid_options lists the curated TextBlock path ColorAndOpacity"),
+        Body.Contains(TEXT("- ColorAndOpacity")));
+
+    // ...and the common UWidget base props are still there.
+    TestTrue(TEXT("valid_options still lists the common base path Visibility"),
+        Body.Contains(TEXT("- Visibility")));
 
     return true;
 }

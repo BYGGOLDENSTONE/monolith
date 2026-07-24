@@ -560,7 +560,11 @@ Runs non-interactively: each target's package dirty flag is cleared and any open
 
 ### `editor.get_viewport_info`
 
-Current editor viewport camera position, rotation, FOV, resolution. *No parameters.*
+Camera position, rotation, FOV, resolution and realtime state of the **active** editor level viewport — the same viewport `editor.capture_viewport` photographs by default. *No parameters.*
+
+**Result:** `{active_viewport, viewport_count, was_active_viewport, viewport_type, resolution{width,height}, level, camera_location, camera_rotation, fov, realtime}`.
+
+> **Changed 2026-07-24.** The action used to read level viewport 0 blindly. In a stock editor layout that slot is often a hidden 0×0 client, so it reported `resolution 0x0, camera [0,0,0], fov 90` as if it were true while `capture_viewport` was working on a different viewport. Both actions now share one resolver, so: `resolution` is the **render-target size** (the figure `capture_viewport` reads back over, reported there as `viewport_resolution`), `active_viewport` is the real index instead of a hardcoded `0`, and an unusable viewport (none open, not realised, zero-sized) is now a plain error rather than a fabricated reading. `viewport_count`, `was_active_viewport`, `viewport_type` and `level` are new.
 
 ### `editor.capture_viewport` · NEW in Faz 2
 
@@ -892,6 +896,16 @@ Mesh inspection, scene manipulation, spatial queries, level blockout, GeometrySc
 
 > **Experimental — town gen has known geometry issues** (wall misalignment, room separation). Fix Plans v2-v5 applied 27+ fixes but fundamental issues remain. Core mesh actions (sweep walls, auto-collision, proc mesh caching, blueprint prefabs) work fine.
 
+### `mesh.select_actors` — selection + camera focus
+
+`sub_action`: `select` | `deselect` | `clear` | `get` | `focus`. Actors come from `actors` (names or labels) and/or `filter` `{class, tag, sublevel, radius, center}`.
+
+`sub_action=focus` moves the **active** level viewport camera — the same viewport `editor.capture_viewport` photographs by default — so `focus` then `capture_viewport` frames what you asked for. With no focused viewport in the session it falls back to moving every open one (`capture_viewport` falls back to index 0 the same way).
+
+**Result (`focus`):** `{focused_count, focused_actors, viewports_targeted, active_viewport_only, focus_bounds{origin,extent}}` — the framing that was requested. The camera move runs through the viewport's view transition, so it is **not** settled when this returns; read the resulting camera with `editor.get_viewport_info` or `editor.capture_viewport`.
+
+> **Changed 2026-07-24.** `focus` used to report success unconditionally, including when no camera could move at all — actors with no renderable bounds (a settings/manager actor with no primitive components) or no open level viewport. Both are now a plain error naming the actor and the condition. `viewports_targeted`, `active_viewport_only` and `focus_bounds` are new on the success payload.
+
 ### Data-driven level layouts
 
 A **layout** is a JSON document that says what a level contains. It is the source of
@@ -1009,7 +1023,7 @@ UMG widget Blueprint CRUD, templates, styling, animation (v1 + v2), the schema-d
 
 | Category | Actions | Examples |
 |----------|---------|----------|
-| Widget CRUD | 9 | `create_widget_blueprint`, `get_widget_tree`, `add_widget` (v0.21.0: `parent` alias for `parent_name`), `remove_widget`, `set_widget_property` (accepts `value` alias; v0.21.0: common `UWidget` props allowlisted by default), `compile_widget` (returns `errors[]`/`warnings[]`), `list_widget_types`, `rename_widget`, `dump_blueprint_compile_log` |
+| Widget CRUD | 9 | `create_widget_blueprint`, `get_widget_tree`, `add_widget` (v0.21.0: `parent` alias for `parent_name`), `remove_widget`, `set_widget_property` (accepts `value` alias; v0.21.0: common `UWidget` props allowlisted by default; 2026-07-24: an allowlist rejection's `valid_options` now lists the widget type's curated paths as well as the common base props), `compile_widget` (returns `errors[]`/`warnings[]`), `list_widget_types`, `rename_widget`, `dump_blueprint_compile_log` |
 | Variable flags (v0.15.0) | 3 | `add_widget_variable`, `set_widget_is_variable`, `list_widget_property_enums` |
 | Root / reparent (v0.15.0) | 1 | `reparent_widget_root` |
 | Slot / layout | 4 | `set_slot_property` (v0.21.0: grid-slot `row`/`column`/`row_span`/`column_span`), `set_anchor_preset`, `move_widget`, `set_brush` (v0.21.0: `property_name` optional/auto-resolved, `color` alias for `tint_color`) |

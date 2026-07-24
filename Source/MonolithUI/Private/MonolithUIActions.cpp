@@ -766,7 +766,21 @@ FMonolithActionResult FMonolithUIActions::HandleSetWidgetProperty(const TSharedP
             // Pull the live allowlist for this widget type. The list can be
             // empty (registry not yet populated, type not on the allowlist):
             // in that case suggested_fix still names raw_mode as the escape.
-            const FName Token = FName(*Widget->GetClass()->GetName());
+            //
+            // MUST be the same token the gate itself computed
+            // (FUIReflectionHelper::Apply -> MakeTokenFromClassName), or the
+            // diagnostics describe a different type than the one that rejected
+            // the write. UClass::GetName() already drops the engine `U` prefix
+            // for ordinary widgets, so the two agree in the common case — but
+            // MakeTokenFromClassName strips a leading `U` followed by another
+            // capital, which is exactly the spelling registry tokens are built
+            // with (UMonolithUIRegistrySubsystem::PopulateFromReflectionWalk).
+            // Any class whose own name starts U+capital would otherwise miss its
+            // registry entry here and report only the common UWidget base paths.
+            // Blueprint widget classes (`WBP_Foo_C`) are unaffected: the helper
+            // returns their name verbatim, and the allowlist resolves such
+            // unregistered-but-real widget tokens to the base props on purpose.
+            const FName Token = MonolithUI::MakeTokenFromClassName(Widget->GetClass());
             ValidOptions = Allowlist->GetAllowedPaths(Token);
         }
     }

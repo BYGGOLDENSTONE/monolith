@@ -458,6 +458,124 @@ bool FMonolithViewportCaptureHeadlessTest::RunTest(const FString& /*Parameters*/
 }
 
 // ============================================================================
+// Test 6b — editor::get_viewport_info never reports a phantom viewport
+//
+// The old body read GetLevelViewportClients()[0] blindly. In a stock editor
+// layout that slot is routinely a hidden 0x0 client, so the action returned
+// "resolution 0x0, camera [0,0,0], fov 90" as if it were the truth — while
+// capture_viewport, which prefers GCurrentLevelEditingViewportClient and
+// refuses a zero-sized viewport, was photographing a different one. Both now
+// go through MonolithViewportCapture::ResolveLevelViewport.
+//
+// Headless ceiling: under -nullrhi there is usually no realised level viewport
+// at all, so what this proves there is the ERROR contract (clean, actionable,
+// no fabricated numbers). In a windowed editor it additionally proves the
+// success shape. Neither branch may ever hand back a 0x0 reading.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithViewportInfoNoPhantomTest,
+	"Monolith.Editor.ViewportInfo.NoPhantomViewport",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithViewportInfoNoPhantomTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithViewportCaptureTests;
+
+	const FMonolithActionResult Result =
+		FMonolithEditorActions::HandleGetViewportInfo(NoParams());
+
+	if (!Result.bSuccess)
+	{
+		// The headless case: refuse, and say which condition failed.
+		TestFalse(TEXT("Refusal carries a message"), Result.ErrorMessage.IsEmpty());
+		TestTrue(TEXT("Refusal names the viewport as the subject"),
+			Result.ErrorMessage.Contains(TEXT("viewport")));
+		TestEqual(TEXT("Environment refusal uses the internal-error code"),
+			Result.ErrorCode, -32603);
+		AddInfo(FString::Printf(TEXT("get_viewport_info declined: %s"), *Result.ErrorMessage));
+		return true;
+	}
+
+	if (!TestTrue(TEXT("Success carries a result object"), Result.Result.IsValid()))
+	{
+		return false;
+	}
+
+	const TSharedPtr<FJsonObject>* ResObj = nullptr;
+	if (TestTrue(TEXT("Result carries a resolution object"),
+			Result.Result->TryGetObjectField(TEXT("resolution"), ResObj) && ResObj))
+	{
+		// THE regression: a reported viewport is a usable viewport.
+		TestTrue(TEXT("Reported width is positive"),
+			(*ResObj)->GetNumberField(TEXT("width")) > 0.0);
+		TestTrue(TEXT("Reported height is positive"),
+			(*ResObj)->GetNumberField(TEXT("height")) > 0.0);
+	}
+
+	const int32 Count = (int32)Result.Result->GetNumberField(TEXT("viewport_count"));
+	const int32 Active = (int32)Result.Result->GetNumberField(TEXT("active_viewport"));
+	TestTrue(TEXT("Success implies at least one open viewport"), Count >= 1);
+	TestTrue(TEXT("active_viewport indexes an existing viewport"),
+		Active >= 0 && Active < Count);
+	TestFalse(TEXT("viewport_type is reported"),
+		Result.Result->GetStringField(TEXT("viewport_type")).IsEmpty());
+
+	return true;
+}
+
+// ============================================================================
+// Test 6c — the shared resolver's own contract
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithViewportResolveContractTest,
+	"Monolith.Editor.ViewportCapture.ResolveContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithViewportResolveContractTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithViewportCapture;
+
+	FResolvedViewport Resolved;
+	FString Error;
+	int32 Code = 0;
+
+	const bool bOk = ResolveLevelViewport(INDEX_NONE, TEXT("probe"), Resolved, Error, Code);
+
+	if (!bOk)
+	{
+		TestFalse(TEXT("Failure carries a message"), Error.IsEmpty());
+		TestTrue(TEXT("Failure names the calling action"), Error.Contains(TEXT("probe")));
+		TestEqual(TEXT("Environment failure uses -32603"), Code, -32603);
+		TestTrue(TEXT("Failure leaves no client behind"), Resolved.Client == nullptr);
+		AddInfo(FString::Printf(TEXT("No usable level viewport in this process: %s"), *Error));
+		return true;
+	}
+
+	// A realised viewport: every reported fact must be self-consistent.
+	TestTrue(TEXT("Success yields a client"), Resolved.Client != nullptr);
+	TestTrue(TEXT("Success yields a positive render-target size"),
+		Resolved.Size.X > 0 && Resolved.Size.Y > 0);
+	TestTrue(TEXT("Resolved index is inside the client array"),
+		Resolved.Index >= 0 && Resolved.Index < Resolved.Count);
+	TestFalse(TEXT("Viewport type is named"), Resolved.TypeName.IsEmpty());
+
+	// An out-of-range explicit index is the caller's fault, not the editor's.
+	FResolvedViewport Bad;
+	FString BadError;
+	int32 BadCode = 0;
+	const bool bBadOk = ResolveLevelViewport(
+		Resolved.Count + 100, TEXT("probe"), Bad, BadError, BadCode);
+	TestFalse(TEXT("Out-of-range viewport_index is refused"), bBadOk);
+	TestEqual(TEXT("Out-of-range index uses the invalid-params code"), BadCode, -32602);
+	TestTrue(TEXT("Out-of-range error names the field"),
+		BadError.Contains(TEXT("viewport_index")));
+
+	return true;
+}
+
+// ============================================================================
 // Test 7 — the action is discoverable under the `editor` namespace
 // ============================================================================
 

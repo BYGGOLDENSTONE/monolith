@@ -23,7 +23,8 @@
 #include "Components/PrimitiveComponent.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
-#include "Editor.h"
+#include "Editor.h"                // GEditor, GCurrentLevelEditingViewportClient
+#include "LevelEditorViewport.h"   // FLevelEditorViewportClient — focus verification
 #include "Selection.h"
 #include "CollisionQueryParams.h"
 #include "NavigationSystem.h"
@@ -407,7 +408,7 @@ void FMonolithMeshVolumeActions::RegisterActions(FMonolithToolRegistry& Registry
 
 	// 5. select_actors
 	Registry.RegisterAction(TEXT("mesh"), TEXT("select_actors"),
-		TEXT("Control editor actor selection. Select, deselect, clear selection, get current selection, or focus camera on actors."),
+		TEXT("Control editor actor selection. Select, deselect, clear selection, get current selection, or focus camera on actors. sub_action=focus moves the active level viewport camera — the same viewport editor::capture_viewport photographs — and fails with a plain message if no camera actually moved (actors with no renderable bounds, or no open viewport)."),
 		FMonolithActionHandler::CreateStatic(&FMonolithMeshVolumeActions::SelectActors),
 		FParamSchemaBuilder()
 			.Required(TEXT("sub_action"), TEXT("string"), TEXT("Action: select, deselect, clear, get, focus"))
@@ -1151,16 +1152,84 @@ FMonolithActionResult FMonolithMeshVolumeActions::SelectActors(const TSharedPtr<
 			return FMonolithActionResult::Error(TEXT("No actors to focus on"));
 		}
 
-		GEditor->MoveViewportCamerasToActor(ResolvedActors, /*bActiveViewportOnly=*/true);
+		// Which viewports will actually move?
+		//
+		// MoveViewportCamerasToActor(bActiveViewportOnly=true) only ever touches
+		// GCurrentLevelEditingViewportClient. That is the right target — it is
+		// also the viewport editor::capture_viewport photographs by default, so
+		// "focus then capture" frames what was asked for. But when nothing has
+		// been focused yet that global is null and the call is a silent no-op
+		// that still reported success. Fall back to every open viewport in that
+		// case, which is also what capture_viewport falls back to (index 0).
+		const bool bActiveViewportOnly = (GCurrentLevelEditingViewportClient != nullptr);
 
-		auto Result = MakeShared<FJsonObject>();
-		Result->SetNumberField(TEXT("focused_count"), ResolvedActors.Num());
+		TArray<FLevelEditorViewportClient*> Targets;
+		if (bActiveViewportOnly)
+		{
+			Targets.Add(GCurrentLevelEditingViewportClient);
+		}
+		else
+		{
+			Targets = GEditor->GetLevelViewportClients();
+		}
+
 		TArray<TSharedPtr<FJsonValue>> FocusedArr;
+		FString FocusedNames;
 		for (AActor* A : ResolvedActors)
 		{
 			FocusedArr.Add(MakeShared<FJsonValueString>(A->GetActorNameOrLabel()));
+			if (!FocusedNames.IsEmpty()) { FocusedNames += TEXT(", "); }
+			FocusedNames += A->GetActorNameOrLabel();
 		}
+
+		if (Targets.Num() == 0)
+		{
+			return FMonolithActionResult::Error(FString::Printf(
+				TEXT("No viewport camera moved when focusing on %s: no level editor viewport is open — "
+					 "open one (Window > Viewports > Viewport 1) and retry. Nothing was framed."),
+				*FocusedNames));
+		}
+
+		// Is there anything to frame? MoveViewportCamerasToActor builds its box
+		// from the actors' PRIMITIVE components; an actor that has none (a
+		// settings/manager actor, an empty AActor) leaves every camera exactly
+		// where it was and used to be reported as a success.
+		FBox FocusBox(ForceInit);
+		for (AActor* A : ResolvedActors)
+		{
+			FocusBox += A->GetComponentsBoundingBox(/*bNonColliding=*/true, /*bIncludeFromChildActors=*/true);
+		}
+		if (!FocusBox.IsValid)
+		{
+			return FMonolithActionResult::Error(FString::Printf(
+				TEXT("No viewport camera moved when focusing on %s: the actor(s) have no renderable bounds "
+					 "to frame (an actor with no primitive components cannot be focused). Focus an actor "
+					 "with geometry, or set the camera explicitly via editor::capture_viewport's 'camera' "
+					 "parameter. Nothing was framed."),
+				*FocusedNames));
+		}
+
+		GEditor->MoveViewportCamerasToActor(ResolvedActors, bActiveViewportOnly);
+
+		// What the result reports is the FRAMING that was requested, not a
+		// camera read back on the spot: FocusViewportOnBox hands the move to the
+		// viewport's view transition, so the camera is still at its old position
+		// for the next few frames (measured live, 2026-07-24 — the very next
+		// call already sees the new one). Read the settled camera with
+		// editor::get_viewport_info or editor::capture_viewport.
+		auto Result = MakeShared<FJsonObject>();
+		Result->SetNumberField(TEXT("focused_count"), ResolvedActors.Num());
 		Result->SetArrayField(TEXT("focused_actors"), FocusedArr);
+		Result->SetNumberField(TEXT("viewports_targeted"), Targets.Num());
+		Result->SetBoolField(TEXT("active_viewport_only"), bActiveViewportOnly);
+
+		auto BoundsObj = MakeShared<FJsonObject>();
+		BoundsObj->SetArrayField(TEXT("origin"),
+			VolumeActionHelpers::VectorToJsonArray(FocusBox.GetCenter()));
+		BoundsObj->SetArrayField(TEXT("extent"),
+			VolumeActionHelpers::VectorToJsonArray(FocusBox.GetExtent()));
+		Result->SetObjectField(TEXT("focus_bounds"), BoundsObj);
+
 		return FMonolithActionResult::Success(Result);
 	}
 
@@ -1192,10 +1261,12 @@ FMonolithActionResult FMonolithMeshVolumeActions::SelectActors(const TSharedPtr<
 	}
 	GEditor->NoteSelectionChange();
 
-	// Optional camera focus
+	// Optional camera focus. Same active-viewport fallback as sub_action=focus:
+	// with no focused viewport, "active only" would target nothing at all.
 	if (bFocusCamera && bIsSelect && ResolvedActors.Num() > 0)
 	{
-		GEditor->MoveViewportCamerasToActor(ResolvedActors, /*bActiveViewportOnly=*/true);
+		GEditor->MoveViewportCamerasToActor(
+			ResolvedActors, /*bActiveViewportOnly=*/GCurrentLevelEditingViewportClient != nullptr);
 	}
 
 	// Build result with current selection

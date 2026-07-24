@@ -2988,4 +2988,83 @@ bool FMonolithMeshLayoutVolumePropertyRoundTripTest::RunTest(const FString& /*Pa
 	return true;
 }
 
+// ============================================================================
+// select_actors sub_action=focus reports what actually happened
+//
+// Focus used to call MoveViewportCamerasToActor and report success no matter
+// what — including the two cases where no camera moves at all: an actor with no
+// renderable bounds (nothing to frame), and a session where no viewport has
+// focus yet (bActiveViewportOnly=true then targets a null client). Both made
+// the scripted "focus, then editor::capture_viewport" loop return an unchanged
+// frame with no explanation.
+//
+// Headless ceiling: under -nullrhi there is no realised level viewport, so the
+// branch this reaches is "no viewport is open". What is proven in every mode is
+// the honesty rule — focusing something that cannot be framed is never reported
+// as a success.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshFocusReportsWhetherCameraMovedTest,
+	"Monolith.Mesh.Scene.FocusReportsWhetherCameraMoved",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshFocusReportsWhetherCameraMovedTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+
+	UWorld* World = GetTestWorld();
+	TestNotNull(TEXT("there is an editor world"), World);
+	if (!World) { return false; }
+
+	// A bare AActor: a root scene component only, no primitive, therefore no
+	// renderable bounds — the engine has nothing to frame.
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	const FVector Loc(0.0, 0.0, 0.0);
+	const FRotator Rot = FRotator::ZeroRotator;
+	AActor* Boundless = World->SpawnActor(AActor::StaticClass(), &Loc, &Rot, SpawnParams);
+	TestNotNull(TEXT("the boundless fixture actor spawned"), Boundless);
+	if (!Boundless) { return false; }
+	Boundless->SetActorLabel(TEXT("MonolithFocusBoundlessProbe"));
+
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("sub_action"), TEXT("focus"));
+		TArray<TSharedPtr<FJsonValue>> Names;
+		Names.Add(MakeShared<FJsonValueString>(TEXT("MonolithFocusBoundlessProbe")));
+		P->SetArrayField(TEXT("actors"), Names);
+
+		FMonolithActionResult R = Exec(TEXT("select_actors"), P);
+
+		// The whole point: no camera moved, so this is not a success.
+		TestFalse(TEXT("focusing an unframeable actor is not reported as success"), R.bSuccess);
+		TestTrue(TEXT("the refusal says no camera moved"),
+			R.ErrorMessage.Contains(TEXT("No viewport camera moved")));
+		TestTrue(TEXT("the refusal names the actor it was asked to frame"),
+			R.ErrorMessage.Contains(TEXT("MonolithFocusBoundlessProbe")));
+		TestTrue(TEXT("the refusal explains which condition applies"),
+			R.ErrorMessage.Contains(TEXT("no renderable bounds")) ||
+			R.ErrorMessage.Contains(TEXT("No level editor viewport is open")));
+	}
+
+	// An unknown actor name is still the earlier, different error — the new
+	// branch must not have swallowed the resolution failure.
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("sub_action"), TEXT("focus"));
+		TArray<TSharedPtr<FJsonValue>> Names;
+		Names.Add(MakeShared<FJsonValueString>(TEXT("MonolithFocusNoSuchActor_92831")));
+		P->SetArrayField(TEXT("actors"), Names);
+
+		FMonolithActionResult R = Exec(TEXT("select_actors"), P);
+		TestFalse(TEXT("focusing an unknown actor fails"), R.bSuccess);
+		TestTrue(TEXT("and fails at resolution, not at the camera check"),
+			R.ErrorMessage.Contains(TEXT("No actors to focus on")));
+	}
+
+	World->EditorDestroyActor(Boundless, false);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -1,6 +1,9 @@
 #include "MonolithEditorActions.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
+// Shared level-viewport resolution — get_viewport_info and capture_viewport must
+// resolve the same viewport, or the info action reports a phantom.
+#include "MonolithEditorViewportCapture.h"
 #include "EditorAssetLibrary.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -783,7 +786,7 @@ void FMonolithEditorActions::RegisterActions(FMonolithLogCapture* LogCapture)
 			.Build());
 
 	Registry.RegisterAction(TEXT("editor"), TEXT("get_viewport_info"),
-		TEXT("Get current editor viewport camera position, rotation, FOV, and resolution"),
+		TEXT("Get the ACTIVE editor level viewport's camera position, rotation, FOV, resolution and realtime state — the same viewport editor::capture_viewport photographs. Fails with a plain message (never a fake 0x0 reading) when no level viewport is open or the resolved one is hidden/collapsed."),
 		FMonolithActionHandler::CreateStatic(&HandleGetViewportInfo),
 		MakeShared<FJsonObject>());
 
@@ -3764,31 +3767,44 @@ FMonolithActionResult FMonolithEditorActions::HandleStitchFlipbook(
 FMonolithActionResult FMonolithEditorActions::HandleGetViewportInfo(
 	const TSharedPtr<FJsonObject>& Params)
 {
-	// Get the active level editor viewport
-	FLevelEditorViewportClient* ViewportClient = nullptr;
-	if (GEditor && GEditor->GetLevelViewportClients().Num() > 0)
+	// Resolve the viewport EXACTLY the way editor::capture_viewport does, through
+	// the shared resolver. The old body read GetLevelViewportClients()[0] blindly;
+	// in a stock editor layout that slot is often a hidden 0x0 client, so the
+	// action cheerfully reported "resolution 0x0, camera [0,0,0], fov 90" as the
+	// truth while capture_viewport was photographing a completely different
+	// viewport. An unusable viewport is now a plain error, not a fake reading.
+	MonolithViewportCapture::FResolvedViewport Resolved;
+	FString ResolveError;
+	int32 ResolveCode = -32603;
+	if (!MonolithViewportCapture::ResolveLevelViewport(
+			INDEX_NONE, TEXT("get_viewport_info"), Resolved, ResolveError, ResolveCode))
 	{
-		ViewportClient = GEditor->GetLevelViewportClients()[0];
+		return FMonolithActionResult::Error(ResolveError, ResolveCode);
 	}
 
-	if (!ViewportClient)
-	{
-		return FMonolithActionResult::Error(TEXT("No active viewport found"));
-	}
+	FLevelEditorViewportClient* ViewportClient = Resolved.Client;
 
 	FVector CamLocation = ViewportClient->GetViewLocation();
 	FRotator CamRotation = ViewportClient->GetViewRotation();
 	float FOV = ViewportClient->ViewFOV;
 
-	FIntPoint ViewportSize = ViewportClient->Viewport->GetSizeXY();
-
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-	Result->SetNumberField(TEXT("active_viewport"), 0);
+	Result->SetNumberField(TEXT("active_viewport"), Resolved.Index);
+	Result->SetNumberField(TEXT("viewport_count"), Resolved.Count);
+	Result->SetBoolField(TEXT("was_active_viewport"), Resolved.bWasActive);
+	Result->SetStringField(TEXT("viewport_type"), Resolved.TypeName);
 
+	// Render-target size — the same figure capture_viewport reads back over, so
+	// a caller can size an image against this number and get what it asked for.
 	TSharedPtr<FJsonObject> ResObj = MakeShared<FJsonObject>();
-	ResObj->SetNumberField(TEXT("width"), ViewportSize.X);
-	ResObj->SetNumberField(TEXT("height"), ViewportSize.Y);
+	ResObj->SetNumberField(TEXT("width"), Resolved.Size.X);
+	ResObj->SetNumberField(TEXT("height"), Resolved.Size.Y);
 	Result->SetObjectField(TEXT("resolution"), ResObj);
+
+	if (const UWorld* World = ViewportClient->GetWorld())
+	{
+		Result->SetStringField(TEXT("level"), World->GetOutermost()->GetName());
+	}
 
 	TArray<TSharedPtr<FJsonValue>> LocArr;
 	LocArr.Add(MakeShared<FJsonValueNumber>(CamLocation.X));
