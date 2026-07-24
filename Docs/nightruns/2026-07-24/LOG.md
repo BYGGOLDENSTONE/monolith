@@ -350,3 +350,28 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Ek şartlar: aynı yerleşimi iki kez uygulamak kopya üretmemeli ve önceki uygulamanın ne yarattığı bilinebilmeli; kısmi başarısızlık sözleşmesi (hep-ya-hiç mi, yapabildiğini yap-ve-bildir mi) seçilip gerekçelendirilip yanıtta gözlemlenebilir olmalı; yüzlerce aktörlük yerleşim editörü uzun süre bloke ederse Faz 1 job sistemine bağlanmalı, etmiyorsa sayıyla söylenmeli.
 - Commit: -
 - Sıradaki: Görev 15 raporu.
+
+## [03:46] Görev 15 TAMAM — data-driven level yerleşim sistemi (236/236). **Faz 2 çekirdeği tamam.**
+- Durum: done
+- Ne oldu: Beş yeni aksiyon (`apply_level_layout`, `describe_level_layout`, `list_level_layouts`, `remove_level_layout`, `save_level_layout`) + `Config/MonolithLevelLayouts.json` (iki örnek: `demo_lit_room` 12 girdi, `three_point_studio` 4 girdi). 12 yeni test, 224→236.
+- **Format kararı: JSON, gerekçesi yazılı** — yazar bir dil modeli, yerleşim metin olarak üretilebilir ve diff'lenebilir olmalı (`.uasset` opak ikili, `git diff` hiçbir şey göstermez); girdiler doğrudan `FMonolithReflectionWalker`'a giden serbest biçimli property torbaları istiyor, DataTable tanımı gereği sabit sütun kümesi, DataAsset ise ancak USTRUCT'larda bir JSON değer birleşimi yeniden icat ederek yapabilirdi; ayrıca bu fazın iki preset kitaplığı da aynı deseni kullanıyor ve yeniden derleme/cook/redirector gerekmiyor. Dürüst maliyet başlıkta yazılı: Content Browser'da görünmüyor, asset referansı yok, cook zamanı doğrulama yok.
+- **Asıl tasarım hamlesi — saf geçirgenlik**: `kind` hangi mevcut aksiyonun yerleştireceğini seçiyor (`spawn_actor`/`place_light`/`spawn_atmosphere`) ve **diğer tüm girdi anahtarları o aksiyona AYNEN iletiliyor**. Kayacak bir parametre çeviri tablosu yok; hedef aksiyonlar yeni parametre kazanırsa yerleşimler otomatik kazanıyor. Bu yüzden `"preset": "bulb_warm_60w"` yazmak bedava çalışıyor.
+- **Kimlik/idempotenlik**: iki aktör etiketi (`Monolith.Layout:<id>`, `Monolith.LayoutEntry:<id>`) + outliner klasörü. Etiket seçildi çünkü aktörün üzerinde yaşıyor — kaydet/yükle'yi atlatıyor, kopyayla taşınıyor, details panelinde görünüyor ve yan dosya kayıt defterinin aksine level'dan kayamıyor. `on_existing="replace"` (varsayılan) önceki örneği kaldırıp belgeyi taze uyguluyor; `"skip"` yalnız etiketsiz girdileri yerleştiriyor ve mevcut aktör nesnelerine hiç dokunmuyor.
+- **Kısmi başarısızlık: HEP-YA-HİÇ, tek sözleşme, ayar yok.** Faz 1 dünyaya hiç dokunmadan her girdiyi çözüyor (id geçerliliği/tekilliği, kind, hedef aksiyon kayıtlı mı, **gerçek kayıtlı `ParamSchema`'ya karşı zorunlu ve bilinmeyen parametre kontrolü**, vektör şekilleri, sınıf/mesh çözümü, tip token'ları, preset adları ve uyumluluğu). Herhangi bir sorun → çağrı başarısız, TÜM hatalı girdiler listelenir, level'a dokunulmaz. Gerekçe: yerleşim bir kompozisyon; yarısı daha küçük doğru bir yerleşim değil, elle diff'lenecek bir şey.
+- **Ölçek ölçüldü, senkron bırakıldı**: 150 girdi 123 ms (girdi başına 0,82 ms); yeniden uygulama 198 ms. 1000 aktöre ~0,8 sn. Job sistemi saf ek yük olurdu.
+- Karar: Kabul. Kontrol ajanı **idempotenlik iddiasını canlı üretti**: pencereli editörde `demo_lit_room` uygulandı → `placed=12, removed_previous=0`, 34,9 ms; İKİNCİ kez uygulandı → `placed=12, removed_previous=12`; ardından describe → **`entries_in_level=12`, 24 DEĞİL**; remove → `found=12, removed=12`. Sınıf dağılımı da doğru (StaticMeshActor ×4, DirectionalLight, SkyLight, PointLight ×2, RectLight, ExponentialHeightFog, SkyAtmosphere, PostProcessVolume). Ayrıca: 30eb2f7 dal geçmişinde, ağaç temiz, 10 dosya, **`Monolith.uplugin` HAYIR / `MonolithSettings.h` HAYIR**, kendi koşusunda 236/0/0 ve 236 "Test Completed", 12 layout + 7 capture + 8 atmosfer + 8 ışık + 19 job testi hepsi `{Success}`, build yeşil.
+- Commit: 30eb2f7
+- Sıradaki: Görev 16 — yerleşim sistemindeki iki bilinen boşluk.
+
+### notes_for_next_worker (görev 15 işçisinden)
+- `mesh.delete_actors`'ın kullandığı `edactDeleteSelected` kullanıcının seçimini bozuyor; yerleşim silme `UWorld::EditorDestroyActor` kullanıyor.
+- Tüm uygulama TEK editör transaction'ı; savunmacı açılıp kapanıyor çünkü `place_light`/`spawn_atmosphere` kendi hata yollarında `CancelTransaction(0)` çağırıyor ve aksi hâlde dengeyi bozarlardı.
+- Canlı editör *"Multiple directional lights are competing…"* uyardı — beklenen: `demo_lit_room` zaten güneşi olan bir level'a kendi güneşini getiriyor. Hata değil ama tam atmosferli bir yerleşimi mevcut haritaya uygularken bilinmeli.
+- **"Veri doğruluk kaynağıdır"ın kasıtlı sonucu**: yeniden uygulamak, yerleşim aktörlerinde editörde yapılan elle ince ayarları SİLER. İstenmiyorsa `on_existing="skip"` kullanılmalı ya da ayarlar belgeye geri alınmalı.
+
+## [03:47] Görev 16 gönderildi — yerleşim sisteminin iki boşluğu
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. (1) `mesh.spawn_actor`'a `properties` kanalı — şu an `kind:"actor"` girdileri property yazamıyor çünkü saf geçirgenlik yalnız hedef aksiyonun kabul ettiğini açığa çıkarıyor; düzeltme yukarı akışta, yerleşimler bedava kazanacak. (2) Yerleşimlere `volume` kind'ı.
+- Karar: Her ikisinin de **yerleşim üzerinden** kanıtlanması şart koşuldu — gönderilen `Config/MonolithLevelLayouts.json` en az bir `kind:"actor"`+`properties` ve bir `kind:"volume"` girdisi içerecek, `ShippedLayoutDataIsValid` kanarya testi bunları da kapsayacak. Ayrıca serbest biçimli `properties` torbasının girdinin geri kalanında bilinmeyen-anahtar kontrolünü kazara devre dışı bırakmadığı doğrulanacak — hep-ya-hiç sözleşmesi zayıflatılmayacak.
+- Commit: -
+- Sıradaki: Görev 16 raporu.
