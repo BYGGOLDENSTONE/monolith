@@ -863,7 +863,7 @@ Mesh inspection, scene manipulation, spatial queries, level blockout, GeometrySc
 | Performance | `get_region_performance`, `estimate_placement_cost`, `find_overdraw_hotspots`, `analyze_shadow_cost`, `get_triangle_budget`, `analyze_texel_density`, `analyze_material_cost_in_region`, `analyze_lightmap_density`, `find_instancing_candidates`, `convert_to_hism`, `setup_hlod`, `analyze_texture_budget`, `generate_proxy_mesh` |
 | Lighting | `place_light` (directional/point/spot/rect/**sky**, `preset` + reflection `properties`), `set_light_properties`, `get_light_properties`, `list_light_presets`, `sample_light_levels`, `find_dark_corners`, `analyze_light_transitions`, `get_light_coverage`, `suggest_light_placement` |
 | Atmosphere / GI | `spawn_atmosphere` (`post_process` / `height_fog` / `sky_atmosphere`), `set_atmosphere_properties`, `get_atmosphere_properties`, `list_atmosphere_presets`, `get_lumen_settings`, `set_lumen_settings` |
-| Level layouts (data-driven) | `list_level_layouts`, `describe_level_layout`, `apply_level_layout`, `remove_level_layout`, `save_level_layout` — see below |
+| Level layouts (data-driven) | `list_level_layouts`, `describe_level_layout`, `apply_level_layout`, `remove_level_layout`, `save_level_layout`, `capture_level_layout` — see below |
 | Audio | `get_audio_volumes`, `get_surface_materials`, `estimate_footstep_sound`, `analyze_room_acoustics`, `analyze_sound_propagation`, `find_loud_surfaces`, `find_sound_paths`, `can_ai_hear_from`, `get_stealth_map`, `find_quiet_path`, `suggest_audio_volumes`, `create_audio_volume`, `set_surface_type` |
 | Decals / scatter | `place_decals`, `place_along_path`, `analyze_prop_density`, `place_storytelling_scene`, `scatter_on_surface`, `scatter_on_walls`, `scatter_on_ceiling`, `randomize_transforms` |
 | Encounter design | `analyze_ai_territory`, `evaluate_safe_room`, `predict_player_paths`, `evaluate_spawn_point`, `suggest_scare_positions`, `evaluate_encounter_pacing`, `design_encounter`, `suggest_patrol_route`, `analyze_level_pacing_structure`, `generate_scare_sequence`, `validate_horror_intensity`, `evaluate_monster_reveal`, `analyze_co_op_balance` |
@@ -937,6 +937,33 @@ truth; the actions below only make the level match it.
   also rolls back cleanly.
 - **Cost** — synchronous; measured at ~0.8 ms per entry (150 entries in ~123 ms), so nothing
   here goes through the job system. `apply_level_layout` returns `elapsed_ms`.
+- **Capture (the reverse direction)** — `capture_level_layout` reads actors that are already
+  in the level back into a document, so the loop closes: apply → nudge things in the viewport
+  → capture → save. Sources are an applied layout's tagged actors (default), an explicit
+  `actors` list, or the current editor `selection`.
+  - *What it writes*: only names on a **data-driven allowlist** (the `readback` sections of
+    `MonolithLightPresets.json` / `MonolithAtmospherePresets.json`, plus `readback.actor`,
+    `readback.actor_component` and `readback.atmosphere_actor` in `MonolithLevelLayouts.json`)
+    **and** only where the value differs from the object's archetype. `include_defaults=true`
+    disables the second filter. A post-process volume is the exception and is captured by its
+    `bOverride_` bits — exactly what is in effect, nothing that is not.
+  - *Presets are preferred*: if applying a shipped preset would reproduce the live values
+    **exactly** (checked by running the preset through the real write path into a scratch
+    buffer and comparing with `FProperty::Identical`), the entry references the preset by name
+    instead of restating its values.
+  - *Honest about loss*: Blueprint classes, meshes that only exist in memory, scaled lights,
+    hand-built brushes and values the write path would refuse are reported in `warnings` /
+    `skipped` and echoed into the document under `capture`, never dropped in silence. The
+    captured document is resolved before it is returned (`valid` / `problems`), and
+    `save=true` writes it through `save_level_layout`.
+  - *One bounded approximation*: transform numbers are written to 6 decimals so documents stay
+    diffable. Property values are never rounded.
+- **Fixed in the same pass** — `mesh.place_light` did not honour its own `rotation` parameter
+  for directional and spot lights: `AActor::PostSpawnInitialize` composes the spawn transform
+  with the root component's archetype transform, and those two actors ship with a −46° / −90°
+  pitch on that root, so `rotation: [-35, 150, 0]` produced a light at `[-81, 150, 0]`. It now
+  sets the world rotation after the spawn. Existing layouts using those two light types will
+  point where their document says, which may differ from what they did before.
 
 | Action | Purpose |
 |--------|---------|
@@ -945,6 +972,7 @@ truth; the actions below only make the level match it.
 | `apply_level_layout` | Place it. `layout` (named) or `layout_json` (a layout you just generated), `origin`, `folder`, `on_existing`, `dry_run` |
 | `remove_level_layout` | Delete every actor tagged with a layout id — works from the tags alone, even if the document changed or is gone |
 | `save_level_layout` | Validate a generated layout and write it to the user layout directory so it becomes a named layout |
+| `capture_level_layout` | Read the level back into a document. `layout` (the id it gets), `source` (`layout`/`actors`/`selection`), `from_layout`, `actors`, `origin`, `folder`, `description`, `include_defaults`, `use_presets`, `save`, `overwrite` |
 
 Verify the result visually with `editor.capture_viewport`.
 

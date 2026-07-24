@@ -519,6 +519,20 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::PlaceLight(const TSharedP
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to spawn %s"), *ClassName));
 	}
 
+	// The spawn transform is COMPOSED with the root component's archetype transform,
+	// not substituted for it (AActor::PostSpawnInitialize:
+	// `FinalRootComponentTransform = RootTransform * UserSpawnTransform`). Two engine
+	// light actors ship with a non-identity relative rotation on that root —
+	// ADirectionalLight (-46 pitch, Light.cpp) and ASpotLight (-90 pitch,
+	// SpotLight.cpp) — so asking for rotation [-35,150,0] used to produce a sun at
+	// [-81,150,0]: this action silently did not honour its own `rotation` parameter,
+	// and mesh.capture_level_layout made it visible because a captured rotation
+	// drifted by another -46 on every re-apply. Setting the world rotation after the
+	// spawn makes `rotation` mean what the schema says it means, for every light type.
+	// The archetype SCALE (2.5 on a directional light) is deliberately left alone: it
+	// is the editor's gizmo size and has no rendering effect.
+	SpawnedActor->SetActorRotation(Rotation);
+
 	// Get the light component (base class — sky lights are not ULightComponent)
 	FString CompError;
 	ULightComponentBase* LightComp = FMonolithMeshLightActions::ResolveLightComponent(SpawnedActor, CompError);

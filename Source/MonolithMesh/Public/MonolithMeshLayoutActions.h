@@ -177,11 +177,87 @@ class UWorld;
  *   WOULD dominate a huge layout is loading unique mesh assets, which is disk I/O
  *   the job system cannot move off the game thread anyway (UStaticMesh loads and
  *   actor spawns are both game-thread-only).
+ *
+ * ---------------------------------------------------------------------------
+ * CAPTURE — the reverse direction (mesh.capture_level_layout)
+ * ---------------------------------------------------------------------------
+ *   Apply alone makes the data a one-way street: nudge a light in the viewport
+ *   because it looks better and the next apply silently discards the nudge (that
+ *   is the deliberate consequence of "the document is the source of truth").
+ *   Capture closes the loop — arrange or tweak by hand, capture to a document,
+ *   re-apply anywhere.
+ *
+ *   SOURCES (`source`)
+ *     layout     (default) every actor tagged Monolith.Layout:<id>. This is the
+ *                loop that matters: apply -> tweak -> capture -> save overwrite.
+ *     actors     an explicit list of actor names/labels.
+ *     selection  whatever is selected in the editor right now, read through
+ *                GEditor->GetSelectedActors() — the same call mesh.select_actors
+ *                already uses, so there is no second notion of "selected".
+ *
+ *   WHAT IS WRITTEN PER ENTRY — two filters, both deliberate
+ *     1. An ALLOWLIST of property names, taken from data, never from a C++ table:
+ *          light       -> Config/MonolithLightPresets.json      `readback.<type>`
+ *          atmosphere  -> Config/MonolithAtmospherePresets.json `readback.<type>`
+ *          actor       -> Config/MonolithLevelLayouts.json      `readback.actor`
+ *                         and `readback.actor_component`
+ *          post-process actor knobs -> `readback.atmosphere_actor`
+ *        Dumping every UPROPERTY instead would produce hundreds of engine defaults
+ *        per actor: unreadable, undiffable, and full of values the layout format
+ *        cannot honour. The allowlist is also how AActor::Tags is kept OUT — it is
+ *        simply not listed, and re-emitting it would fight the layout's own tags.
+ *     2. ONLY WHAT DIFFERS FROM THE DEFAULT. "Default" is the object's ARCHETYPE
+ *        (Comp->GetArchetype() / Actor->GetArchetype()), not the class CDO, because
+ *        that is exactly what a fresh spawn produces — an APointLight's component
+ *        template, not UPointLightComponent's CDO. The comparison is
+ *        FProperty::Identical, i.e. exact engine value equality, not JSON text.
+ *        `include_defaults=true` turns filter 2 off; filter 1 always applies.
+ *
+ *     FPostProcessSettings is the ONE exception, and it has to be: every field
+ *     there is inert unless its sibling bOverride_<Field> bit is set. So a
+ *     post-process volume is captured by walking the override bits — every field
+ *     whose bit is ON, whatever the readback list says, and nothing whose bit is
+ *     OFF. That is both more faithful (nothing that is actually in effect is lost)
+ *     and more honest (a value sitting behind a disabled override is not in effect,
+ *     and re-applying it would silently turn the override ON).
+ *
+ *   PRESETS ARE PREFERRED, AND ONLY ON AN EXACT MATCH. Before writing raw values a
+ *   capture asks every type-compatible preset: "if I applied you, would every one
+ *   of your keys end up byte-identical to what is in the level?" The question is
+ *   answered by running the preset's JSON value through the REAL write path
+ *   (FMonolithReflectionWalker::WriteLeaf) into a scratch buffer and comparing with
+ *   FProperty::Identical — so it is exact by construction and immune to the
+ *   float-literal trap (0.5357 in JSON is not == (double)0.5357f). Nothing is lost
+ *   by a match: keys the preset covers are dropped from the raw bag only because
+ *   they were proved equal, and every other captured key is still written.
+ *
+ *   WHERE THE ROUND TRIP IS LOSSY — the capture SAYS SO, it never drops silently.
+ *   Every one of these produces a `warnings` line, and the same list is embedded in
+ *   the document under `capture.warnings` so it survives being saved:
+ *     - an actor the format cannot express is REFUSED, not half-written: Blueprint
+ *       classes (a layout names classes by short name, which only resolves if the
+ *       Blueprint happens to be loaded), a StaticMeshActor whose mesh lives in the
+ *       transient package, a class name that resolves to a different class. Those
+ *       actors come back in `skipped` with a per-actor reason.
+ *     - a light/atmosphere/volume actor with a non-unit scale (place_light,
+ *       spawn_atmosphere and spawn_volume have no `scale` parameter).
+ *     - a volume brush that is not the box builder those actions create, so its
+ *       `extent` cannot be recovered exactly.
+ *     - spawn_volume's curated property aliases (damage_per_sec, ...), which are
+ *       not UPROPERTY names and therefore cannot be read back through reflection.
+ *     - a property whose captured value the write path would refuse (checked with
+ *       InspectTree, the same validation the real write runs).
+ *   A captured document is ALSO resolved through ResolveLayout before it is
+ *   returned, so `valid` / `problems` say up front whether it would apply.
+ *
+ *   OUTPUT. The document body is always returned in the response. `save=true`
+ *   writes it through mesh.save_level_layout — the existing writer, which validates
+ *   before writing — rather than a second serialiser.
  */
 class FMonolithMeshLayoutActions
 {
 public:
-	/** Register the five layout actions with the tool registry. */
+	/** Register the six layout actions with the tool registry. */
 	static void RegisterActions(FMonolithToolRegistry& Registry);
 
 	// ------------------------------------------------------------------
@@ -269,7 +345,79 @@ public:
 	/** Guard every layout action shares: false + actionable OutError when no level is open. */
 	static bool RequireEditorWorld(const UWorld* World, FString& OutError);
 
+	// ------------------------------------------------------------------
+	// Capture (level -> document). See the CAPTURE section of the file header.
+	// ------------------------------------------------------------------
+
+	/**
+	 * Capture-time property allowlists that live in the layout library itself
+	 * (Config/MonolithLevelLayouts.json, section `readback`). Sections:
+	 *   actor             UPROPERTYs on the ACTOR                 (-> entry.properties)
+	 *   actor_component   UPROPERTYs on its ROOT COMPONENT        (-> entry.component_properties)
+	 *   atmosphere_actor  actor-level knobs of a post-process volume (-> entry.actor_properties)
+	 * A name that does not exist on a particular class is skipped, not an error:
+	 * these lists span several classes on purpose (CastShadow exists on a primitive
+	 * root, not on a bare USceneComponent).
+	 */
+	static TArray<FString> LoadCaptureKeys(const FString& SectionToken, TArray<FString>& OutWarnings);
+
+	/** One actor the capture refused to express, with the reason the caller is told. */
+	struct FCaptureSkip
+	{
+		FString ActorName;
+		FString ActorClass;
+		FString Reason;
+	};
+
+	/** Knobs of a capture. Defaults are the ones the action advertises. */
+	struct FCaptureOptions
+	{
+		/** Id the produced document gets (tags, folder and labels on re-apply). */
+		FString LayoutId;
+		/** World offset SUBTRACTED from every captured location and stored as the document origin. */
+		FVector Origin = FVector::ZeroVector;
+		/** Outliner folder recorded in the document (empty = let apply pick its default). */
+		FString Folder;
+		FString Description;
+		/** Write every allowlisted property, including those still at their archetype value. */
+		bool bIncludeDefaults = false;
+		/** Reference a preset when applying it would reproduce the live values exactly. */
+		bool bUsePresets = true;
+		/** Entry ids in this order come first (the previous document's order, for clean diffs). */
+		TArray<FString> PreferredOrder;
+	};
+
+	/** Everything a capture produced, including what it could not express. */
+	struct FCaptureResult
+	{
+		/** Layout body: {description?, folder?, origin?, capture?, entries:[...]}. */
+		TSharedPtr<FJsonObject> Body;
+		TArray<FString> Warnings;
+		TArray<FCaptureSkip> Skipped;
+		/** Preset names referenced instead of raw values, in entry order. */
+		TArray<FString> PresetsUsed;
+		int32 EntryCount = 0;
+	};
+
+	/**
+	 * Build a layout document body from live actors. Reads only — never spawns,
+	 * never writes a property, never opens a transaction.
+	 *
+	 * @return false + OutError only for a whole-call problem (no actors at all).
+	 *         Per-actor refusals are reported in OutResult.Skipped, never fatal.
+	 */
+	static bool CaptureActors(
+		const TArray<AActor*>& Actors,
+		const FCaptureOptions& Options,
+		FCaptureResult& OutResult,
+		FString& OutError);
+
 private:
+	/** Registers mesh.capture_level_layout (implemented in MonolithMeshLayoutCapture.cpp). */
+	static void RegisterCaptureAction(FMonolithToolRegistry& Registry);
+	static FMonolithActionResult CaptureLevelLayout(const TSharedPtr<FJsonObject>& Params);
+
+
 	static FMonolithActionResult ListLevelLayouts(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult DescribeLevelLayout(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult ApplyLevelLayout(const TSharedPtr<FJsonObject>& Params);

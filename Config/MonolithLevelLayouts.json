@@ -34,8 +34,64 @@
     "               post_process: unbound/blend_radius/blend_weight/priority)",
     "",
     "Apply with mesh.apply_level_layout, inspect with mesh.describe_level_layout,",
-    "undo with mesh.remove_level_layout, look at the result with editor.capture_viewport."
+    "undo with mesh.remove_level_layout, look at the result with editor.capture_viewport.",
+    "",
+    "The 'readback' section below is the REVERSE direction: it is the allowlist",
+    "mesh.capture_level_layout uses when it turns actors already in the level back",
+    "into a document. Light and atmosphere entries use the readback sections of",
+    "MonolithLightPresets.json / MonolithAtmospherePresets.json instead; only the",
+    "generic-actor and post-process-actor knobs live here, because only the layout",
+    "system has an opinion about them."
   ],
+
+  "readback": {
+    "actor": [
+      "bEnableAutoLODGeneration",
+      "bNetLoadOnClient",
+      "bRelevantForLevelBounds",
+      "bIsEditorOnlyActor"
+    ],
+    "actor_component": [
+      "Mobility",
+      "bVisible",
+      "bHiddenInGame",
+      "CastShadow",
+      "bCastDynamicShadow",
+      "bCastStaticShadow",
+      "bCastHiddenShadow",
+      "bCastShadowAsTwoSided",
+      "bReceivesDecals",
+      "bAffectDistanceFieldLighting",
+      "BoundsScale",
+      "OverrideMaterials"
+    ],
+    "atmosphere_actor": [
+      "bEnabled",
+      "bUnbound",
+      "Priority",
+      "BlendRadius",
+      "BlendWeight"
+    ],
+    "_comment": [
+      "Capture allowlists. Two rules decide what a capture writes: a name must be",
+      "listed here (or in the light/atmosphere readback sets), AND its live value",
+      "must differ from the object's archetype. Both filters exist so a captured",
+      "document stays readable and diffable instead of dumping engine defaults.",
+      "",
+      "'actor' resolves against AActor, 'actor_component' against the root component",
+      "(so primitive-only names are simply skipped on a bare USceneComponent root),",
+      "'atmosphere_actor' against APostProcessVolume.",
+      "",
+      "AActor::Tags is deliberately ABSENT: apply owns the Monolith.Layout /",
+      "Monolith.LayoutEntry tags, and capturing them would make a re-applied actor",
+      "fight its own identity. Transform is not listed either — location/rotation/",
+      "scale are first-class entry fields, not properties.",
+      "",
+      "Adding a name here changes what future captures record and nothing else;",
+      "existing documents keep working. Every name is checked against the real",
+      "engine class by Monolith.Mesh.Layouts.CaptureKeysAreValid."
+    ]
+  },
 
   "layouts": {
 

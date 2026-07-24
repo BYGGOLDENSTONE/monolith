@@ -29,6 +29,14 @@ public:
 	static UClass* ResolveVolumeClass(const FString& TypeStr, FString& OutError);
 
 	/**
+	 * Every `type` token ResolveVolumeClass accepts, in schema order. Public so a
+	 * caller can walk the table in REVERSE (class -> token) without restating it;
+	 * mesh.capture_level_layout needs that to recognise a volume actor already in
+	 * the level. Also the single source of the token list quoted in error text.
+	 */
+	static const TArray<FString>& GetVolumeTokens();
+
+	/**
 	 * The keys `spawn_volume`'s `properties` bag actually honours for a volume class.
 	 *
 	 * Unlike mesh.place_light / mesh.spawn_actor, this bag is NOT a reflection channel:

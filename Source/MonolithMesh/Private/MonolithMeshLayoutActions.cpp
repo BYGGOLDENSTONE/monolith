@@ -831,6 +831,9 @@ void FMonolithMeshLayoutActions::RegisterActions(FMonolithToolRegistry& Registry
 			.Required(TEXT("layout_json"), TEXT("object"), TEXT("Layout body {description?, folder?, origin?, entries:[...]}"))
 			.Optional(TEXT("overwrite"), TEXT("boolean"), TEXT("Overwrite an existing user layout file with this id"), TEXT("false"))
 			.Build());
+
+	// The reverse direction (level -> document). Lives in MonolithMeshLayoutCapture.cpp.
+	RegisterCaptureAction(Registry);
 }
 
 // ============================================================================

@@ -123,6 +123,15 @@ namespace VolumeActionHelpers
 // Volume class resolver
 // ============================================================================
 
+const TArray<FString>& FMonolithMeshVolumeActions::GetVolumeTokens()
+{
+	static const TArray<FString> Tokens = {
+		TEXT("trigger"), TEXT("blocking"), TEXT("kill"), TEXT("pain"),
+		TEXT("nav_modifier"), TEXT("audio"), TEXT("post_process"),
+	};
+	return Tokens;
+}
+
 UClass* FMonolithMeshVolumeActions::ResolveVolumeClass(const FString& TypeStr, FString& OutError)
 {
 	if (TypeStr.Equals(TEXT("trigger"), ESearchCase::IgnoreCase))       return ATriggerVolume::StaticClass();
@@ -134,8 +143,8 @@ UClass* FMonolithMeshVolumeActions::ResolveVolumeClass(const FString& TypeStr, F
 	if (TypeStr.Equals(TEXT("post_process"), ESearchCase::IgnoreCase))  return APostProcessVolume::StaticClass();
 
 	OutError = FString::Printf(
-		TEXT("Unknown volume type: '%s'. Valid types: trigger, blocking, kill, pain, nav_modifier, audio, post_process"),
-		*TypeStr);
+		TEXT("Unknown volume type: '%s'. Valid types: %s"),
+		*TypeStr, *FString::Join(GetVolumeTokens(), TEXT(", ")));
 	return nullptr;
 }
 

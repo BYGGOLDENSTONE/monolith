@@ -69,10 +69,13 @@
 #include "Components/StaticMeshComponent.h"
 #include "Editor.h"
 #include "EngineUtils.h"
+#include "Engine/PostProcessVolume.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/TriggerVolume.h"
 #include "Engine/World.h"
+#include "UObject/Package.h"
+#include "UObject/UObjectGlobals.h"
 #include "GameFramework/Actor.h"
 #include "Reflection/MonolithReflectionReader.h"
 #include "HAL/FileManager.h"
@@ -174,6 +177,82 @@ namespace MonolithLayoutTestUtils
 		return FMonolithMeshLayoutActions::FindLayoutActors(GetTestWorld(), LayoutId).Num();
 	}
 
+	// --- capture helpers -------------------------------------------------
+
+	/** The document body mesh.capture_level_layout returned, or null. */
+	static TSharedPtr<FJsonObject> BodyOf(const FMonolithActionResult& R)
+	{
+		const TSharedPtr<FJsonObject>* B = nullptr;
+		if (R.bSuccess && R.Result.IsValid() && R.Result->TryGetObjectField(TEXT("layout_json"), B) && B)
+		{
+			return *B;
+		}
+		return nullptr;
+	}
+
+	/** One entry of a captured body by its id, or null. */
+	static TSharedPtr<FJsonObject> EntryById(const TSharedPtr<FJsonObject>& InBody, const FString& Id)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if (!InBody.IsValid() || !InBody->TryGetArrayField(TEXT("entries"), Arr) || !Arr)
+		{
+			return nullptr;
+		}
+		for (const TSharedPtr<FJsonValue>& V : *Arr)
+		{
+			const TSharedPtr<FJsonObject>* E = nullptr;
+			FString EntryId;
+			if (V.IsValid() && V->TryGetObject(E) && E && (*E)->TryGetStringField(TEXT("id"), EntryId) && EntryId == Id)
+			{
+				return *E;
+			}
+		}
+		return nullptr;
+	}
+
+	/** A named property bag on an entry, or null. */
+	static TSharedPtr<FJsonObject> BagOf(const TSharedPtr<FJsonObject>& InEntry, const TCHAR* Key)
+	{
+		const TSharedPtr<FJsonObject>* B = nullptr;
+		if (InEntry.IsValid() && InEntry->TryGetObjectField(Key, B) && B)
+		{
+			return *B;
+		}
+		return nullptr;
+	}
+
+	/** One component of an [x,y,z] array field. */
+	static double AxisOf(const TSharedPtr<FJsonObject>& Obj, const TCHAR* Key, int32 Index)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if (!Obj.IsValid() || !Obj->TryGetArrayField(Key, Arr) || !Arr || !Arr->IsValidIndex(Index))
+		{
+			return TNumericLimits<double>::Max();
+		}
+		return (*Arr)[Index]->AsNumber();
+	}
+
+	/** Capture params with the common defaults filled in. */
+	static TSharedPtr<FJsonObject> CaptureParams(const FString& LayoutId)
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("layout"), LayoutId);
+		return P;
+	}
+
+	/** The layout actor placed for a given entry id, or nullptr. */
+	static AActor* ActorForEntry(const FString& LayoutId, const FString& EntryId)
+	{
+		for (AActor* Actor : FMonolithMeshLayoutActions::FindLayoutActors(GetTestWorld(), LayoutId))
+		{
+			if (FMonolithMeshLayoutActions::GetEntryId(Actor) == EntryId)
+			{
+				return Actor;
+			}
+		}
+		return nullptr;
+	}
+
 	/** A minimal two-entry layout: one cube-less StaticMeshActor + one warm point light. */
 	static TSharedPtr<FJsonObject> MakeSimpleBody()
 	{
@@ -207,7 +286,7 @@ bool FMonolithMeshLayoutRegistrationTest::RunTest(const FString& /*Parameters*/)
 	FMonolithToolRegistry& Registry = FMonolithToolRegistry::Get();
 	const TCHAR* Expected[] = {
 		TEXT("list_level_layouts"), TEXT("describe_level_layout"), TEXT("apply_level_layout"),
-		TEXT("remove_level_layout"), TEXT("save_level_layout"),
+		TEXT("remove_level_layout"), TEXT("save_level_layout"), TEXT("capture_level_layout"),
 	};
 	for (const TCHAR* Action : Expected)
 	{
@@ -1461,6 +1540,748 @@ bool FMonolithMeshLayoutVolumeKindTest::RunTest(const FString& /*Parameters*/)
 		TestTrue(TEXT("the error says nothing was spawned"), Bad.ErrorMessage.Contains(TEXT("Nothing was spawned")));
 	}
 
+	Remove(LayoutId);
+	return true;
+}
+
+// ============================================================================
+// 14. CAPTURE — the shipped allowlist is a real engine allowlist
+//
+// Engine-upgrade canary for the reverse direction, matching the one the layouts
+// themselves get: if UE renames one of the properties mesh.capture_level_layout
+// is told to read, this goes red before a user silently stops getting it.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutCaptureKeysTest,
+	"Monolith.Mesh.Layouts.CaptureKeysAreValid",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutCaptureKeysTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	TArray<FString> Warnings;
+
+	const TArray<FString> ActorKeys = FMonolithMeshLayoutActions::LoadCaptureKeys(TEXT("actor"), Warnings);
+	TestTrue(TEXT("the shipped `readback.actor` allowlist is not empty"), ActorKeys.Num() > 0);
+	for (const FString& Key : ActorKeys)
+	{
+		TestNotNull(*FString::Printf(TEXT("capture key 'actor.%s' exists on AActor"), *Key),
+			FMonolithReflectionWalker::FindPropertyForwarding(AActor::StaticClass(), Key));
+	}
+
+	const TArray<FString> CompKeys = FMonolithMeshLayoutActions::LoadCaptureKeys(TEXT("actor_component"), Warnings);
+	TestTrue(TEXT("the shipped `readback.actor_component` allowlist is not empty"), CompKeys.Num() > 0);
+	for (const FString& Key : CompKeys)
+	{
+		// The list deliberately spans component classes: a name only has to exist on
+		// SOME root component type a layout can place, not on every one of them.
+		const bool bResolves =
+			FMonolithReflectionWalker::FindPropertyForwarding(USceneComponent::StaticClass(), Key) != nullptr ||
+			FMonolithReflectionWalker::FindPropertyForwarding(UStaticMeshComponent::StaticClass(), Key) != nullptr;
+		TestTrue(*FString::Printf(
+			TEXT("capture key 'actor_component.%s' exists on USceneComponent or UStaticMeshComponent"), *Key),
+			bResolves);
+	}
+
+	const TArray<FString> AtmoKeys = FMonolithMeshLayoutActions::LoadCaptureKeys(TEXT("atmosphere_actor"), Warnings);
+	TestTrue(TEXT("the shipped `readback.atmosphere_actor` allowlist is not empty"), AtmoKeys.Num() > 0);
+	for (const FString& Key : AtmoKeys)
+	{
+		TestNotNull(*FString::Printf(TEXT("capture key 'atmosphere_actor.%s' exists on APostProcessVolume"), *Key),
+			FMonolithReflectionWalker::FindPropertyForwarding(APostProcessVolume::StaticClass(), Key));
+	}
+
+	// AActor::Tags must NEVER be captured: apply owns the layout tags, and a
+	// captured Tags array would fight the identity mechanism on re-apply.
+	TestFalse(TEXT("AActor::Tags is deliberately absent from the actor allowlist"),
+		ActorKeys.ContainsByPredicate([](const FString& K) { return K.Equals(TEXT("Tags")); }));
+
+	return true;
+}
+
+// ============================================================================
+// 15. CAPTURE — an applied layout captures back to the entries that were applied
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutCaptureFromTagTest,
+	"Monolith.Mesh.Layouts.CaptureFromTag",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutCaptureFromTagTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	const FString LayoutId = TEXT("monolith_test_capture");
+	Remove(LayoutId);
+
+	TSharedPtr<FJsonObject> Pad = Entry(TEXT("pad"), TEXT("actor"));
+	Pad->SetStringField(TEXT("class"), TEXT("/Engine/BasicShapes/Cube.Cube"));
+	Pad->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 0.0));
+	Pad->SetArrayField(TEXT("scale"), Vec(2.0, 2.0, 0.5));
+	{
+		auto Comp = MakeShared<FJsonObject>();
+		Comp->SetStringField(TEXT("Mobility"), TEXT("Movable"));
+		Pad->SetObjectField(TEXT("component_properties"), Comp);
+	}
+
+	TSharedPtr<FJsonObject> Lamp = Entry(TEXT("lamp"), TEXT("light"));
+	Lamp->SetStringField(TEXT("type"), TEXT("point"));
+	Lamp->SetStringField(TEXT("preset"), TEXT("bulb_warm_60w"));
+	Lamp->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 300.0));
+
+	TSharedPtr<FJsonObject> Trig = Entry(TEXT("trig"), TEXT("volume"));
+	Trig->SetStringField(TEXT("type"), TEXT("trigger"));
+	Trig->SetArrayField(TEXT("location"), Vec(200.0, 0.0, 0.0));
+	Trig->SetArrayField(TEXT("extent"), Vec(50.0, 60.0, 70.0));
+
+	FMonolithActionResult Applied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ Pad, Lamp, Trig })));
+	TestTrue(FString::Printf(TEXT("the source layout applies (%s)"), *Applied.ErrorMessage), Applied.bSuccess);
+	if (!Applied.bSuccess) { Remove(LayoutId); return false; }
+
+	FMonolithActionResult R = Exec(TEXT("capture_level_layout"), CaptureParams(LayoutId));
+	TestTrue(FString::Printf(TEXT("capture from the layout tag succeeds (%s)"), *R.ErrorMessage), R.bSuccess);
+	if (!R.bSuccess) { Remove(LayoutId); return false; }
+
+	int32 EntryCount = 0;
+	R.Result->TryGetNumberField(TEXT("entry_count"), EntryCount);
+	TestEqual(TEXT("every applied entry came back"), EntryCount, 3);
+
+	bool bValid = false;
+	R.Result->TryGetBoolField(TEXT("valid"), bValid);
+	TestTrue(TEXT("the captured document resolves against the live engine"), bValid);
+
+	const TSharedPtr<FJsonObject> CapturedBody = BodyOf(R);
+	TestTrue(TEXT("the document body is returned in the response"), CapturedBody.IsValid());
+
+	// --- the mesh actor ---
+	const TSharedPtr<FJsonObject> PadEntry = EntryById(CapturedBody, TEXT("pad"));
+	TestTrue(TEXT("the 'pad' entry survived the round trip by its entry tag"), PadEntry.IsValid());
+	if (PadEntry.IsValid())
+	{
+		FString Kind, Class;
+		PadEntry->TryGetStringField(TEXT("kind"), Kind);
+		PadEntry->TryGetStringField(TEXT("class"), Class);
+		TestEqual(TEXT("'pad' is captured as an actor entry"), Kind, FString(TEXT("actor")));
+		TestEqual(TEXT("'pad' names the mesh asset it was placed from"),
+			Class, FString(TEXT("/Engine/BasicShapes/Cube.Cube")));
+		TestEqual(TEXT("'pad' kept its scale"), AxisOf(PadEntry, TEXT("scale"), 0), 2.0);
+
+		const TSharedPtr<FJsonObject> CompBag = BagOf(PadEntry, TEXT("component_properties"));
+		TestTrue(TEXT("'pad' captured its non-default component properties"), CompBag.IsValid());
+		if (CompBag.IsValid())
+		{
+			FString Mobility;
+			CompBag->TryGetStringField(TEXT("Mobility"), Mobility);
+			TestEqual(TEXT("the component Mobility the layout set is read back"), Mobility, FString(TEXT("Movable")));
+		}
+	}
+
+	// --- the light: the preset is preferred over restating its values ---
+	const TSharedPtr<FJsonObject> LampEntry = EntryById(CapturedBody, TEXT("lamp"));
+	TestTrue(TEXT("the 'lamp' entry survived"), LampEntry.IsValid());
+	if (LampEntry.IsValid())
+	{
+		FString Kind, Type, Preset;
+		LampEntry->TryGetStringField(TEXT("kind"), Kind);
+		LampEntry->TryGetStringField(TEXT("type"), Type);
+		LampEntry->TryGetStringField(TEXT("preset"), Preset);
+		TestEqual(TEXT("'lamp' is captured as a light entry"), Kind, FString(TEXT("light")));
+		TestEqual(TEXT("'lamp' kept its light type"), Type, FString(TEXT("point")));
+		TestEqual(TEXT("an exact preset match is referenced by name instead of raw values"),
+			Preset, FString(TEXT("bulb_warm_60w")));
+		TestEqual(TEXT("'lamp' kept its height"), AxisOf(LampEntry, TEXT("location"), 2), 300.0);
+
+		// Everything the preset covers must be gone from the raw bag — it was
+		// PROVED equal, not assumed.
+		const TSharedPtr<FJsonObject> Bag = BagOf(LampEntry, TEXT("properties"));
+		if (Bag.IsValid())
+		{
+			TestFalse(TEXT("a preset-covered property is not restated in `properties`"),
+				Bag->HasField(TEXT("AttenuationRadius")));
+		}
+	}
+
+	// --- the volume: extent recovered exactly from the box builder ---
+	const TSharedPtr<FJsonObject> TrigEntry = EntryById(CapturedBody, TEXT("trig"));
+	TestTrue(TEXT("the 'trig' entry survived"), TrigEntry.IsValid());
+	if (TrigEntry.IsValid())
+	{
+		FString Kind, Type;
+		TrigEntry->TryGetStringField(TEXT("kind"), Kind);
+		TrigEntry->TryGetStringField(TEXT("type"), Type);
+		TestEqual(TEXT("'trig' is captured as a volume entry"), Kind, FString(TEXT("volume")));
+		TestEqual(TEXT("'trig' kept its volume type"), Type, FString(TEXT("trigger")));
+		TestEqual(TEXT("the brush half-extent X is recovered exactly"), AxisOf(TrigEntry, TEXT("extent"), 0), 50.0);
+		TestEqual(TEXT("the brush half-extent Y is recovered exactly"), AxisOf(TrigEntry, TEXT("extent"), 1), 60.0);
+		TestEqual(TEXT("the brush half-extent Z is recovered exactly"), AxisOf(TrigEntry, TEXT("extent"), 2), 70.0);
+	}
+
+	Remove(LayoutId);
+	return true;
+}
+
+// ============================================================================
+// 16. CAPTURE — the round trip. THE point of the whole surface.
+//
+//   apply -> tweak in the level -> capture -> remove -> re-apply -> the tweak
+//   is still there.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutCaptureRoundTripTest,
+	"Monolith.Mesh.Layouts.CaptureRoundTrip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutCaptureRoundTripTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	const FString LayoutId = TEXT("monolith_test_roundtrip");
+	Remove(LayoutId);
+
+	TSharedPtr<FJsonObject> Lamp = Entry(TEXT("lamp"), TEXT("light"));
+	Lamp->SetStringField(TEXT("type"), TEXT("point"));
+	Lamp->SetStringField(TEXT("preset"), TEXT("bulb_warm_60w"));
+	Lamp->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 300.0));
+
+	FMonolithActionResult Applied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ Lamp })));
+	TestTrue(FString::Printf(TEXT("the source layout applies (%s)"), *Applied.ErrorMessage), Applied.bSuccess);
+	if (!Applied.bSuccess) { Remove(LayoutId); return false; }
+
+	AActor* LampActor = ActorForEntry(LayoutId, TEXT("lamp"));
+	TestNotNull(TEXT("the light actor is in the level"), LampActor);
+	if (!LampActor) { Remove(LayoutId); return false; }
+	const FString LampName = LampActor->GetActorNameOrLabel();
+
+	// --- the "I nudged it because it looked better" step -------------------
+	const double TweakedIntensity = 1234.0;
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("actor_name"), LampName);
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("Intensity"), TweakedIntensity);
+		P->SetObjectField(TEXT("properties"), Props);
+		FMonolithActionResult Set = Exec(TEXT("set_light_properties"), P);
+		TestTrue(FString::Printf(TEXT("the manual tweak lands (%s)"), *Set.ErrorMessage), Set.bSuccess);
+	}
+	{
+		auto P = MakeShared<FJsonObject>();
+		P->SetStringField(TEXT("actor_name"), LampName);
+		P->SetArrayField(TEXT("location"), Vec(10.0, 20.0, 330.0));
+		FMonolithActionResult Moved = Exec(TEXT("move_actor"), P);
+		TestTrue(FString::Printf(TEXT("the manual move lands (%s)"), *Moved.ErrorMessage), Moved.bSuccess);
+	}
+
+	// --- capture -----------------------------------------------------------
+	FMonolithActionResult R = Exec(TEXT("capture_level_layout"), CaptureParams(LayoutId));
+	TestTrue(FString::Printf(TEXT("capture succeeds (%s)"), *R.ErrorMessage), R.bSuccess);
+	if (!R.bSuccess) { Remove(LayoutId); return false; }
+
+	const TSharedPtr<FJsonObject> CapturedBody = BodyOf(R);
+	const TSharedPtr<FJsonObject> LampEntry = EntryById(CapturedBody, TEXT("lamp"));
+	TestTrue(TEXT("the tweaked light is in the captured document"), LampEntry.IsValid());
+	if (!LampEntry.IsValid()) { Remove(LayoutId); return false; }
+
+	TestEqual(TEXT("the captured location is the nudged one, not the document's"),
+		AxisOf(LampEntry, TEXT("location"), 2), 330.0);
+
+	// The preset no longer describes this light, so capture must NOT claim it does.
+	FString Preset;
+	LampEntry->TryGetStringField(TEXT("preset"), Preset);
+	TestTrue(TEXT("a preset that no longer matches exactly is not referenced"), Preset.IsEmpty());
+
+	const TSharedPtr<FJsonObject> Bag = BagOf(LampEntry, TEXT("properties"));
+	TestTrue(TEXT("the light's differing values are written out as raw properties"), Bag.IsValid());
+	if (Bag.IsValid())
+	{
+		double CapturedIntensity = 0.0;
+		TestTrue(TEXT("Intensity is captured"), Bag->TryGetNumberField(TEXT("Intensity"), CapturedIntensity));
+		TestEqual(TEXT("the captured Intensity is the tweaked value"), CapturedIntensity, TweakedIntensity);
+		TestTrue(TEXT("the values the preset used to supply are now written out in full"),
+			Bag->HasField(TEXT("AttenuationRadius")));
+	}
+
+	// --- re-apply the CAPTURED document into an empty slot ------------------
+	Remove(LayoutId);
+	TestEqual(TEXT("the level is empty of this layout before the re-apply"), CountInLevel(LayoutId), 0);
+
+	FMonolithActionResult ReApplied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, CapturedBody));
+	TestTrue(FString::Printf(TEXT("the captured document re-applies (%s)"), *ReApplied.ErrorMessage),
+		ReApplied.bSuccess);
+	if (!ReApplied.bSuccess) { Remove(LayoutId); return false; }
+
+	AActor* Rebuilt = ActorForEntry(LayoutId, TEXT("lamp"));
+	TestNotNull(TEXT("the re-applied light is in the level"), Rebuilt);
+	if (Rebuilt)
+	{
+		TestTrue(TEXT("the re-applied light is at the nudged location"),
+			Rebuilt->GetActorLocation().Equals(FVector(10.0, 20.0, 330.0), 0.01));
+
+		FString CompError;
+		ULightComponentBase* Comp = FMonolithMeshLightActions::ResolveLightComponent(Rebuilt, CompError);
+		TestNotNull(TEXT("the re-applied actor still has its light component"), Comp);
+		if (Comp)
+		{
+			TestEqual(TEXT("THE ROUND TRIP: the hand tweak survived capture + re-apply"),
+				static_cast<double>(Comp->Intensity), TweakedIntensity);
+		}
+	}
+
+	Remove(LayoutId);
+	return true;
+}
+
+// ============================================================================
+// 17. CAPTURE — the "only what differs from the default" filter really filters
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutCaptureDefaultFilterTest,
+	"Monolith.Mesh.Layouts.CaptureFiltersDefaults",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutCaptureDefaultFilterTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	const FString LayoutId = TEXT("monolith_test_capture_defaults");
+	Remove(LayoutId);
+
+	// One point light with exactly ONE property moved off its default.
+	TSharedPtr<FJsonObject> Lamp = Entry(TEXT("lamp"), TEXT("light"));
+	Lamp->SetStringField(TEXT("type"), TEXT("point"));
+	Lamp->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 120.0));
+	{
+		auto Props = MakeShared<FJsonObject>();
+		Props->SetNumberField(TEXT("Intensity"), 777.0);
+		Lamp->SetObjectField(TEXT("properties"), Props);
+	}
+
+	FMonolithActionResult Applied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ Lamp })));
+	TestTrue(FString::Printf(TEXT("the source layout applies (%s)"), *Applied.ErrorMessage), Applied.bSuccess);
+	if (!Applied.bSuccess) { Remove(LayoutId); return false; }
+
+	// A read-back key that is definitely IN the shipped `common` set and definitely
+	// still at its default, because nothing above touched it.
+	const TCHAR* UntouchedKey = TEXT("CastShadows");
+	TestTrue(TEXT("the probe key really is in the shipped point-light read-back set"),
+		FMonolithMeshLightActions::LoadReadbackKeys(TEXT("point")).Contains(UntouchedKey));
+
+	// --- default: filtered ---
+	{
+		TSharedPtr<FJsonObject> P = CaptureParams(LayoutId);
+		P->SetBoolField(TEXT("use_presets"), false);
+		FMonolithActionResult R = Exec(TEXT("capture_level_layout"), P);
+		TestTrue(FString::Printf(TEXT("capture succeeds (%s)"), *R.ErrorMessage), R.bSuccess);
+		if (!R.bSuccess) { Remove(LayoutId); return false; }
+
+		const TSharedPtr<FJsonObject> Bag = BagOf(EntryById(BodyOf(R), TEXT("lamp")), TEXT("properties"));
+		TestTrue(TEXT("the changed property is captured"), Bag.IsValid() && Bag->HasField(TEXT("Intensity")));
+		TestFalse(TEXT("a read-back property still at its default is NOT written out"),
+			Bag.IsValid() && Bag->HasField(UntouchedKey));
+	}
+
+	// --- include_defaults=true: not filtered ---
+	{
+		TSharedPtr<FJsonObject> P = CaptureParams(LayoutId);
+		P->SetBoolField(TEXT("use_presets"), false);
+		P->SetBoolField(TEXT("include_defaults"), true);
+		FMonolithActionResult R = Exec(TEXT("capture_level_layout"), P);
+		TestTrue(FString::Printf(TEXT("capture with include_defaults succeeds (%s)"), *R.ErrorMessage), R.bSuccess);
+		if (!R.bSuccess) { Remove(LayoutId); return false; }
+
+		const TSharedPtr<FJsonObject> Bag = BagOf(EntryById(BodyOf(R), TEXT("lamp")), TEXT("properties"));
+		TestTrue(TEXT("include_defaults=true writes the default-valued property too"),
+			Bag.IsValid() && Bag->HasField(UntouchedKey));
+		TestTrue(TEXT("include_defaults=true produces a strictly larger bag"),
+			Bag.IsValid() && Bag->Values.Num() > 1);
+	}
+
+	Remove(LayoutId);
+	return true;
+}
+
+// ============================================================================
+// 18. CAPTURE — an actor the format cannot express is REPORTED, never dropped
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutCaptureUnrepresentableTest,
+	"Monolith.Mesh.Layouts.CaptureReportsUnrepresentable",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutCaptureUnrepresentableTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	UWorld* World = GetTestWorld();
+	TestNotNull(TEXT("there is an editor world"), World);
+	if (!World) { return false; }
+
+	const FString LayoutId = TEXT("monolith_test_capture_lossy");
+	Remove(LayoutId);
+
+	// A StaticMeshActor whose mesh only exists in memory. Nothing a layout can name
+	// points at it — a procedurally built mesh is the real-world version of this.
+	AStaticMeshActor* Orphan = World->SpawnActor<AStaticMeshActor>();
+	TestNotNull(TEXT("the fixture actor spawned"), Orphan);
+	if (!Orphan) { return false; }
+	Orphan->SetActorLabel(TEXT("MonolithCaptureTransientMesh"));
+
+	UStaticMeshComponent* OrphanComp = Orphan->GetStaticMeshComponent();
+	if (OrphanComp)
+	{
+		OrphanComp->SetMobility(EComponentMobility::Movable);
+		OrphanComp->SetStaticMesh(NewObject<UStaticMesh>(GetTransientPackage(), NAME_None, RF_Transient));
+	}
+	const bool bFixtureIsTransient =
+		OrphanComp && OrphanComp->GetStaticMesh() &&
+		OrphanComp->GetStaticMesh()->GetPackage() == GetTransientPackage();
+	TestTrue(TEXT("the fixture really carries a transient (unsaveable) mesh"), bFixtureIsTransient);
+
+	// A second, perfectly representable actor, so the call succeeds and we can see
+	// that the refusal is REPORTED rather than making the whole capture vanish.
+	AStaticMeshActor* Good = World->SpawnActor<AStaticMeshActor>();
+	if (Good) { Good->SetActorLabel(TEXT("MonolithCaptureGoodActor")); }
+
+	bool bPassed = true;
+	if (bFixtureIsTransient && Good)
+	{
+		TSharedPtr<FJsonObject> P = CaptureParams(LayoutId);
+		P->SetStringField(TEXT("source"), TEXT("actors"));
+		TArray<TSharedPtr<FJsonValue>> Names;
+		Names.Add(MakeShared<FJsonValueString>(TEXT("MonolithCaptureTransientMesh")));
+		Names.Add(MakeShared<FJsonValueString>(TEXT("MonolithCaptureGoodActor")));
+		P->SetArrayField(TEXT("actors"), Names);
+
+		FMonolithActionResult R = Exec(TEXT("capture_level_layout"), P);
+		TestTrue(FString::Printf(TEXT("a mixed capture still succeeds (%s)"), *R.ErrorMessage), R.bSuccess);
+		if (R.bSuccess)
+		{
+			int32 EntryCount = 0, SkippedCount = 0;
+			R.Result->TryGetNumberField(TEXT("entry_count"), EntryCount);
+			R.Result->TryGetNumberField(TEXT("skipped_count"), SkippedCount);
+			TestEqual(TEXT("only the representable actor became an entry"), EntryCount, 1);
+			TestEqual(TEXT("the other actor is counted as skipped, not silently missing"), SkippedCount, 1);
+
+			const TArray<TSharedPtr<FJsonValue>>* SkipArr = nullptr;
+			TestTrue(TEXT("the response carries a per-actor skip list"),
+				R.Result->TryGetArrayField(TEXT("skipped"), SkipArr) && SkipArr && SkipArr->Num() == 1);
+			if (SkipArr && SkipArr->Num() == 1)
+			{
+				const TSharedPtr<FJsonObject>* Obj = nullptr;
+				if ((*SkipArr)[0]->TryGetObject(Obj) && Obj)
+				{
+					FString Name, Reason;
+					(*Obj)->TryGetStringField(TEXT("actor_name"), Name);
+					(*Obj)->TryGetStringField(TEXT("reason"), Reason);
+					TestEqual(TEXT("the skip names the actor"), Name, FString(TEXT("MonolithCaptureTransientMesh")));
+					TestTrue(TEXT("the reason says WHY, in terms the user can act on"),
+						Reason.Contains(TEXT("transient")));
+				}
+			}
+
+			// And the same reason must reach the document, so it survives a save.
+			const TSharedPtr<FJsonObject> CapturedBody = BodyOf(R);
+			const TSharedPtr<FJsonObject> CaptureBlock = BagOf(CapturedBody, TEXT("capture"));
+			TestTrue(TEXT("the document itself records what it could not represent"), CaptureBlock.IsValid());
+		}
+		else
+		{
+			bPassed = false;
+		}
+	}
+
+	// Capturing ONLY the unrepresentable actor must fail with the reason in the
+	// message — an empty document with no explanation would be the silent drop.
+	if (bFixtureIsTransient)
+	{
+		TSharedPtr<FJsonObject> P = CaptureParams(LayoutId);
+		P->SetStringField(TEXT("source"), TEXT("actors"));
+		TArray<TSharedPtr<FJsonValue>> Names;
+		Names.Add(MakeShared<FJsonValueString>(TEXT("MonolithCaptureTransientMesh")));
+		P->SetArrayField(TEXT("actors"), Names);
+
+		FMonolithActionResult R = Exec(TEXT("capture_level_layout"), P);
+		TestFalse(TEXT("capturing nothing but an unrepresentable actor is an error"), R.bSuccess);
+		TestTrue(TEXT("that error explains why, per actor"), R.ErrorMessage.Contains(TEXT("transient")));
+	}
+
+	if (IsValid(Orphan)) { World->EditorDestroyActor(Orphan, false); }
+	if (IsValid(Good))   { World->EditorDestroyActor(Good, false); }
+	return bPassed;
+}
+
+// ============================================================================
+// 19. CAPTURE — the explicit-actor and editor-selection sources
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutCaptureSourcesTest,
+	"Monolith.Mesh.Layouts.CaptureSources",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutCaptureSourcesTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	UWorld* World = GetTestWorld();
+	TestNotNull(TEXT("there is an editor world"), World);
+	if (!World || !GEditor) { return false; }
+
+	const FString LayoutId = TEXT("monolith_test_capture_sources");
+
+	AStaticMeshActor* A = World->SpawnActor<AStaticMeshActor>();
+	AStaticMeshActor* B = World->SpawnActor<AStaticMeshActor>();
+	TestNotNull(TEXT("fixture A spawned"), A);
+	TestNotNull(TEXT("fixture B spawned"), B);
+	if (!A || !B) { return false; }
+	A->SetActorLabel(TEXT("MonolithCapSrcA"));
+	B->SetActorLabel(TEXT("MonolithCapSrcB"));
+	A->SetActorLocation(FVector(11.0, 0.0, 0.0));
+
+	// --- source = actors ---
+	{
+		TSharedPtr<FJsonObject> P = CaptureParams(LayoutId);
+		P->SetStringField(TEXT("source"), TEXT("actors"));
+		TArray<TSharedPtr<FJsonValue>> Names;
+		Names.Add(MakeShared<FJsonValueString>(TEXT("MonolithCapSrcA")));
+		Names.Add(MakeShared<FJsonValueString>(TEXT("MonolithCapSrcB")));
+		P->SetArrayField(TEXT("actors"), Names);
+
+		FMonolithActionResult R = Exec(TEXT("capture_level_layout"), P);
+		TestTrue(FString::Printf(TEXT("capture from an explicit actor list succeeds (%s)"), *R.ErrorMessage),
+			R.bSuccess);
+		if (R.bSuccess)
+		{
+			int32 EntryCount = 0;
+			R.Result->TryGetNumberField(TEXT("entry_count"), EntryCount);
+			TestEqual(TEXT("both named actors became entries"), EntryCount, 2);
+
+			// Untagged actors get their id from their label.
+			const TSharedPtr<FJsonObject> EntryA = EntryById(BodyOf(R), TEXT("monolithcapsrca"));
+			TestTrue(TEXT("an untagged actor's entry id is derived from its label"), EntryA.IsValid());
+			if (EntryA.IsValid())
+			{
+				TestEqual(TEXT("its world location is captured"), AxisOf(EntryA, TEXT("location"), 0), 11.0);
+			}
+		}
+	}
+
+	// --- a typo captures NOTHING rather than a smaller layout ---
+	{
+		TSharedPtr<FJsonObject> P = CaptureParams(LayoutId);
+		P->SetStringField(TEXT("source"), TEXT("actors"));
+		TArray<TSharedPtr<FJsonValue>> Names;
+		Names.Add(MakeShared<FJsonValueString>(TEXT("MonolithCapSrcA")));
+		Names.Add(MakeShared<FJsonValueString>(TEXT("MonolithCapSrcTypo")));
+		P->SetArrayField(TEXT("actors"), Names);
+
+		FMonolithActionResult R = Exec(TEXT("capture_level_layout"), P);
+		TestFalse(TEXT("an unknown actor name fails the whole capture"), R.bSuccess);
+		TestTrue(TEXT("the error names the actor it could not find"),
+			R.ErrorMessage.Contains(TEXT("MonolithCapSrcTypo")));
+	}
+
+	// --- source = selection, through the editor's own selection set ---
+	{
+		GEditor->SelectNone(false, true, false);
+		GEditor->SelectActor(B, true, false);
+
+		TSharedPtr<FJsonObject> P = CaptureParams(LayoutId);
+		P->SetStringField(TEXT("source"), TEXT("selection"));
+		FMonolithActionResult R = Exec(TEXT("capture_level_layout"), P);
+		TestTrue(FString::Printf(TEXT("capture from the editor selection succeeds (%s)"), *R.ErrorMessage),
+			R.bSuccess);
+		if (R.bSuccess)
+		{
+			int32 EntryCount = 0;
+			R.Result->TryGetNumberField(TEXT("entry_count"), EntryCount);
+			TestEqual(TEXT("exactly the selected actor was captured"), EntryCount, 1);
+			TestTrue(TEXT("and it is the one that was selected"),
+				EntryById(BodyOf(R), TEXT("monolithcapsrcb")).IsValid());
+		}
+
+		GEditor->SelectNone(false, true, false);
+		FMonolithActionResult Empty = Exec(TEXT("capture_level_layout"), P);
+		TestFalse(TEXT("an empty selection is a clear error, not an empty document"), Empty.bSuccess);
+		TestTrue(TEXT("the error says what to do about it"),
+			Empty.ErrorMessage.Contains(TEXT("selected")));
+	}
+
+	if (IsValid(A)) { World->EditorDestroyActor(A, false); }
+	if (IsValid(B)) { World->EditorDestroyActor(B, false); }
+	return true;
+}
+
+// ============================================================================
+// 20. CAPTURE — place_light must honour the rotation it was asked for
+//
+// Found BY the capture work, and it is the one thing that broke the round trip:
+// AActor::PostSpawnInitialize composes the spawn transform with the root
+// component's archetype transform, and ADirectionalLight / ASpotLight ship with
+// a non-identity relative rotation (-46 / -90 pitch). So place_light used to
+// return a light rotated 46 (or 90) degrees away from the request, and a captured
+// rotation drifted by that amount again on EVERY re-apply.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLightRotationFidelityTest,
+	"Monolith.Mesh.Layouts.PlaceLightHonoursRotation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLightRotationFidelityTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	const FString LayoutId = TEXT("monolith_test_light_rotation");
+	Remove(LayoutId);
+
+	// The two types whose archetype root carries a rotation, plus one that does not.
+	struct FCase { const TCHAR* Id; const TCHAR* Type; double Pitch; double Yaw; };
+	const FCase Cases[] = {
+		{ TEXT("sun"),  TEXT("directional"), -35.0, 150.0 },
+		{ TEXT("cone"), TEXT("spot"),        -60.0,  20.0 },
+		{ TEXT("rect"), TEXT("rect"),        -15.0, -75.0 },
+	};
+
+	TArray<TSharedPtr<FJsonObject>> Entries;
+	for (const FCase& C : Cases)
+	{
+		TSharedPtr<FJsonObject> E = Entry(C.Id, TEXT("light"));
+		E->SetStringField(TEXT("type"), C.Type);
+		E->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 500.0));
+		E->SetArrayField(TEXT("rotation"), Vec(C.Pitch, C.Yaw, 0.0));
+		Entries.Add(E);
+	}
+
+	FMonolithActionResult Applied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body(Entries)));
+	TestTrue(FString::Printf(TEXT("the rotated-light layout applies (%s)"), *Applied.ErrorMessage), Applied.bSuccess);
+	if (!Applied.bSuccess) { Remove(LayoutId); return false; }
+
+	for (const FCase& C : Cases)
+	{
+		AActor* Actor = ActorForEntry(LayoutId, C.Id);
+		TestNotNull(*FString::Printf(TEXT("the %s light is in the level"), C.Type), Actor);
+		if (!Actor) { continue; }
+		const FRotator Got = Actor->GetActorRotation();
+		TestTrue(*FString::Printf(
+			TEXT("a %s light really faces the rotation it was given (asked [%g, %g, 0], got [%g, %g, %g])"),
+			C.Type, C.Pitch, C.Yaw, Got.Pitch, Got.Yaw, Got.Roll),
+			Got.Equals(FRotator(C.Pitch, C.Yaw, 0.0), 0.01));
+	}
+
+	// ...and therefore capture -> re-apply does not drift it.
+	FMonolithActionResult R = Exec(TEXT("capture_level_layout"), CaptureParams(LayoutId));
+	TestTrue(FString::Printf(TEXT("capture succeeds (%s)"), *R.ErrorMessage), R.bSuccess);
+	if (R.bSuccess)
+	{
+		const TSharedPtr<FJsonObject> CapturedBody = BodyOf(R);
+		const TSharedPtr<FJsonObject> SunEntry = EntryById(CapturedBody, TEXT("sun"));
+		TestTrue(TEXT("the directional light was captured"), SunEntry.IsValid());
+		if (SunEntry.IsValid())
+		{
+			TestTrue(TEXT("the captured pitch is the authored one, not the archetype-composed one"),
+				FMath::IsNearlyEqual(AxisOf(SunEntry, TEXT("rotation"), 0), -35.0, 0.01));
+			TestTrue(TEXT("transform numbers are written at a readable precision"),
+				FMath::IsNearlyEqual(AxisOf(SunEntry, TEXT("rotation"), 1), 150.0, 1e-9));
+		}
+
+		Remove(LayoutId);
+		FMonolithActionResult ReApplied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, CapturedBody));
+		TestTrue(FString::Printf(TEXT("the captured document re-applies (%s)"), *ReApplied.ErrorMessage),
+			ReApplied.bSuccess);
+		if (ReApplied.bSuccess)
+		{
+			if (AActor* Sun = ActorForEntry(LayoutId, TEXT("sun")))
+			{
+				TestTrue(TEXT("ROUND TRIP: the directional light's rotation survives capture + re-apply"),
+					Sun->GetActorRotation().Equals(FRotator(-35.0, 150.0, 0.0), 0.01));
+			}
+		}
+	}
+
+	Remove(LayoutId);
+	return true;
+}
+
+// ============================================================================
+// 21. CAPTURE — save goes through the existing validating writer
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMonolithMeshLayoutCaptureSaveTest,
+	"Monolith.Mesh.Layouts.CaptureSavesThroughSaveAction",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithMeshLayoutCaptureSaveTest::RunTest(const FString& /*Parameters*/)
+{
+	using namespace MonolithLayoutTestUtils;
+	EnsureRegistered();
+
+	const FString LayoutId = TEXT("monolith_test_capture_save");
+	const FString FilePath = FMonolithMeshLayoutActions::Library().GetUserDirectory() / (LayoutId + TEXT(".json"));
+	IFileManager::Get().Delete(*FilePath, false, true, true);
+	Remove(LayoutId);
+
+	TSharedPtr<FJsonObject> Lamp = Entry(TEXT("lamp"), TEXT("light"));
+	Lamp->SetStringField(TEXT("type"), TEXT("spot"));
+	Lamp->SetStringField(TEXT("preset"), TEXT("spot_key_neutral"));
+	Lamp->SetArrayField(TEXT("location"), Vec(0.0, 0.0, 400.0));
+	Lamp->SetArrayField(TEXT("rotation"), Vec(-60.0, 0.0, 0.0));
+
+	FMonolithActionResult Applied = Exec(TEXT("apply_level_layout"), ApplyParams(LayoutId, Body({ Lamp })));
+	TestTrue(FString::Printf(TEXT("the source layout applies (%s)"), *Applied.ErrorMessage), Applied.bSuccess);
+	if (!Applied.bSuccess) { Remove(LayoutId); return false; }
+
+	TSharedPtr<FJsonObject> P = CaptureParams(LayoutId);
+	P->SetBoolField(TEXT("save"), true);
+	P->SetBoolField(TEXT("overwrite"), true);
+	P->SetStringField(TEXT("description"), TEXT("captured by an automation test"));
+
+	FMonolithActionResult R = Exec(TEXT("capture_level_layout"), P);
+	TestTrue(FString::Printf(TEXT("capture with save=true succeeds (%s)"), *R.ErrorMessage), R.bSuccess);
+	if (R.bSuccess)
+	{
+		bool bSaved = false;
+		R.Result->TryGetBoolField(TEXT("saved"), bSaved);
+		TestTrue(TEXT("the response reports that it wrote the document"), bSaved);
+		TestTrue(TEXT("the file is on disk where save_level_layout puts user layouts"),
+			IFileManager::Get().FileExists(*FilePath));
+
+		// It is a real named layout now — the loader can see it, and it still resolves.
+		TArray<FString> Warnings;
+		const TMap<FString, FMonolithNamedJsonObject> Layouts = FMonolithMeshLayoutActions::LoadLayouts(Warnings);
+		const FMonolithNamedJsonObject* Loaded = Layouts.Find(LayoutId);
+		TestNotNull(TEXT("the captured layout is loadable by id"), Loaded);
+		if (Loaded)
+		{
+			TArray<FMonolithMeshLayoutActions::FResolvedEntry> Resolved;
+			TArray<FString> Problems;
+			TestTrue(TEXT("and the saved document resolves against the live engine"),
+				FMonolithMeshLayoutActions::ResolveLayout(
+					LayoutId, Loaded->Object, FVector::ZeroVector, FString(), Resolved, Problems));
+			TestEqual(TEXT("with the entry it captured"), Resolved.Num(), 1);
+
+			FString Description;
+			Loaded->Object->TryGetStringField(TEXT("description"), Description);
+			TestEqual(TEXT("the description the caller supplied is stored"),
+				Description, FString(TEXT("captured by an automation test")));
+		}
+	}
+
+	IFileManager::Get().Delete(*FilePath, false, true, true);
+	TestFalse(TEXT("cleanup removed the test layout file"), IFileManager::Get().FileExists(*FilePath));
 	Remove(LayoutId);
 	return true;
 }
