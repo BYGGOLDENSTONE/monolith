@@ -440,3 +440,19 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Ek şart: motorun `FAsyncPoseSearchDatabasesManagement` API'sinin gerçekte ne yaptığı varsayılmayacak, doğrulanacak (görev 9 onu oyun-iş-parçacığına bağlı bulmuştu).
 - Commit: -
 - Sıradaki: Görev 19 raporu.
+
+## [05:18] Görev 19 TAMAM — PoseSearch okumaları artık donmuyor (255/255)
+- Durum: done
+- Ne oldu: `get_database_stats` ve `validate_pose_search_database` artık koşulsuz beklemiyor. Ortak bir durum yoklayıcısı eklendi; varsayılan çağrı hemen dönüyor ve dürüst rapor veriyor: `index_status` ∈ `built|building|failed|no_schema|unavailable`, `index_built`, **`index_build_in_progress`** (dallanılacak alan), `index_build_job_id` (veya null), `waited`, `index_note`. Eski davranış `wait:true` ile duruyor (görev 9'la aynı yazım). 5 yeni test, 250→255.
+- **Motor API'si varsayılmadı, okundu**: `RequestAsyncBuildIndexInternal` yalnız `bWaitForCompletion` altında `Task->Wait(Mutex)`'e giriyor; bayraksız çağrı görevin o anki durumunu hemen döndürüyor. `ContinueRequest` mevcut bir görevi asla yeniden anahtarlamıyor, yani tekrarlı okumalar bir kurulumu yeniden başlatamaz. Belirleyici emsal: motorun kendi `UPoseSearchDatabase::Search`'ü de aynı şekilde `ContinueRequest` çağırıp sonuç Success değilse çıkıyor. Ayrıca bloke eden yolda `check(Task->GetState() != Notstarted)` var — yani `wait:true` anahtar kurulamıyorsa assert edebilir; varsayılan yapılmamasının bir sebebi daha.
+- **İş kimliği dürüstçe kısmi**: yalnız `rebuild_pose_search_index` üzerinden başlatılan kurulum adlandırılabiliyor (dispatch artık `veritabanı yolu → job id` eşlemesi tutuyor, iş bitince kendini temizliyor). Editörün kendi başlattığı kurulumlar `index_build_job_id: null` + "yoklanacak iş yok" notu dönüyor. **Asla uydurma ya da başka veritabanından ödünç kimlik verilmiyor** — bunu bir "yabancı veritabanı" testi doğruluyor. Tam keşfedilebilirlik `FMonolithJob`'a hedef alanı eklemeyi gerektirir; kapsam dışı bırakıldı.
+- Karar: Kabul. Kontrol ajanı **manşet iddiayı satır satır denetledi**: `WaitForCompletion` dosyada tam iki CANLI yerde (satır 215 ortak yoklayıcıda, satır 1606 rebuild'de) ve ikisi de `if (bWait)` içinde; kalan 6 geçiş yorum satırı. `wait` parametresi her iki aksiyonun şemasında da varsayılan `false` ile tanımlı (satır 325 ve 497). Ayrıca: cb27f21 HEAD'de, ağaç temiz, 4 dosya, 255/0/0 ve 255 "Test Completed", 5 yeni test + 4 PoseSearchIndexJob + 19 job + layout + capture testleri hepsi `{Success}`, build yeşil.
+- Commit: cb27f21
+- Sıradaki: Görev 20 — gece boyunca kasten bırakılan üç küçük hata.
+
+## [05:21] Görev 20 gönderildi — üç küçük hata (papercuts)
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. Üçü de gece içinde başka işçilerin teşhis edip kapsam dışı bıraktığı, LOG'da kayıtlı hatalar: (1) `editor.get_viewport_info` gizli 0×0 viewport'u okuyup `resolution 0x0, camera [0,0,0], fov 90` değerlerini gerçekmiş gibi döndürüyor; (2) `MonolithUIActions.cpp:763` allowlist token'ını yanlış kuruyor, `NotInAllowlist` hatasının `valid_options` alanı tipin küratörlü property'lerini hiç listelemiyor; (3) `select_actors sub_action=focus`, `capture_viewport`'un yakaladığı viewport'u hareket ettirmiyor.
+- Karar: Öncelik sırası verildi (1 → 2 → 3) ve 3 opsiyonel işaretlendi — en belirsiz teşhis o; küçük bir düzeltmeden fazlasını gerektiriyorsa kanıtıyla "yapılmadı" denip bırakılacak, yarım kablolanmayacak. Ayrıca işçiye teşhislerin birer İPUCU olduğu, olgu sayılmayacağı söylendi: bu gece roadmap'in üç iddiası yanlış çıktı.
+- Commit: -
+- Sıradaki: Görev 20 raporu.
