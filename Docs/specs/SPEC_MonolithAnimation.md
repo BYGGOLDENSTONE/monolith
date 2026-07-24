@@ -174,7 +174,7 @@ Wraps `USkeleton::CompatibleSkeletons` — the canonical UE5 mechanism that lets
 | `get_pose_search_database` | Get PoseSearch database sequences and schema reference |
 | `add_database_sequence` | Add an animation sequence to a PoseSearch database |
 | `remove_database_sequence` | Remove a sequence from a PoseSearch database by index |
-| `get_database_stats` | Get PoseSearch database statistics (pose count, search mode, costs) |
+| `get_database_stats` | Get PoseSearch database statistics (pose count, search mode, costs). **(2026-07-24) never blocks** — reports `index_status` / `index_build_in_progress` instead of waiting for an index build; `wait: true` restores the old blocking read. |
 | `create_pose_search_schema` | Create a new PoseSearch schema asset |
 | `create_pose_search_database` | Create a new PoseSearch database asset |
 | `set_database_sequence_properties` | Set per-sequence properties (looping, mirror option, sample range) |
@@ -211,6 +211,29 @@ Wraps `USkeleton::CompatibleSkeletons` — the canonical UE5 mechanism that lets
 >
 > **Crash fix, same change.** The old code read `Database->GetSearchIndex()` unconditionally; `GetSearchIndex()` `check()`-asserts on a database that has never been indexed, so the old `wait: false` default could take the editor down on a first-ever build. `total_poses` is now `null` unless `index_built` is `true`.
 
+> **The two PoseSearch READS stopped blocking on 2026-07-24 (Faz 1 follow-up).** *Behaviour change, user-visible.* Applies to `get_database_stats` and `validate_pose_search_database`.
+>
+> **Why.** Both asked the engine for the search-index state with `ERequestAsyncBuildFlag::ContinueRequest | ERequestAsyncBuildFlag::WaitForCompletion`, i.e. a *read* pinned the editor game thread — and therefore the whole single-threaded MCP server — for the length of an index build (minutes on a real database). They were **not** converted into jobs: "tell me the current state" has no business handing back a job id. A read must answer promptly about the world as it is, and say so when the answer is incomplete.
+>
+> **Default (`wait` absent or `false`).** `WaitForCompletion` is dropped. The call returns at once with a shared status block on both actions:
+> ```json
+> { "index_status": "building",          // "built" | "building" | "failed" | "no_schema" | "unavailable"
+>   "index_built": false,                // true only when the index is usable right now
+>   "index_build_in_progress": true,     // THE field to branch on: this answer is incomplete
+>   "index_build_job_id": "job_7",       // Monolith job to poll, or null when there is none to name
+>   "waited": false,
+>   "index_note": "A search-index build is IN PROGRESS, … Poll it with jobs_query(action=\"poll\", job_id=\"job_7\"), or pass wait=true …" }
+> ```
+> Index-dependent fields are never guessed: `get_database_stats` reports `total_pose_count: null` and `is_valid: false` unless `index_built` is true, and `validate_pose_search_database` reports `validation_complete: false` — which distinguishes "no problems found" from "did not finish looking". An in-flight build is **not** counted as a validation failure (`valid` stays true); it is listed in `issues` as an explicit "freshness undetermined" note.
+>
+> **Sync opt-out — `wait: true`.** Same spelling and same default (`false`) as `rebuild_pose_search_index`, so the three actions cannot disagree. Restores the pre-2026-07-24 blocking read verbatim: the call blocks until the engine's build settles, then answers with the index-dependent fields filled in and `waited: true`.
+>
+> **`index_build_job_id` is honest, not decorative.** The engine's task registry knows nothing about Monolith jobs and `FMonolithJob` carries no target field, so the only in-flight build a read can *name* is one dispatched through `animation.rebuild_pose_search_index` — that dispatch remembers `database path → job id`, and the entry prunes itself when the job finishes. A build kicked by the editor (opening or editing the asset), or by the read's own `ContinueRequest`, has no job: the field is then `null` and `index_note` says so instead of pointing at someone else's job.
+>
+> **Still non-mutating.** `ContinueRequest` never re-keys or restarts an existing build (only `NewRequest` does), so repeated reads cannot livelock a build. If no engine task exists yet it emplaces one — the documented meaning of the flag ("make sure there's associated data to the Database"), unchanged from the pre-2026-07-24 code, which did the same thing *and then waited*. This is the same call the engine makes on its own hot path (`UPoseSearchDatabase::Search`, `PoseSearchDatabase.cpp:1561`, which bails out when the answer is not `Success`).
+>
+> **`no_schema` costs nothing.** A database with no `Schema` cannot have an index, so the engine indexer is not called at all.
+
 **Note:** `get_database_stats` is hardened against unbuilt databases (it previously asserted on a PoseSearch database with no built search index — see Fixes below). `get_database_stats` and `get_pose_search_schema` also gained read-back fields surfacing additional database/schema state (enhancement, no count delta).
 
 **Motion Matching action pack (14 — 2026-06-07)** — namespace `animation`. End-to-end authoring surface for UE 5.7 Motion Matching: PoseSearch normalization sets, asset-type-agnostic database entries, schema mirroring/channels, notifies, validation, and the Pose-History / Motion-Matching anim-graph nodes.
@@ -227,7 +250,7 @@ Wraps `USkeleton::CompatibleSkeletons` — the canonical UE5 mechanism that lets
 | `configure_schema_channel` | Configure an existing schema channel's properties via reflection. |
 | `add_pose_search_notify` | Add a PoseSearch notify-state to a sequence — supports 8 notify-state kinds. |
 | `derive_schema_channels_from_skeleton` | Derive schema channels (bone/trajectory sampling) from the target skeleton automatically. |
-| `validate_pose_search_database` | Validate a PoseSearch database (schema/entry/normalization consistency + build state). |
+| `validate_pose_search_database` | Validate a PoseSearch database (schema/entry/normalization consistency + build state). **(2026-07-24) never blocks** — reports `validation_complete: false` when an index build is in flight; `wait: true` restores the old blocking validation. |
 | `configure_pose_history_node` | Configure a Pose-History anim-graph node (`UAnimGraphNode_PoseHistory`) in an ABP. |
 | `configure_motion_matching_node` | Configure a Motion-Matching anim-graph node (database, schema, settings) in an ABP. |
 | `build_motion_matching_node` | Composite: spawn + wire + configure a Motion-Matching node (with its Pose-History) in one call. As of 2026-06-07 also wires the Pose-History pose-out to the AnimGraph Output Pose (`UAnimGraphNode_Root` 'Result' input) and reports `output_pose_wired`. |

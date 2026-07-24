@@ -51,6 +51,236 @@ static FMonolithActionResult HandleDeriveSchemaChannelsFromSkeleton(const TShare
 static FMonolithActionResult HandleValidatePoseSearchDatabase(const TSharedPtr<FJsonObject>& Params);
 
 // ---------------------------------------------------------------------------
+// Shared search-index status probe (2026-07-24, Faz 1 follow-up)
+//
+// WHY THIS EXISTS. `get_database_stats` and `validate_pose_search_database` are READS, and
+// both used to ask the engine for the search-index state with
+//     ERequestAsyncBuildFlag::ContinueRequest | ERequestAsyncBuildFlag::WaitForCompletion
+// i.e. they blocked the editor game thread — and therefore the whole single-threaded MCP
+// server — until an index build finished, which on a real motion-matching database is
+// minutes. A read must answer promptly about the world as it is; it must not be turned into
+// an async job either, because "tell me the current state" has no business handing back a
+// job id. So the default now DROPS WaitForCompletion and reports honestly that the answer is
+// incomplete, and the old blocking behaviour survives behind `wait: true` — the same spelling
+// and default (false) `rebuild_pose_search_index` already ships.
+//
+// VERIFIED AGAINST THE ENGINE (D:/UE_5.7, PoseSearchDerivedData.cpp / PoseSearchDatabase.cpp):
+//   * `ContinueRequest` WITHOUT `WaitForCompletion` never blocks: RequestAsyncBuildIndexInternal
+//     only enters `Task->Wait(Mutex)` under `bWaitForCompletion` (line ~2806). Without it the
+//     call returns the task's current state — Ended -> Success, Failed -> Failed, anything else
+//     -> InProgress.
+//   * It is exactly what the engine itself does on its own hot path:
+//     UPoseSearchDatabase::Search (PoseSearchDatabase.cpp:1561) calls
+//     `RequestAsyncBuildIndex(this, ERequestAsyncBuildFlag::ContinueRequest)` and bails out with
+//     "async build index in progress" when the answer is not Success. This probe is the same
+//     shape, so it cannot be more intrusive than a normal motion-matching search.
+//   * `ContinueRequest` never re-keys an existing task (the NewRequest branch is the only one
+//     that calls StartNewRequestIfNeeded), so repeated reads cannot restart or livelock a build.
+//     If NO task exists yet it emplaces one, which composes the DDC key and kicks the engine's
+//     own async build — that is the documented meaning of the flag ("make sure there's
+//     associated data to the Database") and is unchanged from the pre-2026-07-24 code; the only
+//     thing removed is the wait.
+//   * GAME THREAD ONLY: the task constructor composes the DDC key only on the game thread
+//     (PoseSearchDerivedData.cpp:1477) and StartNewRequestIfNeeded/Update/Cancel/Tick all
+//     `check(IsInGameThread())`. Action handlers run on the game thread, which is why this probe
+//     may be called directly from a handler and why the state map below needs no lock.
+// ---------------------------------------------------------------------------
+#if WITH_EDITOR
+namespace MonolithPoseSearchIndexStatus
+{
+	/** Values of the `index_status` field — one string the caller can switch on. */
+	static const TCHAR* const StatusBuilt      = TEXT("built");
+	static const TCHAR* const StatusBuilding   = TEXT("building");
+	static const TCHAR* const StatusFailed     = TEXT("failed");
+	static const TCHAR* const StatusNoSchema   = TEXT("no_schema");
+	static const TCHAR* const StatusUnavailable= TEXT("unavailable");
+
+	/**
+	 * Database object path -> id of the rebuild job THIS plugin dispatched for that database.
+	 *
+	 * The engine's own task registry knows nothing about Monolith jobs and FMonolithJob carries
+	 * no target field, so the ONLY in-flight build a read can honestly name is one that came
+	 * through `animation.rebuild_pose_search_index`. A build kicked by the editor (opening or
+	 * editing the asset) — or by this very probe — has no job id, and the response says so with
+	 * a null rather than pointing at somebody else's job.
+	 *
+	 * GAME THREAD ONLY, no lock: every writer (HandleRebuildPoseSearchIndex) and every reader
+	 * (the two read actions) is an MCP action handler, and those run on the game thread.
+	 */
+	static TMap<FString, FString>& RebuildJobIdsByAsset()
+	{
+		static TMap<FString, FString> Map;
+		return Map;
+	}
+
+	static bool IsJobStillRunning(const FString& JobId)
+	{
+		FMonolithJob Job;
+		return !JobId.IsEmpty()
+			&& FMonolithJobManager::Get().GetJob(JobId, Job)
+			&& !Job.IsFinished();
+	}
+
+	/** Drop every remembered id whose job finished, was cancelled, or was swept by retention. */
+	static void PruneFinishedRebuildJobs()
+	{
+		TMap<FString, FString>& Map = RebuildJobIdsByAsset();
+		for (TMap<FString, FString>::TIterator It = Map.CreateIterator(); It; ++It)
+		{
+			if (!IsJobStillRunning(It.Value()))
+			{
+				It.RemoveCurrent();
+			}
+		}
+	}
+
+	static void RememberRebuildJob(const UPoseSearchDatabase* Database, const FString& JobId)
+	{
+		if (!Database || JobId.IsEmpty())
+		{
+			return;
+		}
+		PruneFinishedRebuildJobs();
+		RebuildJobIdsByAsset().Add(Database->GetPathName(), JobId);
+	}
+
+	/** Empty when no rebuild job dispatched through this plugin is still running for `Database`. */
+	static FString FindRunningRebuildJob(const UPoseSearchDatabase* Database)
+	{
+		if (!Database)
+		{
+			return FString();
+		}
+		PruneFinishedRebuildJobs();
+		const FString* Found = RebuildJobIdsByAsset().Find(Database->GetPathName());
+		return Found ? *Found : FString();
+	}
+
+	/** One probe result, shared by both read actions so they can never disagree. */
+	struct FIndexStatus
+	{
+		/** One of the Status* strings above. */
+		FString Status = StatusUnavailable;
+
+		/** True only when the search index is present and usable RIGHT NOW. */
+		bool bBuilt = false;
+
+		/**
+		 * THE field a caller branches on: true means "this answer is incomplete because a build
+		 * is in flight, ask again later". It is never true at the same time as bBuilt.
+		 */
+		bool bBuildInProgress = false;
+
+		/** Monolith job id of the in-flight rebuild, or empty when there is none to name. */
+		FString JobId;
+
+		/** Whether this probe blocked (the `wait: true` opt-in). */
+		bool bWaited = false;
+
+		/** Human-readable one-liner: what the state is and what to do about it. */
+		FString Note;
+	};
+
+	/**
+	 * GAME THREAD. Ask the engine for the current index state.
+	 * `bWait` == false (the default) returns promptly whatever the state is.
+	 * `bWait` == true restores the pre-2026-07-24 blocking behaviour verbatim.
+	 */
+	static FIndexStatus Probe(const UPoseSearchDatabase* Database, bool bWait)
+	{
+		using namespace UE::PoseSearch;
+
+		FIndexStatus Out;
+		Out.bWaited = bWait;
+
+		if (!Database)
+		{
+			Out.Status = StatusUnavailable;
+			Out.Note = TEXT("No database to inspect.");
+			return Out;
+		}
+
+		// No schema => nothing can ever be indexed, and the engine's key builder would be asked
+		// to key a database it cannot key. The pre-2026-07-24 code short-circuited here too.
+		if (!Database->Schema)
+		{
+			Out.Status = StatusNoSchema;
+			Out.Note = TEXT("The database has no Schema assigned, so no search index can exist. Assign a schema, then rebuild.");
+			return Out;
+		}
+
+		ERequestAsyncBuildFlag Flag = ERequestAsyncBuildFlag::ContinueRequest;
+		if (bWait)
+		{
+			Flag |= ERequestAsyncBuildFlag::WaitForCompletion;
+		}
+
+		const EAsyncBuildIndexResult Result =
+			FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(Database, Flag);
+
+		switch (Result)
+		{
+		case EAsyncBuildIndexResult::Success:
+			Out.Status = StatusBuilt;
+			Out.bBuilt = true;
+			Out.Note = TEXT("The search index is built and up to date.");
+			break;
+
+		case EAsyncBuildIndexResult::Failed:
+			Out.Status = StatusFailed;
+			Out.Note = TEXT("The engine reports the last search-index build FAILED. Check schema/skeleton compatibility of the database entries, then rebuild.");
+			break;
+
+		case EAsyncBuildIndexResult::InProgress:
+		default:
+			Out.Status = StatusBuilding;
+			Out.bBuildInProgress = true;
+			Out.JobId = FindRunningRebuildJob(Database);
+			Out.Note = Out.JobId.IsEmpty()
+				? FString(TEXT("A search-index build is IN PROGRESS, so index-dependent fields are unknown and reported as null/false. This build was not dispatched by Monolith (the editor started it, or this read did), so there is no job to poll — call again in a few seconds, or pass wait=true to block until it settles."))
+				: FString::Printf(TEXT("A search-index build is IN PROGRESS, so index-dependent fields are unknown and reported as null/false. Poll it with jobs_query(action=\"poll\", job_id=\"%s\"), or pass wait=true to block until it settles."), *Out.JobId);
+			break;
+		}
+
+		return Out;
+	}
+
+	/** Write the shared status fields onto a response object. Both read actions use this. */
+	static void WriteTo(const TSharedPtr<FJsonObject>& Root, const FIndexStatus& Status)
+	{
+		if (!Root.IsValid())
+		{
+			return;
+		}
+		Root->SetStringField(TEXT("index_status"), Status.Status);
+		Root->SetBoolField(TEXT("index_built"), Status.bBuilt);
+		Root->SetBoolField(TEXT("index_build_in_progress"), Status.bBuildInProgress);
+		Root->SetBoolField(TEXT("waited"), Status.bWaited);
+		if (Status.JobId.IsEmpty())
+		{
+			Root->SetField(TEXT("index_build_job_id"), MakeShared<FJsonValueNull>());
+		}
+		else
+		{
+			Root->SetStringField(TEXT("index_build_job_id"), Status.JobId);
+		}
+		Root->SetStringField(TEXT("index_note"), Status.Note);
+	}
+}
+#endif // WITH_EDITOR
+
+/** Read the shared `wait` opt-in (default false: never block the MCP server). */
+static bool MonolithPoseSearchReadWaitFlag(const TSharedPtr<FJsonObject>& Params)
+{
+	bool bWait = false;
+	if (Params.IsValid() && Params->HasField(TEXT("wait")))
+	{
+		bWait = Params->GetBoolField(TEXT("wait"));
+	}
+	return bWait;
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
@@ -88,10 +318,11 @@ void FMonolithPoseSearchActions::RegisterActions(FMonolithToolRegistry& Registry
 			.Build());
 
 	Registry.RegisterAction(TEXT("animation"), TEXT("get_database_stats"),
-		TEXT("Get PoseSearch database statistics including sequence count, schema, and search index info"),
+		TEXT("Get PoseSearch database statistics including sequence count, schema, and search index info. NEVER BLOCKS: if a search-index build is in flight it returns immediately with index_status=\"building\", index_build_in_progress=true and null pose counts (poll index_build_job_id with jobs_query when it is non-null). Pass wait=true for the old blocking read."),
 		FMonolithActionHandler::CreateStatic(&HandleGetDatabaseStats),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("PoseSearchDatabase asset path"))
+			.Optional(TEXT("wait"), TEXT("boolean"), TEXT("Block until any in-flight search-index build finishes, so the pose counts are always filled in (default false). Freezes the whole MCP server for the duration."), TEXT("false"))
 			.Build());
 
 	// Wave 11 — PoseSearch Creation
@@ -259,10 +490,11 @@ void FMonolithPoseSearchActions::RegisterActions(FMonolithToolRegistry& Registry
 
 	// Task 2.6 — validate_pose_search_database
 	Registry.RegisterAction(TEXT("animation"), TEXT("validate_pose_search_database"),
-		TEXT("Validate a PoseSearch database: schema present, per-entry skeleton compatibility, and search-index freshness (no mutation)"),
+		TEXT("Validate a PoseSearch database: schema present, per-entry skeleton compatibility, and search-index freshness (no mutation). NEVER BLOCKS: if a search-index build is in flight it returns immediately with validation_complete=false and index_build_in_progress=true, meaning freshness was NOT determined. Pass wait=true for the old blocking validation."),
 		FMonolithActionHandler::CreateStatic(&HandleValidatePoseSearchDatabase),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("database_path"), TEXT("PoseSearchDatabase asset path"))
+			.Optional(TEXT("wait"), TEXT("boolean"), TEXT("Block until any in-flight search-index build finishes, so index freshness is always determined (default false). Freezes the whole MCP server for the duration."), TEXT("false"))
 			.Build());
 }
 
@@ -531,6 +763,10 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleGetDatabaseStats(const T
 	if (!Database)
 		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
 
+	// Default false: a read must never freeze the editor / the MCP server. See the
+	// MonolithPoseSearchIndexStatus block at the top of this file.
+	const bool bWait = MonolithPoseSearchReadWaitFlag(Params);
+
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
 	const int32 EntryCount = Database->GetNumAnimationAssets();
@@ -588,21 +824,32 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleGetDatabaseStats(const T
 		Root->SetNumberField(TEXT("schema_cardinality"), Database->Schema->SchemaCardinality);
 	}
 
-	// Search index stats — GUARD: UPoseSearchDatabase::GetSearchIndex() check()-asserts
-	// (PoseSearchDatabase.cpp:1135) when the database has never been indexed. Mirror the
-	// engine's own gate (GetSkipSearchIfPossible, PoseSearchDatabase.cpp:1561): only touch
-	// the search index once an editor-time build has completed successfully.
+	// Search index stats.
+	//
+	// GUARD: UPoseSearchDatabase::GetSearchIndex() check()-asserts (PoseSearchDatabase.cpp:1135)
+	// when the database has never been indexed, so it is only read once the engine says Success.
+	//
+	// NON-BLOCKING BY DEFAULT (2026-07-24): this probe no longer passes WaitForCompletion, so a
+	// read can no longer freeze the editor (and the MCP server) for the length of an index build.
+	// When a build is in flight the index-dependent fields come back null/false and
+	// `index_build_in_progress` is true — see MonolithPoseSearchIndexStatus above. `wait: true`
+	// restores the old blocking read.
 	{
 #if WITH_EDITOR
-		using namespace UE::PoseSearch;
-		const bool bIndexBuilt = Database->Schema &&
-			EAsyncBuildIndexResult::Success ==
-			FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(
-				Database, ERequestAsyncBuildFlag::ContinueRequest | ERequestAsyncBuildFlag::WaitForCompletion);
+		const MonolithPoseSearchIndexStatus::FIndexStatus Status =
+			MonolithPoseSearchIndexStatus::Probe(Database, bWait);
+		MonolithPoseSearchIndexStatus::WriteTo(Root, Status);
+		const bool bIndexBuilt = Status.bBuilt;
 #else
 		const bool bIndexBuilt = false;
+		Root->SetStringField(TEXT("index_status"), TEXT("unavailable"));
+		Root->SetBoolField(TEXT("index_built"), false);
+		Root->SetBoolField(TEXT("index_build_in_progress"), false);
+		Root->SetBoolField(TEXT("waited"), bWait);
+		Root->SetField(TEXT("index_build_job_id"), MakeShared<FJsonValueNull>());
+		Root->SetStringField(TEXT("index_note"),
+			TEXT("Search-index state is editor-only data and is not available in this build."));
 #endif
-		Root->SetBoolField(TEXT("index_built"), bIndexBuilt);
 		if (bIndexBuilt)
 		{
 			const int32 NumPoses = Database->GetSearchIndex().GetNumPoses();
@@ -1210,7 +1457,7 @@ namespace MonolithPoseSearchIndexJob
 			TEXT("Queued: rebuild search index for '%s' (%d animation assets)."),
 			*State->DatabaseName, State->EntryCount);
 
-		return FMonolithJobManager::Get().StartSlicedJob(JobNamespace, JobAction,
+		const FString JobId = FMonolithJobManager::Get().StartSlicedJob(JobNamespace, JobAction,
 			[State](const FMonolithJobContext& Context) -> FMonolithJobOutcome
 			{
 				// GAME THREAD (invoked by the shared job pump) — UObject access is safe here.
@@ -1276,6 +1523,14 @@ namespace MonolithPoseSearchIndexJob
 				return FMonolithJobOutcome::Pending();
 			},
 			InitialMessage);
+
+		// Make the in-flight build DISCOVERABLE to the two read actions: while this job runs,
+		// get_database_stats / validate_pose_search_database report its id in
+		// `index_build_job_id` so a caller that gets an incomplete answer knows exactly what to
+		// poll. The entry prunes itself once the job finishes (see FindRunningRebuildJob).
+		MonolithPoseSearchIndexStatus::RememberRebuildJob(Database, JobId);
+
+		return JobId;
 	}
 }
 #endif // WITH_EDITOR
@@ -2084,6 +2339,9 @@ static FMonolithActionResult HandleValidatePoseSearchDatabase(const TSharedPtr<F
 	if (!Database)
 		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
 
+	// Default false: a read must never freeze the editor / the MCP server.
+	const bool bWait = MonolithPoseSearchReadWaitFlag(Params);
+
 	TArray<TSharedPtr<FJsonValue>> Issues;
 	bool bValid = true;
 
@@ -2114,21 +2372,28 @@ static FMonolithActionResult HandleValidatePoseSearchDatabase(const TSharedPtr<F
 	}
 #endif
 
-	// Stale-index detection: ContinueRequest ensures associated data exists WITHOUT forcing a new key.
-	// Non-Success result => index stale / not built. NO mutation (no NewRequest).
+	// Stale-index detection.
+	//
+	// NON-BLOCKING BY DEFAULT (2026-07-24): the probe used to add WaitForCompletion, which
+	// pinned the game thread — and therefore the whole MCP server — inside a validation READ for
+	// as long as an index build took. It now reports the state as it is; when a build is in
+	// flight, freshness is UNDETERMINED and `validation_complete` is false so a caller can tell
+	// "no problems found" apart from "did not finish looking". `wait: true` restores the old
+	// blocking read. ContinueRequest still never re-keys, so validation stays non-mutating.
 	bool bStaleIndex = true;
+	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+	bool bValidationComplete = true;
 #if WITH_EDITOR
 	{
-		using namespace UE::PoseSearch;
-		// ContinueRequest ensures associated data WITHOUT forcing a new key (no rebuild/mutation).
-		// WaitForCompletion mirrors the shipped get_database_stats guard so GetSearchIndex() below
-		// (which check()-asserts on an un-built DB) is only touched once a build has settled.
-		const EAsyncBuildIndexResult IndexResult = FAsyncPoseSearchDatabasesManagement::RequestAsyncBuildIndex(
-			Database, ERequestAsyncBuildFlag::ContinueRequest | ERequestAsyncBuildFlag::WaitForCompletion);
-		bStaleIndex = (IndexResult != EAsyncBuildIndexResult::Success);
+		const MonolithPoseSearchIndexStatus::FIndexStatus Status =
+			MonolithPoseSearchIndexStatus::Probe(Database, bWait);
+		MonolithPoseSearchIndexStatus::WriteTo(Root, Status);
+
+		bStaleIndex = !Status.bBuilt;
+		bValidationComplete = !Status.bBuildInProgress;
 
 		// Cross-check pose count ONLY if the index is built (GetSearchIndex check()-asserts otherwise).
-		if (!bStaleIndex)
+		if (Status.bBuilt)
 		{
 			const int32 NumPoses = Database->GetSearchIndex().GetNumPoses();
 			if (NumPoses <= 0)
@@ -2137,17 +2402,32 @@ static FMonolithActionResult HandleValidatePoseSearchDatabase(const TSharedPtr<F
 				Issues.Add(MakeShared<FJsonValueString>(TEXT("Search index reports zero poses")));
 			}
 		}
+		else if (Status.bBuildInProgress)
+		{
+			// NOT a validation failure: the index may well be fine once the build lands. The
+			// honest report is "unknown", carried by validation_complete=false, not by `valid`.
+			Issues.Add(MakeShared<FJsonValueString>(Status.Note));
+		}
 		else
 		{
 			Issues.Add(MakeShared<FJsonValueString>(TEXT("Search index is stale or not built (rebuild_pose_search_index required)")));
 		}
 	}
+#else
+	Root->SetStringField(TEXT("index_status"), TEXT("unavailable"));
+	Root->SetBoolField(TEXT("index_built"), false);
+	Root->SetBoolField(TEXT("index_build_in_progress"), false);
+	Root->SetBoolField(TEXT("waited"), bWait);
+	Root->SetField(TEXT("index_build_job_id"), MakeShared<FJsonValueNull>());
+	Root->SetStringField(TEXT("index_note"),
+		TEXT("Search-index state is editor-only data and is not available in this build."));
 #endif
 
-	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("database_path"), DatabasePath);
 	Root->SetBoolField(TEXT("valid"), bValid);
 	Root->SetBoolField(TEXT("stale_index"), bStaleIndex);
+	/** False means: an index build was in flight, so index freshness was NOT determined. */
+	Root->SetBoolField(TEXT("validation_complete"), bValidationComplete);
 	Root->SetNumberField(TEXT("entry_count"), NumEntries);
 	Root->SetArrayField(TEXT("issues"), Issues);
 	if (Database->Schema)
