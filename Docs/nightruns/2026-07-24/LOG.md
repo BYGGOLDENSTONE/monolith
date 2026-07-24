@@ -456,3 +456,25 @@ Dal: `night/2026-07-24`. GOAL: `Docs/nightruns/2026-07-24/GOAL.md`.
 - Karar: Öncelik sırası verildi (1 → 2 → 3) ve 3 opsiyonel işaretlendi — en belirsiz teşhis o; küçük bir düzeltmeden fazlasını gerektiriyorsa kanıtıyla "yapılmadı" denip bırakılacak, yarım kablolanmayacak. Ayrıca işçiye teşhislerin birer İPUCU olduğu, olgu sayılmayacağı söylendi: bu gece roadmap'in üç iddiası yanlış çıktı.
 - Commit: -
 - Sıradaki: Görev 20 raporu.
+
+## [05:41] Görev 20 TAMAM — üç küçük hata (259/259). İki teşhis olduğu gibi çıkmadı.
+- Durum: done
+- Ne oldu: İşçi üç ipucunu da bağımsız sınadı ve dürüst raporladı.
+  - **Hata 1 — teşhis AYNEN doğrulandı.** Düzeltme öncesi canlı: `get_viewport_info` → `{active_viewport:0, resolution 0x0, camera [0,0,0], fov 90}` derken `capture_viewport` → `viewport_index 1, 1968×1197, camera [75201,85553,44620]`. `capture_viewport`'un çözümleme bloğu ortak `MonolithViewportCapture::ResolveLevelViewport`'a çıkarıldı ve ikisi de onu çağırıyor.
+  - **Hata 2 — teşhis SÖYLENDİĞİ GİBİ ÇIKMADI.** `UClass::GetName()` zaten motor `U` önekini vermiyor (`UTextBlock` → `"TextBlock"`), yani eski ve yeni token sıradan her widget için AYNI; yeni test `valid_options`'ın küratörlü `Text`/`ColorAndOpacity` girdilerini zaten içerdiğini gösteriyor. Sapma gerçek ama dar: `MakeTokenFromClassName` başta `U`+büyük harf gelirse onu kırpıyor ve registry o yazımla anahtarlanıyor, yani adı `U`+büyük harfle başlayan bir widget sınıfı teşhiste registry girdisini kaçırırdı. Yine de düzeltildi (teşhis artık kapıyla birebir aynı çağrıyı yapıyor) ve testle kilitlendi.
+  - **Hata 3 — bildirilen belirti YENİDEN ÜRETİLEMEDİ.** Canlı: küp spawn → `focus` → `capture_viewport` küpü kadraja aldı (kamera `[75201,85553,44620]` → `[454,463,491]`). Focus zaten `GCurrentLevelEditingViewportClient`'ı hedefliyormuş, capture'ın okuduğu viewport ile aynı. GERÇEKTEN bozuk olan ve düzeltilen şey: kadraja alınacak hiçbir şey yokken focus başarı dönüyordu (`WorldSettings` üzerinde doğrulandı: `focused_count:1`, kamera kıpırdamadı). Ayrıca odaklı viewport yokken `bActiveViewportOnly=true` null istemciyi hedefleyip sessizce hiçbir şey yapmıyordu; artık tüm viewport'lara düşüyor.
+- 4 yeni test, 255→259.
+- Karar: Kabul. Kontrol ajanı **anlaşma iddiasını canlı üretti**: `get_viewport_info` ve `capture_viewport` artık viewport indeksi (1), çözünürlük (1968×1197), kamera konumu VE rotasyonu üzerinde **rakamı rakamına** anlaşıyor. `WorldSettings`'e focus → `isError=true`, "No actors to focus on". Ayrıca: 0136052 HEAD'de, ağaç temiz, `Monolith.uplugin`/`MonolithSettings.h` dokunulmamış, 259/0/0 ve 259 "Test Completed", 4 yeni test + tüm aileler `{Success}`, build yeşil. (Kontrol ajanı raporun metninde "sekiz dosya" yazıp listede dokuz olduğunu not etti — görev 11'dekiyle aynı zararsız özet sayım farkı; dosya listesi değişikliklerle birebir uyuşuyor.)
+- Commit: 0136052
+- Sıradaki: Görev 21 — `AVolumetricCloud` (gecenin son işi).
+
+### notes_for_next_worker (görev 20 işçisinden — ölçülmüş tuzak)
+- `MoveViewportCamerasToActor` hareketi viewport'un GEÇİŞ animasyonuna devrediyor: hemen ardından `GetViewLocation()` okumak ESKİ konumu veriyor (bir sonraki çağrı yenisini görüyor). Gelecekte "hareket etti mi?" kontrolü kamerayı senkron yoklamamalı; bu yüzden sonuç `focus_bounds` (istenen) döndürüyor ve yerleşmiş kamera için `get_viewport_info`/`capture_viewport`'a yönlendiriyor.
+- Görüntüsüz koşuda bile 4 level viewport istemcisi VAR ve `GCurrentLevelEditingViewportClient` index 1 — yalnız render hedefi 0×0. `get_viewport_info` orada artık sahte okuma yerine temiz `-32603` dönüyor.
+
+## [05:45] Görev 21 gönderildi — AVolumetricCloud (gecenin son işi)
+- Durum: in-progress
+- Ne oldu: Opus işçi başlatıldı. Atmosfer ailesinin dördüncü tipi; görev 13 işçisinin kasten kapsam dışı bırakıp "bir tablo satırı + readback bölümü + preset" diye boyutlandırdığı iş.
+- Karar: Bu son iş olarak seçildi çünkü iyi sınırlı, mevcut tasarımın veriyle genişleme iddiasını sınıyor ve bir aileyi tamamlıyor. İşçiye boyutlandırmayı DOĞRULAMASI söylendi, güvenmesi değil. Ayrıca bulut tamamen görsel bir özellik olduğu için "görüntüsüz koşuda kanıtlanamayanı abartma" ve canlı yakalamayla gerçekten bulut görünüp görünmediğini raporlama şartı kondu.
+- Commit: -
+- Sıradaki: Görev 21 raporu, ardından MORNING_REPORT.
