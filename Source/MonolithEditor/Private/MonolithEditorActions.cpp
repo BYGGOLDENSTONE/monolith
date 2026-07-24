@@ -787,6 +787,20 @@ void FMonolithEditorActions::RegisterActions(FMonolithLogCapture* LogCapture)
 		FMonolithActionHandler::CreateStatic(&HandleGetViewportInfo),
 		MakeShared<FJsonObject>());
 
+	Registry.RegisterAction(TEXT("editor"), TEXT("capture_viewport"),
+		TEXT("Screenshot the LIVE editor level viewport — the currently open map exactly as the user is looking at it right now, including editor show flags, lighting, grid and selection. This is the only capture_* that photographs the open level: capture_scene_preview / capture_material_grid / capture_with_overlay / capture_anim_frames render one asset in an isolated preview scene, capture_pie_movement_clip needs a running PIE session, and mesh::capture_floor_plan uses a synthetic scene-capture camera driven by the spatial registry. Writes an image file and returns its path (the MCP envelope carries no pixels). Optionally captures a specific viewport by index and/or from a temporary camera that is restored afterwards. Fails with a clear message — never a blank image — when the process has no rendering path (-nullrhi / commandlet), when no level viewport is open, or when the viewport reads back as one flat colour."),
+		FMonolithActionHandler::CreateStatic(&HandleCaptureViewport),
+		FParamSchemaBuilder()
+			.OptionalDiskPath(TEXT("output_path"), TEXT("Output image path (absolute, or relative to the project). Extension picks the encoder: png (default), jpg, jpeg, bmp, exr, hdr. Default: <Viewport Capture Directory>/<timestamp>.png, configured in Project Settings > Plugins > Monolith > Capture."))
+			.Optional(TEXT("viewport_index"), TEXT("integer"), TEXT("Which level viewport to capture, 0-based, as ordered by GEditor->GetLevelViewportClients(). Omit to capture the ACTIVE viewport (the one with focus), falling back to index 0. viewport_count in the result tells you how many exist."))
+			.Optional(TEXT("camera"), TEXT("object"), TEXT("Temporarily fly the viewport camera before the shot: {location:[x,y,z], rotation:[pitch,yaw,roll], fov:90}. location and rotation are both required when camera is given; fov is optional. Restored afterwards unless restore_camera=false."))
+			.Optional(TEXT("restore_camera"), TEXT("bool"), TEXT("Put the viewport camera back after a `camera` override. Default true; false leaves the viewport where the capture put it."), TEXT("true"))
+			.Optional(TEXT("max_dimension"), TEXT("integer"), TEXT("Downscale so the longest side is at most this many pixels. 0 = native viewport resolution. Default comes from the Viewport Capture Max Dimension setting."))
+			.Optional(TEXT("quality"), TEXT("integer"), TEXT("Encoder quality 0-100 for lossy formats (jpg/jpeg); 0 = encoder default. Ignored by png/exr/bmp/hdr. Default comes from the Viewport Capture Image Quality setting."))
+			.Optional(TEXT("redraw"), TEXT("bool"), TEXT("Force an Invalidate + Draw before reading back so the frame buffer holds THIS viewport's content. Default true; set false only to read whatever is already there."), TEXT("true"))
+			.Optional(TEXT("allow_uniform"), TEXT("bool"), TEXT("Accept a frame where every pixel is the same colour. Default false: such a frame is treated as 'nothing was rendered' and the call fails without writing a file."), TEXT("false"))
+			.Build());
+
 	Registry.RegisterAction(TEXT("editor"), TEXT("capture_system_gif"),
 		TEXT("Capture a Niagara system as a sequence of PNG frames with optional GIF encoding via ffmpeg or python"),
 		FMonolithActionHandler::CreateStatic(&HandleCaptureSystemGif),

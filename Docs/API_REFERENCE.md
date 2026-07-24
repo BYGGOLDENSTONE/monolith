@@ -560,6 +560,29 @@ Runs non-interactively: each target's package dirty flag is cleared and any open
 
 Current editor viewport camera position, rotation, FOV, resolution. *No parameters.*
 
+### `editor.capture_viewport` · NEW in Faz 2
+
+Screenshot the **live editor level viewport** — the currently open map exactly as the user is looking at it, with editor show flags, lighting, grid and selection intact.
+
+This is the only `capture_*` that photographs the open level. The rest of the family capture something else: `capture_scene_preview` / `capture_material_grid` / `capture_with_overlay` / `capture_anim_frames` / `capture_sequence_frames` render a single asset in an isolated preview scene; `capture_pie_movement_clip` captures the PIE viewport and needs a running PIE session; `mesh.capture_floor_plan` / `mesh.capture_building_views` render the open level but through a synthetic `USceneCaptureComponent2D` camera driven by the spatial registry, which bypasses editor show flags entirely.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `output_path` | string | optional | Output image path (absolute, or relative to the project). The extension picks the encoder: `png` (default), `jpg`, `jpeg`, `bmp`, `exr`, `hdr`. Default: `<Viewport Capture Directory>/<timestamp>.png` |
+| `viewport_index` | integer | optional | 0-based index into the open level viewports. Omit to capture the **active** one (falling back to index 0) |
+| `camera` | object | optional | Temporarily fly the camera: `{location:[x,y,z], rotation:[pitch,yaw,roll], fov:90}`. `location` + `rotation` required together; `fov` optional |
+| `restore_camera` | bool | optional | Restore the camera after a `camera` override. Default: `true` |
+| `max_dimension` | integer | optional | Downscale so the longest side is at most this many pixels. `0` = native resolution. Default: the *Viewport Capture Max Dimension* setting |
+| `quality` | integer | optional | Encoder quality `0`–`100` for lossy formats; `0` = encoder default. Default: the *Viewport Capture Image Quality* setting |
+| `redraw` | bool | optional | Invalidate + redraw before reading back (viewports share a frame buffer). Default: `true` |
+| `allow_uniform` | bool | optional | Accept a frame where every pixel is one colour. Default: `false` — such a frame is treated as "nothing was rendered" and the call fails without writing a file |
+
+**Result:** `{success, output_file, resolution{width,height}, viewport_resolution{width,height}, downscaled, viewport_index, viewport_count, was_active_viewport, viewport_type, realtime, uniform, level, camera_location, camera_rotation, fov, camera_overridden, camera_restored, capture_time_ms}` — plus `scene_hdr: true` when the viewport outputs HDR (colours may then differ from screen, since the readback uses the LDR path).
+
+**Failure is always explicit — never a blank image.** The call refuses with an actionable message when the process has no rendering path (`-nullrhi` / commandlet / server), when no level editor viewport is open, when the chosen viewport has no render surface or zero size, or when the readback comes back as a single flat colour.
+
+**Defaults** live in *Project Settings → Plugins → Monolith → Capture* (`ViewportCaptureDirectory`, `ViewportCaptureMaxDimension`, `ViewportCaptureQuality`).
+
 ### `editor.capture_system_gif`
 
 Capture a Niagara system as a sequence of PNG frames with optional GIF encoding via ffmpeg or python.

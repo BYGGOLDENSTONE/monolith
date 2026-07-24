@@ -82,6 +82,11 @@ public:
 	static FMonolithActionResult HandleCaptureSystemGif(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult HandleImportTexture(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult HandleGetViewportInfo(const TSharedPtr<FJsonObject>& Params);
+	// Faz 2: screenshot of the LIVE editor level viewport — the open map exactly as
+	// the user currently sees it (every other capture_* renders an isolated preview
+	// scene, the PIE viewport, or a synthetic scene-capture camera). Body lives in
+	// MonolithEditorViewportCapture.cpp.
+	static FMonolithActionResult HandleCaptureViewport(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult HandleStitchFlipbook(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult HandleDeleteAssets(const TSharedPtr<FJsonObject>& Params);
 

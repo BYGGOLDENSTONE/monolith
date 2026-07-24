@@ -329,6 +329,29 @@ public:
 			  ToolTip="How long editor shutdown waits for each in-flight background job to notice cancellation and return. A body that overruns is detached, never force-killed: its memory is kept alive forever so nothing dangles, at the cost of a leak. 0 = never wait (detach immediately)."))
 	float JobShutdownWaitSeconds = 5.0f;
 
+	// --- Capture ---
+	// Defaults for editor::capture_viewport (the live level-viewport screenshot).
+	// Every call may override them per-request; these are the data-driven defaults
+	// so no magic numbers live in the action body.
+
+	/** Project-relative directory auto-named viewport captures are written to (when the caller passes no output_path). */
+	UPROPERTY(config, EditAnywhere, Category="Capture", DisplayName="Viewport Capture Directory",
+		meta=(RelativePath,
+			  ToolTip="Where editor::capture_viewport writes when output_path is omitted. Relative to the project directory. The file itself is named <timestamp>.png."))
+	FString ViewportCaptureDirectory = TEXT("Saved/Screenshots/Monolith/Viewport");
+
+	/** Longest-side pixel cap for viewport captures; larger frames are downscaled to fit. 0 = never downscale (write the viewport's native resolution). */
+	UPROPERTY(config, EditAnywhere, Category="Capture", DisplayName="Viewport Capture Max Dimension (px)",
+		meta=(ClampMin="0", ClampMax="16384",
+			  ToolTip="Longest-side cap applied to editor::capture_viewport output. A 4K viewport downscales to this before encoding, which keeps files small enough to hand to a model. 0 = keep the native viewport resolution."))
+	int32 ViewportCaptureMaxDimension = 1920;
+
+	/** Encoder quality for lossy viewport-capture formats (jpg/jpeg). 0 = encoder default. Ignored by PNG/EXR/BMP. */
+	UPROPERTY(config, EditAnywhere, Category="Capture", DisplayName="Viewport Capture Image Quality",
+		meta=(ClampMin="0", ClampMax="100",
+			  ToolTip="Quality passed to the image encoder when the output extension is lossy (jpg/jpeg). 0 leaves the engine default. Lossless formats (png/exr/bmp/hdr) ignore it."))
+	int32 ViewportCaptureQuality = 0;
+
 	// --- Logging ---
 
 	/** Log verbosity for Monolith systems */
