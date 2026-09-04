@@ -668,6 +668,15 @@ void FMonolithReflectionWalker::DispatchByPropertyType(
 // ---------------------------------------------------------------------------
 void FMonolithReflectionWalker::WriteScalar(FProperty* Prop, void* ValuePtr, const TSharedPtr<FJsonValue>& JsonVal, UObject* Owner, FBulkFillFieldWrite& OutWrite)
 {
+	// AsString() on an object/array logs a conversion error and returns an
+	// empty string. Passing that to ImportText can silently erase an existing
+	// FString value. Reject the shape before touching property storage.
+	if (JsonVal->Type == EJson::Object || JsonVal->Type == EJson::Array)
+	{
+		OutWrite.bOk = false;
+		OutWrite.Reason = TEXT("expected scalar JSON string, number, or boolean; received object/array");
+		return;
+	}
 	FString ValStr;
 	if (JsonVal->Type == EJson::Number)
 	{

@@ -54,7 +54,7 @@ void FMonolithAIDiscoveryActions::RegisterActions(FMonolithToolRegistry& Registr
 
 	// 204. list_ai_node_types
 	Registry.RegisterAction(TEXT("ai"), TEXT("list_ai_node_types"),
-		TEXT("Unified type discovery for AI systems — enumerate available node classes"),
+		TEXT("Enumerate available Behavior Tree node classes. State Tree and EQS enumeration currently return an explicit not_implemented error, not an empty node list."),
 		FMonolithActionHandler::CreateStatic(&HandleListAINodeTypes),
 		FParamSchemaBuilder()
 			.Required(TEXT("system"), TEXT("string"), TEXT("System to query: bt, st, or eqs"))
@@ -304,19 +304,28 @@ FMonolithActionResult FMonolithAIDiscoveryActions::HandleGetAIOverview(const TSh
 FMonolithActionResult FMonolithAIDiscoveryActions::HandleListAINodeTypes(const TSharedPtr<FJsonObject>& Params)
 {
 	FString System;
-	FMonolithActionResult ErrResult;
-	if (!MonolithAI::RequireStringParam(Params, TEXT("system"), System, ErrResult))
+	if (!Params.IsValid() || !Params->TryGetStringField(TEXT("system"), System) || System.TrimStartAndEnd().IsEmpty())
 	{
-		return ErrResult;
+		return FMonolithActionResult::Error(TEXT("system must be a nonempty string: bt, st, or eqs."), -32602);
 	}
 
-	System = System.ToLower();
-	FString CategoryFilter = Params->GetStringField(TEXT("category")).ToLower();
+	System = System.TrimStartAndEnd().ToLower();
+	FString CategoryFilter;
+	if (Params->HasField(TEXT("category")) && !Params->TryGetStringField(TEXT("category"), CategoryFilter))
+	{
+		return FMonolithActionResult::Error(TEXT("category must be a string; omit it to enumerate all available categories."), -32602);
+	}
+	CategoryFilter = CategoryFilter.TrimStartAndEnd().ToLower();
 
 	TArray<TSharedPtr<FJsonValue>> NodeTypes;
 
 	if (System == TEXT("bt"))
 	{
+		if (!CategoryFilter.IsEmpty() && CategoryFilter != TEXT("composite") && CategoryFilter != TEXT("task") &&
+			CategoryFilter != TEXT("decorator") && CategoryFilter != TEXT("service"))
+		{
+			return FMonolithActionResult::Error(TEXT("Unknown BT category. Use composite, task, decorator, service, or omit category for all."), -32602);
+		}
 		if (CategoryFilter.IsEmpty() || CategoryFilter == TEXT("composite"))
 		{
 			CollectBTNodeClasses(UBTCompositeNode::StaticClass(), TEXT("composite"), NodeTypes);
@@ -334,28 +343,20 @@ FMonolithActionResult FMonolithAIDiscoveryActions::HandleListAINodeTypes(const T
 			CollectBTNodeClasses(UBTService::StaticClass(), TEXT("service"), NodeTypes);
 		}
 	}
-	else if (System == TEXT("st"))
+	else if (System == TEXT("st") || System == TEXT("eqs"))
 	{
-		// State Tree node discovery — stub for now
-		TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-		Result->SetArrayField(TEXT("node_types"), NodeTypes);
-		Result->SetNumberField(TEXT("count"), 0);
-		Result->SetStringField(TEXT("note"), TEXT("State Tree node type enumeration not yet implemented"));
-		return FMonolithActionResult::Success(Result);
-	}
-	else if (System == TEXT("eqs"))
-	{
-		// EQS node discovery — stub for now
-		TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-		Result->SetArrayField(TEXT("node_types"), NodeTypes);
-		Result->SetNumberField(TEXT("count"), 0);
-		Result->SetStringField(TEXT("note"), TEXT("EQS node type enumeration not yet implemented"));
-		return FMonolithActionResult::Success(Result);
+		auto Data = MakeShared<FJsonObject>();
+		Data->SetStringField(TEXT("reason"), TEXT("not_implemented"));
+		Data->SetStringField(TEXT("system"), System);
+		Data->SetBoolField(TEXT("implemented"), false);
+		return FMonolithActionResult::Error(FString::Printf(
+			TEXT("Node type enumeration for system '%s' is not implemented. Inspect the installed engine source or the corresponding editor node picker; use system='bt' only for Behavior Tree node discovery. This does not mean no node types exist."),
+			*System), -32004).WithErrorData(Data);
 	}
 	else
 	{
 		return FMonolithActionResult::Error(FString::Printf(
-			TEXT("Unknown system '%s'. Valid values: bt, st, eqs"), *System));
+			TEXT("Unknown system '%s'. Valid values: bt, st, eqs"), *System), -32602);
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
