@@ -24,6 +24,8 @@ import sys
 import threading
 import time
 import tempfile
+import math
+from concurrent.futures import ThreadPoolExecutor
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -31,23 +33,38 @@ from io import TextIOWrapper
 from pathlib import Path
 
 MONOLITH_URL = os.environ.get("MONOLITH_URL", "http://localhost:9316/mcp")
-MONOLITH_HEALTH = MONOLITH_URL.replace("/mcp", "/health")
+MONOLITH_HEALTH = MONOLITH_URL.rsplit("/", 1)[0] + "/health"
 PROXY_NAME = "monolith-proxy"
-PROXY_VERSION = "1.1.1"
-TIMEOUT = 30.0
+PROXY_VERSION = "1.2.0"
+
+
+def _env_number(name, default, minimum, maximum):
+    try:
+        value = float(os.environ.get(name, default))
+        if math.isfinite(value) and minimum <= value <= maximum:
+            return value
+    except ValueError:
+        pass
+    return default
+
+
+TIMEOUT = _env_number("MONOLITH_TIMEOUT_SECONDS", 120, 1, 3600)
+MAX_IN_FLIGHT = int(_env_number("MONOLITH_MAX_IN_FLIGHT", 8, 1, 32))
+MAX_QUEUED = int(_env_number("MONOLITH_MAX_QUEUED", 64, 0, 1024))
 POLL_INTERVAL = 5.0
 POLL_START_DELAY = 3.0
 
 # Track Monolith availability for list_changed notifications
 _monolith_was_up = None
 _stdout_lock = threading.Lock()
+_stop_poll = threading.Event()
 
 # Call-log state (Phase 4 / survivor F)
 #
-# NOTE: Saved/Logs/MonolithCalls.jsonl is project-root-relative and excluded
+# NOTE: Saved/Logs/MonolithCalls-<pid>.jsonl is project-root-relative and excluded
 # from crash zip generation by UE's crash reporter (Saved/Logs/ tail capture
 # only includes editor logs, not arbitrary jsonl). If a crash collector pattern
-# elsewhere DOES sweep Saved/Logs/*, the user should add MonolithCalls.jsonl to
+# elsewhere DOES sweep Saved/Logs/*, the user should add MonolithCalls-<pid>.jsonl to
 # the exclusion list. Single-user local dev tool; no phone-home.
 _call_log_enabled = False           # resolved once at startup
 _call_log_handle = None             # binary append-mode file handle
@@ -86,7 +103,7 @@ def _log(msg: str) -> None:
 #    "params_hash":"<40-char-sha1-hex>","duration_ms":42.5,"ok":true,
 #    "error_code":null,"result_bytes":1834}
 #
-# Path: <project-root>/Saved/Logs/MonolithCalls.jsonl
+# Path: <project-root>/Saved/Logs/MonolithCalls-<pid>.jsonl
 # Opt-out: env var MONOLITH_CALL_LOG=0
 # Atomicity: open(..., "ab") + threading.Lock around write+flush is sufficient
 # for single-process emission. POSIX O_APPEND would give kernel-level atomicity
@@ -96,7 +113,7 @@ def _log(msg: str) -> None:
 
 
 def _resolve_call_log_path() -> Path:
-    """Resolve <project-root>/Saved/Logs/MonolithCalls.jsonl.
+    """Resolve <project-root>/Saved/Logs/MonolithCalls-<pid>.jsonl.
 
     Priority:
       1. MONOLITH_PROJECT_ROOT env var (explicit override).
@@ -106,7 +123,7 @@ def _resolve_call_log_path() -> Path:
     root = os.environ.get("MONOLITH_PROJECT_ROOT") or os.getcwd()
     logs_dir = Path(root) / "Saved" / "Logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    return logs_dir / "MonolithCalls.jsonl"
+    return logs_dir / f"MonolithCalls-{os.getpid()}.jsonl"
 
 
 def _init_call_log() -> None:
@@ -196,7 +213,9 @@ def _inspect_response(resp: str | None) -> tuple[bool, int | None, int]:
         result_bytes = len(_canonical_json(result).encode("utf-8"))
     else:
         result_bytes = len(resp.encode("utf-8"))
-    return True, None, result_bytes
+    ok = (isinstance(parsed, dict) and parsed.get("jsonrpc") == "2.0"
+          and "result" in parsed and not (isinstance(result, dict) and result.get("isError")))
+    return ok, None, result_bytes
 
 
 def _write_call_log_line(msg: dict, resp: str | None, duration_ms: float) -> None:
@@ -215,6 +234,8 @@ def _write_call_log_line(msg: dict, resp: str | None, duration_ms: float) -> Non
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         line = {
+            "proxy_pid": os.getpid(),
+            "request_id": msg.get("id"),
             "ts": ts,
             "namespace": ns,
             "action": action,
@@ -233,18 +254,36 @@ def _write_call_log_line(msg: dict, resp: str | None, duration_ms: float) -> Non
         _log(f"Call-log write failed: {e}")
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _post_monolith(body: str, timeout: float = TIMEOUT) -> str | None:
     """POST JSON-RPC to Monolith. Returns response body or None on failure."""
     try:
         req = urllib.request.Request(
             MONOLITH_URL,
             data=body.encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-03-26"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode("utf-8")
-    except (urllib.error.URLError, OSError, TimeoutError) as e:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect()).open(req, timeout=timeout) as resp:
+            response = resp.read().decode("utf-8")
+            parsed = json.loads(response)
+            request = json.loads(body)
+            if (not isinstance(parsed, dict) or parsed.get("jsonrpc") != "2.0"
+                    or isinstance(parsed.get("id"), bool)
+                    or parsed.get("id") != request.get("id")
+                    or ("result" in parsed) == ("error" in parsed)):
+                raise ValueError("Invalid upstream JSON-RPC response or mismatched id")
+            error = parsed.get("error")
+            if "error" in parsed and (not isinstance(error, dict)
+                    or isinstance(error.get("code"), bool) or not isinstance(error.get("code"), int)
+                    or not isinstance(error.get("message"), str)):
+                raise ValueError("Malformed upstream error")
+            return response
+    except (urllib.error.URLError, OSError, TimeoutError, ValueError) as e:
         _log(f"Monolith unreachable: {e}")
         return None
 
@@ -292,7 +331,9 @@ def _tools_cache_path() -> Path:
 
     host_port = MONOLITH_HEALTH.replace("http://", "").replace("https://", "")
     host_port = host_port.split("/", 1)[0]
-    return cache_dir / f"monolith_proxy_tools_{_sanitize_cache_part(host_port)}.json"
+    scope = MONOLITH_URL + "|" + os.path.abspath(os.environ.get("MONOLITH_PROJECT_ROOT") or os.getcwd())
+    digest = hashlib.sha1(scope.encode("utf-8")).hexdigest()[:16]
+    return cache_dir / f"monolith_proxy_tools_{_sanitize_cache_part(host_port)}_{digest}.json"
 
 
 def _query_tool_schema() -> dict:
@@ -433,7 +474,14 @@ def _write_tools_cache(resp: str) -> None:
         payload = json.loads(resp)
         tools = payload.get("result", {}).get("tools", [])
         if isinstance(tools, list) and tools:
-            _tools_cache_path().write_text(json.dumps(tools), encoding="utf-8")
+            path = _tools_cache_path()
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                             prefix=path.name, delete=False) as temp:
+                temp.write(json.dumps(tools))
+            try:
+                os.replace(temp.name, path)
+            finally:
+                Path(temp.name).unlink(missing_ok=True)
     except Exception as e:
         _log(f"Failed to write tools/list cache: {e}")
 
@@ -498,10 +546,11 @@ def check_monolith_state_change(stdout) -> None:
 
 def _health_poll_thread(stdout) -> None:
     """Background thread that polls Monolith and sends list_changed on state transitions."""
-    time.sleep(POLL_START_DELAY)
+    if _stop_poll.wait(POLL_START_DELAY):
+        return
     _log(f"Health poll started (interval={POLL_INTERVAL}s)")
 
-    while True:
+    while not _stop_poll.is_set():
         try:
             check_monolith_state_change(stdout)
         except (BrokenPipeError, OSError):
@@ -510,14 +559,14 @@ def _health_poll_thread(stdout) -> None:
         except Exception as e:
             _log(f"Health poll error: {e}")
 
-        time.sleep(POLL_INTERVAL)
+        _stop_poll.wait(POLL_INTERVAL)
 
 
 def handle_initialize(msg: dict) -> str:
     """Handle initialize locally. Proxy is always available."""
     client_version = msg.get("params", {}).get("protocolVersion", "2025-11-25")
     supported = {"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"}
-    version = client_version if client_version in supported else "2025-11-25"
+    version = client_version if isinstance(client_version, str) and client_version in supported else "2025-11-25"
 
     return _result(msg.get("id"), {
         "protocolVersion": version,
@@ -532,7 +581,8 @@ def handle_initialize(msg: dict) -> str:
             "namespace's actions, and describe_query('action_schema', ...) returns an action's "
             "exact parameter schema. monolith_guide(section='recipes') gives cross-namespace "
             "workflows, decision matrices, and gotchas. "
-            "If tools return errors about the editor not running, wait and retry."
+            "For multi-agent edits, acquire monolith_coordination and pass its _lease_token on domain calls. "
+            "A transport timeout has unknown execution outcome: inspect state before retrying a mutation."
         ),
     })
 
@@ -566,8 +616,8 @@ def handle_tools_call(msg: dict) -> str:
     tool_name = msg.get("params", {}).get("name", "unknown")
     return _tool_error(
         msg.get("id"),
-        f"Monolith MCP is not available (Unreal Editor not running). "
-        f"Tool '{tool_name}' cannot execute. Start the editor and try again.",
+        f"Monolith transport failed for '{tool_name}': editor offline, busy, timeout, or invalid response. "
+        "Execution outcome is unknown. Inspect editor state before retrying a mutation; no automatic retry was sent.",
     )
 
 
@@ -589,53 +639,83 @@ def main() -> None:
     )
     poller.start()
 
-    for line in stdin:
-        line = line.strip()
-        if not line:
-            continue
+    # Bound queued + running work. Never block stdin on an HTTP call: ping and
+    # initialize stay responsive even when all editor workers are occupied.
+    slots = threading.BoundedSemaphore(MAX_IN_FLIGHT + MAX_QUEUED)
+    active = set()
+    active_lock = threading.Lock()
 
+    def dispatch(msg):
         try:
-            msg = json.loads(line)
-        except json.JSONDecodeError as e:
-            _log(f"Bad JSON: {e}")
-            continue
-
-        method = msg.get("method", "")
-        msg_id = msg.get("id")  # None for notifications
-        response = None
-
-        if method == "initialize":
-            response = handle_initialize(msg)
-            _log("Initialized")
-
-        elif method in ("notifications/initialized", "initialized"):
-            # Notification — no response. Check if Monolith is up.
-            check_monolith_state_change(stdout)
-
-        elif method == "ping":
-            response = handle_ping(msg)
-
-        elif method == "tools/list":
-            check_monolith_state_change(stdout)
-            response = handle_tools_list(msg)
-
-        elif method == "tools/call":
-            response = handle_tools_call(msg)
-
-        else:
-            # Forward unknown methods to Monolith
-            t0 = time.perf_counter()
-            resp = _post_monolith(json.dumps(msg))
-            duration_ms = (time.perf_counter() - t0) * 1000.0
-            _write_call_log_line(msg, resp, duration_ms)
-
-            if resp:
-                response = resp
-            elif msg_id is not None:
-                response = _jsonrpc_error(msg_id, -32601, f"Method not found: {method}")
-
-        if response:
+            method = msg["method"]
+            if method == "tools/list":
+                response = handle_tools_list(msg)
+            elif method == "tools/call":
+                response = handle_tools_call(msg)
+            else:
+                response = _jsonrpc_error(msg["id"], -32601, f"Method not found: {method}")
             _write(stdout, response)
+        except Exception as exc:
+            _log(f"Request failed: {exc}")
+            _write(stdout, _jsonrpc_error(msg["id"], -32603, "Internal proxy error; execution outcome unknown"))
+        finally:
+            with active_lock:
+                active.discard(_canonical_json(msg["id"]))
+            slots.release()
+
+    try:
+        with ThreadPoolExecutor(max_workers=MAX_IN_FLIGHT, thread_name_prefix="monolith") as pool:
+            for line in stdin:
+                if not line.strip():
+                    continue
+                try:
+                    msg = json.loads(line)
+                except ValueError:
+                    _write(stdout, _jsonrpc_error(None, -32700, "Invalid JSON"))
+                    continue
+                if (not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0"
+                        or not isinstance(msg.get("method"), str)
+                        or ("id" in msg and (isinstance(msg["id"], bool)
+                            or not isinstance(msg["id"], (str, int, float))))):
+                    _write(stdout, _jsonrpc_error(None, -32600, "Invalid JSON-RPC request"))
+                    continue
+                # Notifications must not execute tools or emit responses. Cancellation
+                # cannot roll back an already-dispatched editor action.
+                if "id" not in msg:
+                    continue
+                if not isinstance(msg.get("params", {}), dict):
+                    _write(stdout, _jsonrpc_error(msg["id"], -32602, "params must be an object"))
+                    continue
+                method = msg["method"]
+                if method == "initialize":
+                    _write(stdout, handle_initialize(msg))
+                    continue
+                if method == "ping":
+                    _write(stdout, handle_ping(msg))
+                    continue
+                if method == "tools/call":
+                    params = msg.get("params", {})
+                    if (not isinstance(params.get("name"), str)
+                            or not isinstance(params.get("arguments", {}), dict)):
+                        _write(stdout, _jsonrpc_error(msg["id"], -32602, "name must be a string; arguments must be an object"))
+                        continue
+                key = _canonical_json(msg["id"])
+                with active_lock:
+                    duplicate = key in active
+                    accepted = not duplicate and slots.acquire(blocking=False)
+                    if accepted:
+                        active.add(key)
+                if not accepted:
+                    code = -32600 if duplicate else -32001
+                    message = "Request id already in flight" if duplicate else "Proxy queue full; request not executed. Retry with backoff."
+                    _write(stdout, _jsonrpc_error(msg["id"], code, message))
+                    continue
+                pool.submit(dispatch, msg)
+    finally:
+        _stop_poll.set()
+        poller.join(timeout=4)
+        if _call_log_handle is not None:
+            _call_log_handle.close()
 
 
 if __name__ == "__main__":

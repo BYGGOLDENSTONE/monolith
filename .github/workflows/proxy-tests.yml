@@ -1,0 +1,52 @@
+name: Proxy transport contracts
+
+on:
+  push:
+    paths:
+      - 'Scripts/monolith_proxy.py'
+      - 'Scripts/install_skills.py'
+      - 'Scripts/tests/**'
+      - 'Tools/MonolithProxy/**'
+      - '.github/workflows/proxy-tests.yml'
+  pull_request:
+    paths:
+      - 'Scripts/monolith_proxy.py'
+      - 'Scripts/install_skills.py'
+      - 'Scripts/tests/**'
+      - 'Tools/MonolithProxy/**'
+      - '.github/workflows/proxy-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Exercise Python proxy over stdio and HTTP
+        run: python -m unittest discover -s Scripts/tests -v
+
+  windows-native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Configure native proxy
+        run: cmake -S Tools/MonolithProxy -B build/proxy -A x64
+      - name: Build native proxy
+        run: cmake --build build/proxy --config Release --parallel
+      - name: Exercise both proxy implementations with identical contracts
+        shell: pwsh
+        run: |
+          $env:MONOLITH_TEST_NATIVE_PROXY = (Resolve-Path build/proxy/Release/monolith_proxy.exe).Path
+          python -m unittest discover -s Scripts/tests -v

@@ -15,6 +15,7 @@
 // Includes
 // ============================================================================
 
+#define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winhttp.h>
@@ -39,6 +40,12 @@
 #include <fstream>
 #include <vector>
 #include <iomanip>
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <atomic>
+#include <cmath>
+#include <stdexcept>
 
 #include <nlohmann/json.hpp>
 
@@ -51,12 +58,12 @@ using json = nlohmann::json;
 // ============================================================================
 
 static const char* PROXY_NAME    = "monolith-proxy";
-static const char* PROXY_VERSION = "1.1.1";
+static const char* PROXY_VERSION = "1.2.0";
 
-static constexpr double TIMEOUT                  = 30.0;
+static double TIMEOUT = 120.0;
 static constexpr double POLL_INTERVAL            = 5.0;
 static constexpr double POLL_START_DELAY         = 3.0;
-static constexpr double REPEAT_TOOL_CALL_WINDOW  = 3.0;
+
 
 static const std::set<std::string> SUPPORTED_VERSIONS = {
     "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"
@@ -86,6 +93,7 @@ static const std::set<std::string> EDITOR_READ_ACTIONS = {
 
 static std::string g_monolith_url;        // e.g. "http://localhost:9316/mcp"
 static std::string g_monolith_host;       // e.g. "localhost"
+static bool        g_monolith_secure = false;
 static int         g_monolith_port = 0;   // e.g. 9316
 static std::string g_monolith_path_mcp;   // e.g. "/mcp"
 static std::string g_monolith_path_health;// e.g. "/health"
@@ -97,14 +105,17 @@ static std::set<std::string> g_editor_action_denylist;
 // State tracking
 static std::optional<bool> g_monolith_was_up; // nullopt = unknown
 static std::mutex g_stdout_lock;
-static std::unordered_map<std::string, double> g_recent_tool_calls;
+static std::mutex g_cache_lock;
+static std::mutex g_poll_lock;
+static std::condition_variable g_poll_cv;
+static bool g_stopping = false;
 
 // Call-log state (Phase 4 / survivor F)
 //
-// NOTE: Saved/Logs/MonolithCalls.jsonl is project-root-relative and excluded
+// NOTE: Saved/Logs/MonolithCalls-<pid>.jsonl is project-root-relative and excluded
 // from crash zip generation by UE's crash reporter (Saved/Logs/ tail capture
 // only includes editor logs, not arbitrary jsonl). If a crash collector pattern
-// elsewhere DOES sweep Saved/Logs/*, the user should add MonolithCalls.jsonl to
+// elsewhere DOES sweep Saved/Logs/*, the user should add MonolithCalls-<pid>.jsonl to
 // the exclusion list. Single-user local dev tool; no phone-home.
 static bool      g_call_log_enabled = false;     // resolved once at startup
 static HANDLE    g_call_log_handle  = INVALID_HANDLE_VALUE;
@@ -178,39 +189,32 @@ static std::set<std::string> parse_csv_env(const char* name)
 
 static void parse_monolith_url(const std::string& url)
 {
+    const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, url.data(), (int)url.size(), nullptr, 0);
+    if (size <= 0) throw std::invalid_argument("URL encoding");
+    std::wstring wide(size, 0);
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, url.data(), (int)url.size(), wide.data(), size);
+    URL_COMPONENTS parts{};
+    parts.dwStructSize = sizeof(parts);
+    parts.dwHostNameLength = parts.dwUrlPathLength = parts.dwExtraInfoLength = (DWORD)-1;
+    parts.dwUserNameLength = parts.dwPasswordLength = (DWORD)-1;
+    if (!WinHttpCrackUrl(wide.c_str(), (DWORD)wide.size(), 0, &parts) ||
+        (parts.nScheme != INTERNET_SCHEME_HTTP && parts.nScheme != INTERNET_SCHEME_HTTPS) ||
+        !parts.dwHostNameLength || parts.dwUserNameLength || parts.dwPasswordLength || parts.dwExtraInfoLength)
+        throw std::invalid_argument("Expected http(s)://host:port/mcp without credentials or query");
+    auto utf8 = [](const wchar_t* value, DWORD length) {
+        if (!length) return std::string();
+        const int n = WideCharToMultiByte(CP_UTF8, 0, value, length, nullptr, 0, nullptr, nullptr);
+        std::string result(n, 0);
+        WideCharToMultiByte(CP_UTF8, 0, value, length, result.data(), n, nullptr, nullptr);
+        return result;
+    };
     g_monolith_url = url;
-
-    // Strip "http://"
-    std::string rest = url;
-    if (rest.rfind("http://", 0) == 0)
-        rest = rest.substr(7);
-    else if (rest.rfind("https://", 0) == 0)
-        rest = rest.substr(8);
-
-    // Split host:port/path
-    auto slash_pos = rest.find('/');
-    std::string host_port = (slash_pos != std::string::npos) ? rest.substr(0, slash_pos) : rest;
-    g_monolith_path_mcp = (slash_pos != std::string::npos) ? rest.substr(slash_pos) : "/mcp";
-
-    auto colon_pos = host_port.find(':');
-    if (colon_pos != std::string::npos)
-    {
-        g_monolith_host = host_port.substr(0, colon_pos);
-        g_monolith_port = std::stoi(host_port.substr(colon_pos + 1));
-    }
-    else
-    {
-        g_monolith_host = host_port;
-        g_monolith_port = 80;
-    }
-
-    // Derive health path: replace trailing /mcp with /health
-    g_monolith_path_health = g_monolith_path_mcp;
-    auto mcp_pos = g_monolith_path_health.rfind("/mcp");
-    if (mcp_pos != std::string::npos)
-        g_monolith_path_health = g_monolith_path_health.substr(0, mcp_pos) + "/health";
-    else
-        g_monolith_path_health = "/health";
+    g_monolith_host = utf8(parts.lpszHostName, parts.dwHostNameLength);
+    g_monolith_port = parts.nPort;
+    g_monolith_secure = parts.nScheme == INTERNET_SCHEME_HTTPS;
+    g_monolith_path_mcp = parts.dwUrlPathLength ? utf8(parts.lpszUrlPath, parts.dwUrlPathLength) : "/mcp";
+    const auto slash = g_monolith_path_mcp.rfind('/');
+    g_monolith_path_health = g_monolith_path_mcp.substr(0, slash) + "/health";
 }
 
 // ============================================================================
@@ -231,7 +235,7 @@ static double now_seconds()
 //    "params_hash":"<40-char-sha1-hex>","duration_ms":42.5,"ok":true,
 //    "error_code":null,"result_bytes":1834}
 //
-// Path: <project-root>/Saved/Logs/MonolithCalls.jsonl
+// Path: <project-root>/Saved/Logs/MonolithCalls-<pid>.jsonl
 // Opt-out: env var MONOLITH_CALL_LOG=0
 // Append semantics on Win32: CreateFile w/ FILE_APPEND_DATA — OS guarantees
 // atomic end-of-file positioning for writes < 4KB. Never seek before write.
@@ -303,7 +307,7 @@ static std::string iso8601_utc_now()
     return std::string(buf);
 }
 
-// Resolve <project-root>/Saved/Logs/MonolithCalls.jsonl
+// Resolve <project-root>/Saved/Logs/MonolithCalls-<pid>.jsonl
 // Priority:
 //   1. MONOLITH_PROJECT_ROOT env var (explicit override)
 //   2. Current working directory (proxy CWD is the project root when launched
@@ -331,7 +335,7 @@ static std::string resolve_call_log_path()
     CreateDirectoryA(saved.c_str(), nullptr);    // OK if already exists
     CreateDirectoryA(logsdir.c_str(), nullptr);
 
-    return logsdir + "\\MonolithCalls.jsonl";
+    return logsdir + "\\MonolithCalls-" + std::to_string(GetCurrentProcessId()) + ".jsonl";
 }
 
 static void init_call_log()
@@ -472,7 +476,8 @@ static void inspect_response(const std::string& resp, bool& ok,
         }
         else
         {
-            ok = true;
+            ok = parsed.is_object() && parsed.value("jsonrpc", "") == "2.0" && parsed.contains("result")
+                && !(parsed["result"].is_object() && parsed["result"].value("isError", false));
         }
 
         auto result_it = parsed.find("result");
@@ -510,6 +515,8 @@ static void write_call_log_line(const json& msg, const std::string& resp, double
         inspect_response(resp, ok, error_code, result_bytes);
 
         json line;
+        line["proxy_pid"] = GetCurrentProcessId();
+        line["request_id"] = msg.value("id", json());
         line["ts"]           = iso8601_utc_now();
         line["namespace"]    = ns;
         line["action"]       = action;
@@ -579,15 +586,17 @@ static std::string post_monolith(const std::string& body, double timeout_sec = T
     HINTERNET hRequest = WinHttpOpenRequest(
         hConnect, L"POST", wpath.c_str(),
         nullptr, WINHTTP_NO_REFERER,
-        WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+        WINHTTP_DEFAULT_ACCEPT_TYPES, g_monolith_secure ? WINHTTP_FLAG_SECURE : 0);
     if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return {}; }
 
     // Set timeouts (milliseconds)
     DWORD timeout_ms = (DWORD)(timeout_sec * 1000);
     WinHttpSetTimeouts(hRequest, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
+    DWORD disableFeatures = WINHTTP_DISABLE_REDIRECTS;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_DISABLE_FEATURE, &disableFeatures, sizeof(disableFeatures));
 
     // Send
-    const wchar_t* hdrs = L"Content-Type: application/json";
+    const wchar_t* hdrs = L"Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2025-03-26";
     BOOL ok = WinHttpSendRequest(
         hRequest, hdrs, (DWORD)-1,
         (LPVOID)body.c_str(), (DWORD)body.size(),
@@ -616,6 +625,18 @@ static std::string post_monolith(const std::string& body, double timeout_sec = T
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
 
+    try {
+        const auto parsed = json::parse(response);
+        const auto request = json::parse(body);
+        if (!parsed.is_object() || parsed.value("jsonrpc", "") != "2.0" ||
+            parsed.value("id", json()) != request.value("id", json()) ||
+            parsed.contains("result") == parsed.contains("error")) return {};
+        if (parsed.contains("error")) {
+            const auto& error = parsed["error"];
+            if (!error.is_object() || !error.contains("code") || !error["code"].is_number_integer() ||
+                !error.contains("message") || !error["message"].is_string()) return {};
+        }
+    } catch (...) { return {}; }
     return response;
 }
 
@@ -638,7 +659,7 @@ static bool check_monolith_up()
     HINTERNET hRequest = WinHttpOpenRequest(
         hConnect, L"GET", wpath.c_str(),
         nullptr, WINHTTP_NO_REFERER,
-        WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+        WINHTTP_DEFAULT_ACCEPT_TYPES, g_monolith_secure ? WINHTTP_FLAG_SECURE : 0);
     if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return false; }
 
     // 3-second timeout for health check
@@ -730,9 +751,12 @@ static std::string tools_cache_path()
     std::string dir = base + "\\Monolith";
     CreateDirectoryA(dir.c_str(), nullptr);
 
+    char cwd[32768];
+    const auto n = GetCurrentDirectoryA(sizeof(cwd), cwd);
+    const auto project = get_env("MONOLITH_PROJECT_ROOT", n > 0 && n < sizeof(cwd) ? cwd : ".");
     return dir + "\\monolith_proxy_tools_" +
         sanitize_cache_part(g_monolith_host) + "_" +
-        std::to_string(g_monolith_port) + ".json";
+        std::to_string(g_monolith_port) + "_" + sha1_hex(g_monolith_url + "|" + project).substr(0, 16) + ".json";
 }
 
 static json make_query_tool_schema()
@@ -893,6 +917,7 @@ static json make_seed_tools()
 
 static void write_tools_cache(const std::string& response)
 {
+    std::lock_guard<std::mutex> guard(g_cache_lock);
     try
     {
         json payload = json::parse(response);
@@ -904,9 +929,14 @@ static void write_tools_cache(const std::string& response)
         if (tools_it == result_it->end() || !tools_it->is_array() || tools_it->empty())
             return;
 
-        std::ofstream out(tools_cache_path(), std::ios::binary | std::ios::trunc);
-        if (out)
-            out << tools_it->dump();
+        const auto path = tools_cache_path();
+        const auto temp = path + "." + std::to_string(GetCurrentProcessId()) + ".tmp";
+        { std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+          if (!out) return;
+          out << tools_it->dump();
+          if (!out) return; }
+        if (!MoveFileExA(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            DeleteFileA(temp.c_str());
     }
     catch (const std::exception& e)
     {
@@ -916,6 +946,7 @@ static void write_tools_cache(const std::string& response)
 
 static std::optional<json> read_tools_cache()
 {
+    std::lock_guard<std::mutex> guard(g_cache_lock);
     try
     {
         std::ifstream in(tools_cache_path(), std::ios::binary);
@@ -960,48 +991,6 @@ static void write_stdout(const std::string& msg)
 }
 
 // ============================================================================
-// Dedup tracking
-// ============================================================================
-
-static std::string tool_signature(const json& msg)
-{
-    auto params_it = msg.find("params");
-    if (params_it == msg.end() || !params_it->is_object())
-        return {};
-
-    auto name_it = params_it->find("name");
-    if (name_it == params_it->end() || !name_it->is_string() || name_it->get<std::string>().empty())
-        return {};
-
-    // Build signature object using json (std::map-backed, sorts keys alphabetically)
-    // This matches Python's json.dumps(sort_keys=True, separators=(",",":"))
-    json sig;
-    sig["name"] = *name_it;
-    sig["arguments"] = params_it->value("arguments", json::object());
-
-    // dump(-1) = compact, no spaces — matches Python separators=(",",":")
-    return sig.dump(-1);
-}
-
-static bool is_repeated_tool_call(const json& msg)
-{
-    std::string sig = tool_signature(msg);
-    if (sig.empty()) return false;
-
-    auto it = g_recent_tool_calls.find(sig);
-    if (it == g_recent_tool_calls.end()) return false;
-
-    return (now_seconds() - it->second) < REPEAT_TOOL_CALL_WINDOW;
-}
-
-static void record_tool_call(const json& msg)
-{
-    std::string sig = tool_signature(msg);
-    if (!sig.empty())
-        g_recent_tool_calls[sig] = now_seconds();
-}
-
-// ============================================================================
 // State check + health poll
 // ============================================================================
 
@@ -1037,24 +1026,13 @@ static void check_monolith_state_change()
 
 static void health_poll_thread()
 {
-    // Initial delay
-    std::this_thread::sleep_for(
-        std::chrono::milliseconds((int)(POLL_START_DELAY * 1000)));
-    log_msg("Health poll started (interval=" + std::to_string((int)POLL_INTERVAL) + "s)");
-
-    while (true)
-    {
-        try
-        {
-            check_monolith_state_change();
-        }
-        catch (...)
-        {
-            log_msg("Health poll error");
-        }
-
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds((int)(POLL_INTERVAL * 1000)));
+    std::unique_lock<std::mutex> lock(g_poll_lock);
+    if (g_poll_cv.wait_for(lock, std::chrono::seconds(3), [] { return g_stopping; })) return;
+    while (!g_stopping) {
+        lock.unlock();
+        try { check_monolith_state_change(); } catch (...) { log_msg("Health poll error"); }
+        lock.lock();
+        g_poll_cv.wait_for(lock, std::chrono::seconds(5), [] { return g_stopping; });
     }
 }
 
@@ -1082,7 +1060,8 @@ static std::string handle_initialize(const json& msg)
     result["serverInfo"] = {{"name", PROXY_NAME}, {"version", PROXY_VERSION}};
     result["instructions"] =
         "Monolith MCP proxy. Tools are forwarded to the Unreal Editor. "
-        "If tools return errors about the editor not running, wait and retry.";
+        "Discover action schemas before editing. For multi-agent edits acquire monolith_coordination "
+        "and pass its _lease_token on domain calls. A timeout has unknown execution outcome; inspect state before retrying mutations.";
 
     return make_result(msg.value("id", json()), result);
 }
@@ -1189,7 +1168,7 @@ static std::string handle_tools_call(const json& msg)
         std::transform(normalized.begin(), normalized.end(), normalized.begin(),
                        [](unsigned char c){ return (char)std::tolower(c); });
 
-        if (tool_name == "editor_read_query" && EDITOR_BUILD_ACTIONS.count(normalized))
+        if (tool_name == "editor_read_query" && !EDITOR_READ_ACTIONS.count(normalized))
         {
             return make_tool_error(id,
                 "Tool '" + tool_name + "' is read-only. Use the build-capable editor-open preset if you intentionally want '" + action + "'.");
@@ -1234,17 +1213,10 @@ static std::string handle_tools_call(const json& msg)
         }
     }
 
-    // --- Dedup check ---
+    // Requests with identical arguments can belong to different agents.
     // Build the message we'll actually forward (with possibly rewritten params)
     json forwarded_msg = msg;
     forwarded_msg["params"] = params;
-
-    if (is_repeated_tool_call(forwarded_msg))
-    {
-        return make_tool_error(id,
-            "Tool '" + tool_name + "' with the same arguments was just called. "
-            "Reuse the previous result and answer the user instead of repeating the same call.");
-    }
 
     // --- Allowlist/denylist check ---
     if (forwarded_name == "editor_query")
@@ -1276,7 +1248,7 @@ static std::string handle_tools_call(const json& msg)
     }
 
     // --- Record and forward ---
-    record_tool_call(forwarded_msg);
+
 
     double t0 = now_seconds();
     std::string resp = post_monolith(forwarded_msg.dump());
@@ -1287,110 +1259,123 @@ static std::string handle_tools_call(const json& msg)
         return resp;
 
     return make_tool_error(id,
-        "Monolith MCP is not available (Unreal Editor not running). "
-        "Tool '" + tool_name + "' cannot execute. Start the editor and try again.");
+        "Monolith transport failed for '" + tool_name + "': offline, busy, timeout, or invalid response. "
+        "Execution outcome is unknown. Inspect editor state before retrying a mutation; no automatic retry was sent.");
 }
 
 // ============================================================================
 // Main loop
 // ============================================================================
 
+// Fixed worker count and bounded queue: no detached request threads and no
+// HTTP waits on stdin. Replies may arrive out of order, correlated by RPC id.
+class RequestPool {
+    std::mutex mutex;
+    std::condition_variable ready;
+    std::deque<json> queue;
+    std::set<std::string> active;
+    std::vector<std::thread> workers;
+    size_t capacity;
+    bool stopping = false;
+public:
+    RequestPool(size_t count, size_t queued) : capacity(count + queued) {
+        for (size_t i = 0; i < count; ++i) workers.emplace_back([this] {
+            while (true) {
+                json msg;
+                {
+                    std::unique_lock<std::mutex> lock(mutex);
+                    ready.wait(lock, [this] { return stopping || !queue.empty(); });
+                    if (queue.empty()) return;
+                    msg = std::move(queue.front()); queue.pop_front();
+                }
+                std::string response;
+                try {
+                    const auto method = msg.value("method", "");
+                    if (method == "tools/call") response = handle_tools_call(msg);
+                    else if (method == "tools/list") response = handle_tools_list(msg);
+                    else response = make_jsonrpc_error(msg["id"], -32601, "Method not found: " + method);
+                } catch (const std::exception& e) {
+                    log_msg(std::string("Request error: ") + e.what());
+                    response = make_jsonrpc_error(msg["id"], -32603, "Internal proxy error; execution outcome unknown");
+                }
+                write_stdout(response);
+                std::lock_guard<std::mutex> lock(mutex);
+                active.erase(msg["id"].dump());
+            }
+        });
+    }
+    int submit(const json& msg) {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto key = msg["id"].dump();
+        if (active.count(key)) return -32600;
+        if (active.size() >= capacity) return -32001;
+        active.insert(key); queue.push_back(msg); ready.notify_one(); return 0;
+    }
+    ~RequestPool() {
+        { std::lock_guard<std::mutex> lock(mutex); stopping = true; }
+        ready.notify_all();
+        for (auto& worker : workers) worker.join();
+    }
+};
+
+static int env_int(const char* name, int fallback, int minimum, int maximum) {
+    try {
+        size_t end = 0;
+        const auto raw = get_env(name);
+        const int value = std::stoi(raw, &end);
+        if (end == raw.size() && value >= minimum && value <= maximum) return value;
+    } catch (...) {}
+    return fallback;
+}
+
 int main()
 {
-    // Binary-safe stdin/stdout on Windows
-    _setmode(_fileno(stdin),  _O_BINARY);
+    _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
-
-    // Parse configuration from environment
-    std::string url = get_env("MONOLITH_URL", "http://localhost:9316/mcp");
-    parse_monolith_url(url);
-
-    g_split_editor_query   = get_env("MONOLITH_SPLIT_EDITOR_QUERY", "0") == "1";
+    try { parse_monolith_url(get_env("MONOLITH_URL", "http://localhost:9316/mcp")); }
+    catch (...) { log_msg("Invalid MONOLITH_URL"); return 1; }
+    TIMEOUT = env_int("MONOLITH_TIMEOUT_SECONDS", 120, 1, 3600);
+    g_split_editor_query = get_env("MONOLITH_SPLIT_EDITOR_QUERY", "0") == "1";
     g_editor_action_allowlist = parse_csv_env("MONOLITH_EDITOR_ACTION_ALLOWLIST");
-    g_editor_action_denylist  = parse_csv_env("MONOLITH_EDITOR_ACTION_DENYLIST");
-
-    log_msg(std::string("Started. Forwarding to ") + g_monolith_url);
-
+    g_editor_action_denylist = parse_csv_env("MONOLITH_EDITOR_ACTION_DENYLIST");
+    log_msg("Started. Forwarding to " + g_monolith_url);
     init_call_log();
-
-    // Start background health poll thread (detached = daemon)
     std::thread poller(health_poll_thread);
-    poller.detach();
-
-    // Main stdin read loop
-    std::string line;
-    while (std::getline(std::cin, line))
     {
-        // Trim
-        while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
-            line.pop_back();
-        if (line.empty())
-            continue;
-
-        // Parse JSON
-        json msg;
-        try
-        {
-            msg = json::parse(line);
-        }
-        catch (const json::parse_error& e)
-        {
-            log_msg(std::string("Bad JSON: ") + e.what());
-            continue;
-        }
-
-        std::string method = msg.value("method", "");
-        bool has_id = msg.contains("id");
-        std::string response;
-
-        if (method == "initialize")
-        {
-            response = handle_initialize(msg);
-            log_msg("Initialized");
-        }
-        else if (method == "notifications/initialized" || method == "initialized")
-        {
-            // Notification -- no response. Check if Monolith is up.
-            check_monolith_state_change();
-        }
-        else if (method == "ping")
-        {
-            response = handle_ping(msg);
-        }
-        else if (method == "tools/list")
-        {
-            check_monolith_state_change();
-            response = handle_tools_list(msg);
-        }
-        else if (method == "tools/call")
-        {
-            response = handle_tools_call(msg);
-        }
-        else
-        {
-            // Forward unknown methods to Monolith
-            double t0 = now_seconds();
-            std::string resp = post_monolith(msg.dump());
-            double duration_ms = (now_seconds() - t0) * 1000.0;
-            write_call_log_line(msg, resp, duration_ms);
-
-            if (!resp.empty())
-            {
-                response = resp;
+        RequestPool pool(env_int("MONOLITH_MAX_IN_FLIGHT", 8, 1, 32),
+                         env_int("MONOLITH_MAX_QUEUED", 64, 0, 1024));
+        std::string line;
+        while (std::getline(std::cin, line)) {
+            if (line.find_first_not_of(" \t\r\n") == std::string::npos) continue;
+            json msg;
+            try { msg = json::parse(line); }
+            catch (...) { write_stdout(make_jsonrpc_error(nullptr, -32700, "Invalid JSON")); continue; }
+            if (!msg.is_object() || !msg.contains("jsonrpc") || msg["jsonrpc"] != "2.0" ||
+                !msg.contains("method") || !msg["method"].is_string() ||
+                (msg.contains("id") && !msg["id"].is_string() && !msg["id"].is_number())) {
+                write_stdout(make_jsonrpc_error(nullptr, -32600, "Invalid JSON-RPC request")); continue;
             }
-            else if (has_id)
-            {
-                response = make_jsonrpc_error(msg["id"], -32601,
-                    "Method not found: " + method);
+            if (!msg.contains("id")) continue; // notifications never execute tools
+            if (msg.contains("params") && !msg["params"].is_object()) {
+                write_stdout(make_jsonrpc_error(msg["id"], -32602, "params must be an object")); continue;
             }
-            // else: notification with no id, silently drop
+            const auto method = msg.value("method", "");
+            if (method == "initialize") { write_stdout(handle_initialize(msg)); continue; }
+            if (method == "ping") { write_stdout(handle_ping(msg)); continue; }
+            if (method == "tools/call") {
+                const auto params = msg.value("params", json::object());
+                if (!params.contains("name") || !params["name"].is_string() ||
+                    (params.contains("arguments") && !params["arguments"].is_object())) {
+                    write_stdout(make_jsonrpc_error(msg["id"], -32602, "name must be a string; arguments must be an object")); continue;
+                }
+            }
+            const int code = pool.submit(msg);
+            if (code) write_stdout(make_jsonrpc_error(msg["id"], code, code == -32001
+                ? "Proxy queue full; request not executed. Retry with backoff." : "Request id already in flight"));
         }
-
-        if (!response.empty())
-            write_stdout(response);
-    }
-
-    // EOF on stdin -- clean exit
-    log_msg("stdin closed, exiting");
+    } // Drain accepted requests before stdout and log handles close.
+    { std::lock_guard<std::mutex> lock(g_poll_lock); g_stopping = true; }
+    g_poll_cv.notify_all(); poller.join();
+    if (g_call_log_handle != INVALID_HANDLE_VALUE) CloseHandle(g_call_log_handle);
     return 0;
 }
