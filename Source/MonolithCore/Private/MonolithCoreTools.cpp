@@ -1,4 +1,5 @@
 #include "MonolithCoreTools.h"
+#include "MonolithCoordination.h"
 #include "MonolithGuideTool.h"
 #include "MonolithCoreModule.h"
 #include "MonolithJsonUtils.h"
@@ -120,6 +121,7 @@ static FString MonolithTerseOneLineDescription(const FString& Full)
 void FMonolithCoreTools::RegisterAll()
 {
 	FMonolithToolRegistry& Registry = FMonolithToolRegistry::Get();
+	FMonolithCoordination::RegisterTool();
 
 	// monolith_discover
 	{
@@ -572,6 +574,17 @@ FMonolithActionResult FMonolithCoreTools::HandleStatus(const TSharedPtr<FJsonObj
 
 	// Project info
 	Result->SetStringField(TEXT("project_name"), FApp::GetProjectName());
+
+	// Public lease state helps independent proxies discover this editor's shared
+	// coordination capability. Status never contains the ownership token.
+	const FMonolithActionResult CoordinationStatus = FMonolithCoordination::Get().Handle(nullptr);
+	Result->SetObjectField(TEXT("coordination"), CoordinationStatus.Result);
+	auto Capabilities = MakeShared<FJsonObject>();
+	Capabilities->SetBoolField(TEXT("editor_workflow_leases"), true);
+	Capabilities->SetBoolField(TEXT("nested_lease_inheritance"), true);
+	Capabilities->SetStringField(TEXT("execution_thread"), TEXT("game_thread"));
+	Capabilities->SetStringField(TEXT("coordination_tool"), TEXT("monolith_coordination"));
+	Result->SetObjectField(TEXT("capabilities"), Capabilities);
 
 	return FMonolithActionResult::Success(Result);
 }

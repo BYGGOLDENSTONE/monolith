@@ -25,16 +25,23 @@ public:
 
 	/** Master enable for the Monolith MCP HTTP server. Set false to disable
 	 *  the localhost listener entirely (e.g. when working on an untrusted
-	 *  network and you don't need AI tooling for the session). UE's
-	 *  FHttpServerModule has no bind-address parameter, so the listener is
-	 *  reachable on all network interfaces — this flag is the user-facing
-	 *  kill-switch. Takes effect on next editor restart. (Issue #38) */
+	 *  network and you don't need AI tooling for the session). UE 5.7 defaults
+	 *  to localhost; HTTPServer.Listeners INI overrides can change the bind
+	 *  address. Takes effect on next editor restart. */
 	UPROPERTY(config, EditAnywhere, Category="MCP Server")
 	bool bMcpServerEnabled = true;
 
 	/** Port for the embedded MCP HTTP server */
 	UPROPERTY(config, EditAnywhere, Category="MCP Server", meta=(ClampMin="1024", ClampMax="65535"))
 	int32 ServerPort = 9316;
+
+	/** Maximum accepted MCP body size. Checked before JSON parsing. */
+	UPROPERTY(config, EditAnywhere, Category="MCP Server", meta=(ClampMin="1", ClampMax="256"))
+	int32 MaxRequestBodyMB = 32;
+
+	/** Bound legacy JSON-RPC batches to avoid monopolizing an editor tick. */
+	UPROPERTY(config, EditAnywhere, Category="MCP Server", meta=(ClampMin="1", ClampMax="256"))
+	int32 MaxBatchRequests = 64;
 
 	// --- Auto-Update ---
 

@@ -1,4 +1,5 @@
 #include "MonolithToolRegistry.h"
+#include "MonolithCoordination.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
 #include "MonolithFuzzyMatch.h"
@@ -205,6 +206,26 @@ FMonolithActionResult FMonolithToolRegistry::ExecuteAction(
 	const FString& Action,
 	const TSharedPtr<FJsonObject>& Params)
 {
+	return ExecuteAction(Namespace, Action, Params, /*bInheritLeaseContext=*/true);
+}
+
+FMonolithActionResult FMonolithToolRegistry::ExecuteAction(
+	const FString& Namespace,
+	const FString& Action,
+	const TSharedPtr<FJsonObject>& Params,
+	bool bInheritLeaseContext)
+{
+	// Domain delegates access editor UObjects. Transport workers must enqueue on
+	// the game thread; a registry mutex does not make UObject access thread-safe.
+	if (!IsInGameThread())
+	{
+		return FMonolithActionResult::Error(TEXT("Monolith actions must execute on the Unreal game thread. Enqueue the call through the editor HTTP server."), -32603);
+	}
+	FMonolithCoordination& Coordination = FMonolithCoordination::Get();
+	FString ExecutionToken;
+	FMonolithActionResult Access = Coordination.CheckAccess(Namespace, Action, Params, ExecutionToken, bInheritLeaseContext);
+	if (!Access.bSuccess) { return Access; }
+
 	FScopeLock Lock(&RegistryLock);
 
 	FString Key = MakeKey(Namespace, Action);
@@ -310,7 +331,14 @@ FMonolithActionResult FMonolithToolRegistry::ExecuteAction(
 	}
 
 	const FMonolithActionInfo& ActionInfo = RegAction->Info;
-	TSharedPtr<FJsonObject> EffectiveParams = Params.IsValid() ? Params : MakeShared<FJsonObject>();
+	// Own the top-level map: removing transport metadata and alias rewriting
+	// must not mutate a caller's params (batch handlers may reuse them).
+	TSharedPtr<FJsonObject> EffectiveParams = MakeShared<FJsonObject>();
+	if (Params.IsValid()) { EffectiveParams->Values = Params->Values; }
+	if (Namespace != TEXT("monolith") || Action != TEXT("coordination"))
+	{
+		EffectiveParams->RemoveField(TEXT("_lease_token"));
+	}
 
 	// K2 — alias rewriting BEFORE the required-param check.
 	if (ActionInfo.ParamSchema.IsValid())
@@ -403,7 +431,7 @@ FMonolithActionResult FMonolithToolRegistry::ExecuteAction(
 			return FMonolithActionResult::Error(
 				FString::Printf(TEXT("Missing required param(s): [%s]. Provided keys: [%s] — inspect the action's parameter schema via monolith_discover(\"<namespace>\") and supply all required fields."),
 					*FString::Join(Missing, TEXT(", ")),
-					*FString::Join(Provided, TEXT(", "))));
+					*FString::Join(Provided, TEXT(", "))), FMonolithJsonUtils::ErrInvalidParams);
 		}
 	}
 
@@ -501,6 +529,7 @@ FMonolithActionResult FMonolithToolRegistry::ExecuteAction(
 	FMonolithActionHandler HandlerCopy = RegAction->Handler;
 	Lock.Unlock();
 
+	FMonolithCoordination::FExecutionScope ExecutionScope(Coordination, ExecutionToken);
 	FMonolithActionResult ActionResult = HandlerCopy.Execute(EffectiveParams);
 
 	// Collect ALL post-handler warnings into a single channel, then attach once.

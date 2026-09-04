@@ -10,6 +10,7 @@
 // `Private/Reflection/Tests/MonolithReflectionWalkerTest.cpp`.
 
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithFuzzyMatch.h"
 #include "Async/Async.h"
@@ -242,11 +243,11 @@ bool FMonolithFuzzyMatchNoMatchPathTest::RunTest(const FString& /*Parameters*/)
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: Lock-release handover — concurrent known + unknown dispatches.
-// Asserts no deadlock (5s timeout) AND known-good latency does not spike
-// >10x baseline. Per plan §10 Threading Model: snapshot under lock, then
-// drop lock before sweeping. If the lock were held during the sweep, the
-// known-action's worker thread would stall.
+// Test 4: Registry metadata remains accessible while a game-thread handler
+// runs. Workers use metadata APIs only; UObject action dispatch is game-thread
+// only. A bounded wait inside the handler detects a held registry mutex without
+// relying on scheduler-sensitive latency ratios. Workers capture values only,
+// so even the failure/timeout path cannot outlive a stack capture.
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMonolithFuzzyMatchLockReleaseHandoverTest,
@@ -255,94 +256,56 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FMonolithFuzzyMatchLockReleaseHandoverTest::RunTest(const FString& /*Parameters*/)
 {
-	FMonolithToolRegistry& Registry = FMonolithToolRegistry::Get();
+	auto& Registry = FMonolithToolRegistry::Get();
+	const FString Namespace = TEXT("__fuzzy_lock_handover_test");
+	ON_SCOPE_EXIT { Registry.UnregisterNamespace(Namespace); };
+	Registry.RegisterAction(Namespace, TEXT("probe"), TEXT("Metadata lock probe"),
+		FMonolithActionHandler::CreateLambda([Namespace](const TSharedPtr<FJsonObject>&)
+		{
+			auto Worker = Async(EAsyncExecution::Thread, [Namespace]
+			{
+				auto& WorkerRegistry = FMonolithToolRegistry::Get();
+				return WorkerRegistry.GetNamespaces().Contains(Namespace)
+					&& WorkerRegistry.HasAction(Namespace, TEXT("probe"));
+			});
+			const bool bCompleted = Worker.WaitFor(FTimespan::FromSeconds(5));
+			auto Result = MakeShared<FJsonObject>();
+			Result->SetBoolField(TEXT("completed_during_handler"), bCompleted);
+			Result->SetBoolField(TEXT("metadata_valid"), bCompleted && Worker.Get());
+			return FMonolithActionResult::Success(Result);
+		}));
 
-	// Establish baseline latency for a single known-good dispatch.
-	double BaselineSec = 0.0;
+	const auto Probe = Registry.ExecuteAction(Namespace, TEXT("probe"), MakeShared<FJsonObject>());
+	TestTrue(TEXT("Game-thread handler executes"), Probe.bSuccess);
+	if (Probe.Result.IsValid())
 	{
-		const double T0 = FPlatformTime::Seconds();
-		FMonolithActionResult R = Registry.ExecuteAction(
-			TEXT("monolith"), TEXT("status"), MakeShared<FJsonObject>());
-		BaselineSec = FPlatformTime::Seconds() - T0;
-		TestTrue(TEXT("baseline status call succeeds"), R.bSuccess);
+		TestTrue(TEXT("Worker acquires registry mutex before handler returns"), Probe.Result->GetBoolField(TEXT("completed_during_handler")));
+		TestTrue(TEXT("Worker sees consistent registry metadata"), Probe.Result->GetBoolField(TEXT("metadata_valid")));
 	}
-	// Guard against pathologically small baselines (clock noise on idle hosts)
-	// inflating the >10x check. Floor at 100us — anything faster than that
-	// is below measurement resolution.
-	const double EffectiveBaseline = FMath::Max(BaselineSec, 0.0001);
 
-	// Each thread does N iterations; the test budget is 5 seconds total.
-	constexpr int32 IterationsPerThread = 50;
-
-	TAtomic<int32> SuccessCount(0);
-	TAtomic<int32> UnknownCount(0);
-	// Store max-latency as int64 nanoseconds for portable atomic semantics.
-	TAtomic<int64> MaxSuccessLatencyNs(0);
-
-	auto KnownWorker = [&]()
+	// Exercise unknown-action suggestion snapshots on the game thread while
+	// a worker repeatedly reads registry metadata. No handlers run on workers.
+	auto MetadataWorker = Async(EAsyncExecution::Thread, [Namespace]
 	{
-		for (int32 i = 0; i < IterationsPerThread; ++i)
+		for (int32 Index = 0; Index < 200; ++Index)
 		{
-			const double T0 = FPlatformTime::Seconds();
-			FMonolithActionResult R = Registry.ExecuteAction(
-				TEXT("monolith"), TEXT("status"), MakeShared<FJsonObject>());
-			const double Elapsed = FPlatformTime::Seconds() - T0;
-			if (R.bSuccess)
-			{
-				SuccessCount.IncrementExchange();
-			}
-			// Track max latency observed across both workers (in nanoseconds).
-			const int64 ElapsedNs = static_cast<int64>(Elapsed * 1.0e9);
-			int64 Prev = MaxSuccessLatencyNs.Load();
-			while (ElapsedNs > Prev && !MaxSuccessLatencyNs.CompareExchange(Prev, ElapsedNs))
-			{
-				// retry — Prev is updated to current value on CAS failure
-			}
+			auto& WorkerRegistry = FMonolithToolRegistry::Get();
+			if (!WorkerRegistry.GetNamespaces().Contains(Namespace)
+				|| !WorkerRegistry.HasAction(Namespace, TEXT("probe"))) { return false; }
 		}
-	};
-
-	auto UnknownWorker = [&]()
+		return true;
+	});
+	for (int32 Index = 0; Index < 50; ++Index)
 	{
-		for (int32 i = 0; i < IterationsPerThread; ++i)
-		{
-			// Vary the gibberish each iteration so caches/sort don't hide
-			// repeated-key amortisation.
-			const FString Ns = FString::Printf(TEXT("xyzzy_%d"), i);
-			FMonolithActionResult R = Registry.ExecuteAction(
-				Ns, TEXT("nonsense_action"), MakeShared<FJsonObject>());
-			if (!R.bSuccess)
-			{
-				UnknownCount.IncrementExchange();
-			}
-		}
-	};
-
-	const double Start = FPlatformTime::Seconds();
-	TFuture<void> F1 = Async(EAsyncExecution::Thread, KnownWorker);
-	TFuture<void> F2 = Async(EAsyncExecution::Thread, UnknownWorker);
-
-	// 5s timeout. If WaitFor returns false, we conclude deadlock.
-	const FTimespan Timeout = FTimespan::FromSeconds(5.0);
-	const bool bF1Done = F1.WaitFor(Timeout);
-	const bool bF2Done = F2.WaitFor(Timeout);
-	const double Elapsed = FPlatformTime::Seconds() - Start;
-
-	TestTrue(TEXT("known-action worker completed within 5s (no deadlock)"), bF1Done);
-	TestTrue(TEXT("unknown-action worker completed within 5s (no deadlock)"), bF2Done);
-	TestEqual(TEXT("all known dispatches succeeded"), SuccessCount.Load(), IterationsPerThread);
-	TestEqual(TEXT("all unknown dispatches errored"), UnknownCount.Load(), IterationsPerThread);
-
-	const double Max = static_cast<double>(MaxSuccessLatencyNs.Load()) / 1.0e9;
-	const double Ratio = Max / EffectiveBaseline;
-	// 10x is the rough budget per plan §12. Loose because CI runners are noisy;
-	// the test's primary purpose is the deadlock check.
-	TestTrue(
-		FString::Printf(TEXT("known-action max latency (%.4fs) within 10x baseline (%.4fs)"), Max, EffectiveBaseline),
-		Ratio <= 10.0 || Max < 0.05); // <50ms absolute is also acceptable
-	AddInfo(FString::Printf(TEXT("Handover: %d/%d known OK, %d/%d unknown err, baseline=%.4fs max=%.4fs total=%.2fs"),
-		SuccessCount.Load(), IterationsPerThread,
-		UnknownCount.Load(), IterationsPerThread,
-		EffectiveBaseline, Max, Elapsed));
+		const auto Missing = Registry.ExecuteAction(Namespace,
+			FString::Printf(TEXT("probee_%d"), Index), MakeShared<FJsonObject>());
+		TestFalse(TEXT("Unknown action rejected on game thread"), Missing.bSuccess);
+		TestEqual(TEXT("Unknown action keeps method-not-found code"), Missing.ErrorCode, -32601);
+		TestTrue(TEXT("Fuzzy diagnostics retained"), Missing.ErrorData.IsValid());
+	}
+	const bool bMetadataDone = MetadataWorker.WaitFor(FTimespan::FromSeconds(5));
+	TestTrue(TEXT("Concurrent metadata reader completed"), bMetadataDone);
+	if (bMetadataDone) { TestTrue(TEXT("Metadata stayed valid during fuzzy dispatch"), MetadataWorker.Get()); }
 	return true;
 }
 

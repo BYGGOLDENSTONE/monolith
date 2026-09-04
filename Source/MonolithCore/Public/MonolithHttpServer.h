@@ -42,6 +42,7 @@ public:
 	int32 GetPort() const { return BoundPort; }
 
 private:
+	friend class FMonolithHttpProtocolTest;
 	// --- Route Handlers ---
 	bool HandlePostMcp(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete);
 	bool HandleGetMcp(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete);
@@ -63,6 +64,8 @@ private:
 	// cross-origin reads when ACAO is missing, so omitting the header for
 	// non-allowlisted origins is the defence — see Issue #38.
 	void AddCorsHeaders(FHttpServerResponse& Response, const FHttpServerRequest& Request);
+	/** Reject disallowed browser origins before any action can run. */
+	bool RejectOrigin(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete);
 
 	/** Register all HTTP routes on the current HttpRouter. */
 	void BindRoutes();

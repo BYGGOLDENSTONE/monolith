@@ -120,8 +120,16 @@ public:
 	/** Unregister all actions in a namespace (called during module shutdown) */
 	void UnregisterNamespace(const FString& Namespace);
 
-	/** Execute an action by namespace + action name */
+	/** Execute on the game thread, inheriting a synchronous parent handler's
+	 * lease. Keep this out-of-line overload for existing extension binaries.
+	 */
 	FMonolithActionResult ExecuteAction(const FString& Namespace, const FString& Action, const TSharedPtr<FJsonObject>& Params);
+
+	/** Transports must pass false for bInheritLeaseContext; only trusted
+	 * synchronous nested handlers inherit a parent's lease context.
+	 */
+	FMonolithActionResult ExecuteAction(const FString& Namespace, const FString& Action, const TSharedPtr<FJsonObject>& Params,
+		bool bInheritLeaseContext);
 
 	/** Get all registered namespaces */
 	TArray<FString> GetNamespaces() const;

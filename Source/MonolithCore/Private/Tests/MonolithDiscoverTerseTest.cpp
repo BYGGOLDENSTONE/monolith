@@ -206,8 +206,8 @@ bool FMonolithDiscoverVerboseAliasTest::RunTest(const FString& /*Parameters*/)
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: filter — only actions whose name/description contains "status"
-// (case-insensitive); `total` reflects the filtered count.
+// Test 4: filter matches full registered descriptions (even when the matching
+// text is omitted from the terse preview), case-insensitively and without loss.
 // ---------------------------------------------------------------------------
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMonolithDiscoverFilterTest,
@@ -217,10 +217,21 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMonolithDiscoverFilterTest::RunTest(const FString& /*Parameters*/)
 {
 	using namespace MonolithDiscoverTerseTestDetail;
+	const FString Filter = TEXT("StAtUs");
+	TSet<FString> ExpectedActions;
+	for (const FMonolithActionInfo& Info : FMonolithToolRegistry::Get().GetActions(TEXT("monolith")))
+	{
+		if (Info.Action.Contains(Filter, ESearchCase::IgnoreCase)
+			|| Info.Description.Contains(Filter, ESearchCase::IgnoreCase))
+		{
+			ExpectedActions.Add(Info.Action);
+		}
+	}
+	TestTrue(TEXT("Full registry contains matching actions"), ExpectedActions.Num() > 0);
 
 	TSharedPtr<FJsonObject> Params = MakeShared<FJsonObject>();
 	Params->SetStringField(TEXT("namespace"), TEXT("monolith"));
-	Params->SetStringField(TEXT("filter"), TEXT("status"));
+	Params->SetStringField(TEXT("filter"), Filter);
 
 	const FMonolithActionResult R = Discover(Params);
 	TestTrue(TEXT("filtered discover succeeds"), R.bSuccess);
@@ -229,20 +240,23 @@ bool FMonolithDiscoverFilterTest::RunTest(const FString& /*Parameters*/)
 	TestNotNull(TEXT("actions array present"), Arr);
 	if (Arr)
 	{
-		// Every returned action must match "status" in name OR description (case-insensitive).
+		TSet<FString> ActualActions;
+		// Match against source metadata, not the deliberately truncated preview.
 		for (const TSharedPtr<FJsonValue>& Val : *Arr)
 		{
 			const TSharedPtr<FJsonObject>* Obj = nullptr;
 			if (Val.IsValid() && Val->TryGetObject(Obj) && Obj)
 			{
-				FString Name, Desc;
+				FString Name;
 				(*Obj)->TryGetStringField(TEXT("action"), Name);
-				(*Obj)->TryGetStringField(TEXT("description"), Desc);
-				const bool bMatches = Name.Contains(TEXT("status"), ESearchCase::IgnoreCase)
-					|| Desc.Contains(TEXT("status"), ESearchCase::IgnoreCase);
-				TestTrue(TEXT("filtered action matches 'status'"), bMatches);
+				TestTrue(TEXT("Action name or full description matches filter"), ExpectedActions.Contains(Name));
+				TestFalse(TEXT("Filtered action is not duplicated"), ActualActions.Contains(Name));
+				ActualActions.Add(Name);
 			}
+			else { AddError(TEXT("Filtered action must be a JSON object")); }
 		}
+		TestEqual(TEXT("All full-description matches returned"), ActualActions.Num(), ExpectedActions.Num());
+		TestTrue(TEXT("No matching action omitted"), ActualActions.Includes(ExpectedActions));
 
 		// `total` equals the filtered (returned) count when no pagination is applied.
 		if (R.Result.IsValid())
