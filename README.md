@@ -2,6 +2,18 @@
 
 **One plugin. Every Unreal domain. Zero dependencies.**
 
+**Development branch: multi-agent reliability for UE 5.7.4.** Native and Python
+proxies now accept concurrent requests with bounded queues. `monolith_coordination`
+provides editor-wide workflow leases across clients; Unreal actions remain on the
+game thread. Includes discoverable `SKILL.md` entrypoints and transport regression
+coverage. See [multi-agent setup](Docs/MULTI_AGENT.md), [audit and production gates](Docs/AUDIT_UE57.md),
+and [validation results](Docs/VALIDATION_UE57.md).
+
+Build the Windows proxy with `powershell -File Scripts/build_proxy.ps1`; rebuild
+the plugin against your engine before use. Update the host's MCP executable path
+and reconnect after replacing the binary. No host can expose tools to a subagent
+that its own tool permissions exclude; the setup guide covers this separately.
+
 [![UE 5.7 / 5.8](https://img.shields.io/badge/Unreal-5.7%20%2F%205.8-blue)](https://unrealengine.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/Protocol-MCP-purple)](https://modelcontextprotocol.io)
@@ -91,11 +103,13 @@ Off by default as of v0.14.6. Opt in via **Auto Update Enabled** in Editor Prefe
 
 ## Network exposure
 
-Monolith starts a local HTTP server on port 9316 to receive MCP traffic. UE's `FHttpServerModule` does **not** expose a bind-address parameter, so the listener is reachable on all network interfaces, not just `127.0.0.1`. CORS is restricted to localhost origins (which blocks browser-based cross-origin reads) but does **not** block direct HTTP requests from other devices on the same LAN.
+Monolith starts a local HTTP server on port 9316. In UE 5.7.4,
+`FHttpServerListenerConfig` defaults to `localhost`; `HTTPServer.Listeners`
+settings in Engine INI files can override it. Keep the listener on loopback.
+The server rejects invalid browser `Origin` headers with HTTP 403 before executing
+an action. This is a local development tool without remote authentication.
 
-If you work on an untrusted network: either add a Windows Firewall rule blocking inbound TCP on port 9316 from non-loopback addresses, or untick **MCP Server Enabled** in Editor Preferences > Plugins > Monolith and restart the editor.
-
-See [SECURITY.md](SECURITY.md) for the full threat model and disclosure policy.
+See [SECURITY.md](SECURITY.md) for the threat model and configuration details.
 
 ---
 

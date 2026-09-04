@@ -4,7 +4,17 @@ All notable changes to Monolith will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [Unreleased] — multi-agent reliability
+
+- Both proxies use bounded concurrent workers (8 running + 64 queued by default), preserve independent request IDs, and keep local ping responsive. Removed native argument-based repeat suppression.
+- Added editor-process workflow leases through `monolith_coordination`, with stale-token fencing, nested action context, structured busy errors and game-thread enforcement.
+- Proxy transport errors report unknown execution outcome, without replay or redirects. Added malformed-response validation, atomic endpoint/project-scoped tool caches, per-process logs, and native HTTPS/IPv6 URL parsing.
+- Corrected HTTP Origin rejection, notification handling, legacy batch framing, stateless GET/DELETE behavior, protocol negotiation and error metadata; bounded request bodies/batches.
+- Added portable Windows proxy build script, Python/native transport CI, optional live-editor contract tests and UE automation coverage.
+- Added 19 discoverable skill entrypoints, an opt-in skill installer, host configuration examples, multi-agent handoff guidance and an evidence-based production audit.
+- Replaced placeholder reflection tests with real UObject/container assertions and reject object/array JSON for scalar writes before import can corrupt values.
+- AI discovery reports unavailable State Tree/EQS enumeration as an explicit capability error; invalid inputs and missing required parameters return invalid-parameter codes.
+
 
 ## [0.22.0] - 2026-08-01
 

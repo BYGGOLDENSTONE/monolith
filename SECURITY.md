@@ -34,9 +34,20 @@ Only the latest tagged release is supported. Older versions do not receive backp
 - Keep `bAutoUpdateEnabled = false` (the default as of v0.14.6) and apply updates manually
 - Verify the `Monolith-SHA256:` value in the release notes against the SHA256 of the downloaded zip before extracting (auto-updater does this for you when enabled)
 - Do not run the editor on a machine where untrusted users have local accounts
-- The MCP server binds to all network interfaces (limitation of UE's `FHttpServerModule`). If your machine is on an untrusted LAN, either:
-  - Add a Windows Firewall rule blocking inbound TCP on port 9316 from non-loopback addresses, OR
-  - Set `bMcpServerEnabled = false` in Editor Preferences > Plugins > Monolith when not actively using AI tooling
+- UE 5.7.4's `FHttpServerListenerConfig` defaults to `localhost`. Engine INI overrides in `[HTTPServer.Listeners]` can change it; inspect `DefaultBindAddress` and `ListenerOverrides` when troubleshooting network exposure. A per-port configuration is:
+
+  ```ini
+  [HTTPServer.Listeners]
+  +ListenerOverrides=(Port=9316,BindAddress="127.0.0.1")
+  ```
+
+- Invalid or duplicate browser Origin headers receive HTTP 403 before any action runs. A missing Origin is allowed for native MCP clients. This is origin validation, not user authentication.
+- Coordination tokens protect cooperative workflows from interference; they are not credentials or a remote-access security boundary. Manual editor input and filesystem writes are outside the lease.
+- Proxies never automatically replay failed mutations or follow HTTP redirects. A transport error can still mean the editor executed the action; inspect state before retrying.
+- Proxy call logs use per-process `Saved/Logs/MonolithCalls-<pid>.jsonl` files. They record request IDs, action names, argument hashes and outcomes, not raw arguments or lease tokens. Retention is user-managed.
+- The MCP request-body limit is checked before Monolith JSON parsing. UE's HTTP layer has already received the body, so this is not a network-level memory/DoS limit.
+
+Protocol reference: [MCP transport security and connection semantics](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
 
 ## Acknowledgements
 

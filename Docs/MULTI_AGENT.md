@@ -50,6 +50,8 @@ Send this to `monolith_coordination`. Retain the `_lease_token` returned on succ
 
 Send the example to `blueprint_query` only after inspecting its live schema. Wait for each dependent result. Use `monolith_discover` and `describe_query` action `action_schema` to avoid relying on static action tables.
 
+Core management tools such as `monolith_reindex` receive `_lease_token` directly in their argument object, alongside their other arguments. Their live input schemas advertise this optional field. Domain tools receive it inside `params`, as above.
+
 Renew before expiry and retain the lease through asynchronous compile completion, save and readback:
 
 ```json
@@ -64,7 +66,7 @@ Release after verification:
 
 Inspect without a token using `{"operation":"status"}`. TTL is 10–600 seconds. Do not share the token with concurrent workers; ownership of a token permits calls but does not order that owner's requests. Choose a TTL appropriate to the operation, renew with headroom, and avoid handing ownership to another agent while an asynchronous operation is still running.
 
-While a lease is active, other clients' unowned calls are rejected. Discovery, status, guide, and `describe_query`'s `action_schema` / `search_actions` are exempt from lease ownership for planning; a busy game thread can still delay them. This is a cooperative guard for local clients. It is process-local, disappears on editor restart, and does not control manual editor input, shell writes or other plugins. A lease does not promise rollback, cancellation, atomic multi-call transactions or exactly-once execution. Without an active lease, legacy clients may still operate. To use older Monolith builds without coordination, designate one editor worker.
+While a lease is active, other clients' unowned calls are rejected. Discovery, status, guide, and `describe_query`'s `action_schema` are exempt from lease ownership for planning; a busy game thread can still delay them. Search across namespaces with `monolith_discover({"filter":"search term"})`. This is a cooperative guard for local clients. It is process-local, disappears on editor restart, and does not control manual editor input, shell writes or other plugins. A lease does not promise rollback, cancellation, atomic multi-call transactions or exactly-once execution. Without an active lease, legacy clients may still operate. To use older Monolith builds without coordination, designate one editor worker.
 
 On busy responses, do independent work or use bounded backoff. Do not spin on acquire. After a timeout, disconnect, cancellation or editor restart, a submitted mutation may have completed or partially completed. Inspect asset state, compilation and logs before retrying; never blindly replay a non-idempotent call. If an outcome cannot be determined, preserve the affected paths and failure context for the lead rather than continuing dependent writes.
 

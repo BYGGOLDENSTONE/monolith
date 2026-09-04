@@ -9,18 +9,30 @@
 You are an AI agent driving an Unreal Engine editor through Monolith's MCP tools. Three calls orient you before you touch anything:
 
 1. **`monolith_discover()`** — no arguments. Returns the namespace inventory: every namespace, its action count, and which optional namespaces are gated off in this project (e.g. `gas`, `combograph`, `logicdriver` only register when their plugin is present). This response also carries a `guide_hint` pointing back here. Call `monolith_discover("<namespace>")` to get the full action list for one namespace (terse by default: action names + one-line descriptions) — do this before calling any action you have not used. For an action's full **parameter schema**, call `describe_query("action_schema", ...)` (or pass `detail=true` to `monolith_discover` to inline every action's schema), rather than guessing argument names.
-2. **`monolith_status()`** — confirms the editor is reachable, reports the plugin version and the live total action count. If this fails or the MCP connection drops, the editor is down — nothing else will work until it is back up.
+2. **`monolith_status()`** — confirms the editor is reachable, reports the plugin version and the live total action count. A failure or connection drop may mean a busy editor, timeout, invalid endpoint, or process exit. Check process/endpoint identity and logs; mutation outcome may be unknown.
 3. **`monolith_guide(section="recipes")`** — pull the worked cross-namespace examples once you know what you want to build.
 
 Each `monolith_discover("<namespace>")` costs real tokens — even terse (names + one-line descriptions), a large namespace's listing is sizeable, and `detail=true` (full schemas) is far heavier. Spend that cost intentionally: discover the one or two namespaces your task needs, not all of them, and reach for `describe_query("action_schema", ...)` when you only need one action's schema. The surface is large — roughly 1600+ actions across ~30 namespaces — and shifts between releases, so never rely on an exact count written in prose: trust the live `monolith_discover()` / `monolith_status()` figure over any number you read here or in the docs.
 
 The golden rule underneath all of this: **discover before you guess.** Action names, parameter names, and which namespaces exist are all answerable at runtime. Fabricating any of them wastes a round-trip on a guaranteed error.
 
+**Shared editor workflows.** Check `monolith_status.capabilities.editor_workflow_leases`.
+For a multi-call edit, call `monolith_coordination` with
+`{"operation":"acquire","owner":"task/agent","ttl_seconds":120}`. Pass the returned
+`_lease_token` inside every domain call's `params`, wait for dependent results,
+renew before expiry, and release after compile/save/readback. Other clients receive
+structured busy errors without executing. Discovery/status/guide/schema lookup
+remain available. Do not share a token with concurrent workers. Leases are
+cooperative and process-local: they do not undo changes, cancel asynchronous jobs,
+or control manual editor input. After a timeout inspect current state before any
+mutation retry. A subagent missing tools needs host tool access; a skill cannot
+create that access. See `Docs/MULTI_AGENT.md` for setup and handoff examples.
+
 ## recipes
 
 These are cross-namespace flows that no single namespace's docs cover. Each step names `namespace.action` and ends with a verify call. For single-asset authoring chains (one material, one Sound Cue, one state machine), use the pipelines in `Docs/SPEC_CORE.md` §13 instead — the recipes here are the multi-namespace cases.
 
-**Pointer — spec builders.** Several namespaces expose a `build_*_from_spec` family (`build_material_graph` with a `graph_spec`, `build_sm_from_spec`, `build_sound_cue_from_spec`, `build_ui_from_spec`, and others). These are transactional: one call populates a whole graph with validation, connection resolution, and rollback. Prefer them over hand-sequencing `create → add → connect`. Discover the exact spec shape with `monolith_discover("<namespace>")` and read the schema for the builder action.
+**Pointer — spec builders.** Several namespaces expose a `build_*_from_spec` family (`build_material_graph` with a `graph_spec`, `build_sm_from_spec`, `build_sound_cue_from_spec`, `build_ui_from_spec`, and others). These combine graph writes, validation and connection resolution. Transaction and rollback support varies by builder; inspect the live schema and per-item results before relying on atomicity. Prefer them over hand-sequencing `create → add → connect`. Discover the exact spec shape with `monolith_discover("<namespace>")` and read the schema for the builder action.
 
 **Recipe 1 — Ship a melee ability with audio and HUD feedback.**
 1. `gas.create_gameplay_ability` — author the ability asset (gated on `WITH_GBA`).

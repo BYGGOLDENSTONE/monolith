@@ -856,19 +856,21 @@ Unknown action / unknown namespace dispatch errors now carry a `data.suggestions
 
 ### 14.6 Proxy Call Log (Phase 4, 2026-05-27)
 
-Both proxies now emit a one-line-per-call JSONL log to `Saved/Logs/MonolithCalls.jsonl` (project-root-relative). Local-only, no phone-home.
+Both proxies now emit a one-line-per-call JSONL log to `Saved/Logs/MonolithCalls-<pid>.jsonl` (project-root-relative). Local-only, no phone-home.
 
-**Schema.** Eight fields per line:
+**Schema.** Fields per line:
 
 | Field | Type | Meaning |
 |-------|------|---------|
+| `proxy_pid` | int | Proxy process identifier. |
+| `request_id` | string/number/null | Original JSON-RPC request identifier. |
 | `ts` | string | ISO-8601 UTC timestamp. |
 | `namespace` | string | Top-level tool name. |
 | `action` | string | Action name within the namespace (or `""` for single-action tools). |
 | `params_hash` | string | SHA-1 hex digest over canonicalised params JSON (sorted keys, no whitespace). |
-| `duration_ms` | int | Round-trip wall time including server dispatch + JSON parse. |
-| `ok` | bool | `true` on JSON-RPC success, `false` on JSON-RPC error. |
-| `error_code` | int? | JSON-RPC error code on failure; omitted on success. |
+| `duration_ms` | number | Round-trip wall time including server dispatch + JSON parse. |
+| `ok` | bool | False on transport failure, JSON-RPC error, or MCP `isError`. |
+| `error_code` | int/null | JSON-RPC error code when present; null otherwise. |
 | `result_bytes` | int | Size of the result body. |
 
 **Canonicalisation.** Params are JSON-canonicalised (recursively sorted object keys, no whitespace) before hashing — `FCrc::StrCrc32` is NOT used; SHA-1 over the canonical bytes is the contract. Identical params shapes hash identically regardless of input key order.
@@ -877,7 +879,7 @@ Both proxies now emit a one-line-per-call JSONL log to `Saved/Logs/MonolithCalls
 
 **Opt-out.** Set `MONOLITH_CALL_LOG=0` in the environment. Default is on.
 
-**Rotation.** User-managed — delete `Saved/Logs/MonolithCalls.jsonl` to reset. The proxy appends; it does not truncate, rotate, or cap file size.
+**Rotation.** User-managed — delete `Saved/Logs/MonolithCalls-<pid>.jsonl` to reset. The proxy appends; it does not truncate, rotate, or cap file size.
 
 ---
 
@@ -894,3 +896,28 @@ Both proxies now emit a one-line-per-call JSONL log to `Saved/Logs/MonolithCalls
 **No duplication.** The guide deliberately omits a pipelines section — cross-module pipeline chains live in [§13 Pipelines](#pipelines) and are cross-linked, not re-authored. It also omits a per-namespace action table (that is §12 + `Docs/references/MCP.md`). `skills_map` points at `Skills/<topic>/SKILL.md` rather than inlining skill bodies; `gotchas` cross-links `Docs/references/UE57Gotchas.md`.
 
 **Offline parity.** `monolith_query.exe monolith guide` serves the same section-keyed surface from the standalone CLI.
+
+
+## Multi-agent transport and workflow coordination
+
+See [MULTI_AGENT.md](MULTI_AGENT.md) for exact request examples and settings.
+`monolith_coordination` operations `status`, `acquire`, `renew`, `release` manage one
+editor-process lease. TTL defaults to 120 seconds, bounded to 10..600. Acquisition
+returns `_lease_token`; every protected domain request supplies it in params.
+Competing calls fail before execution with `-32010`; stale tokens fail with
+`-32011`, including after release/restart. An active synchronous handler may finish
+past expiry; the next top-level request is fenced. Nested synchronous registry
+calls inherit ownership; separate HTTP dispatches explicitly do not. No rollback,
+parallel UObject mutation, or asynchronous-job cancellation is implied.
+
+`monolith_status.capabilities` advertises support. Discovery/status/guide and
+`describe.action_schema` remain available while held. Cross-namespace action search
+uses `monolith_discover` with `filter`, not a separate describe action.
+Tool errors preserve code/data in text JSON and `structuredContent` so all clients
+can inspect `executed`, retry guidance, and suggestions. HTTP has no persistent MCP
+session; GET/DELETE return 405. Legacy batches retain array response framing.
+
+Proxy queues are bounded per process. Overflow returns `-32001` without forwarding;
+transport failures have unknown outcome and are never replayed automatically.
+Caches publish atomically and are scoped to endpoint plus project. Logs include
+`proxy_pid` and `request_id`, and MCP `isError` outcomes count as failures.
