@@ -37,12 +37,12 @@ monolith_discover({ namespace: "config" })
 | Action | Purpose |
 |--------|---------|
 | `validate_material` | Check for errors, unused nodes, broken connections |
-| `get_all_expressions` | Count instruction/texture samples per material |
-| `render_preview` | Trigger compilation to get shader stats |
+| `get_all_expressions` | Inspect graph expressions; this is not compiled instruction count |
+| `get_compilation_stats` | Inspect compiled statistics when available; verify the live schema |
 
 ### Niagara Inspection (`niagara_query`)
 
-Use `monolith_discover({ namespace: "niagara" })` to see all 41 available actions. Key ones for performance:
+Use `monolith_discover({ namespace: "niagara" })` to see available actions. Key ones for performance:
 
 | Action | Purpose |
 |--------|---------|
@@ -83,22 +83,15 @@ config_query({ action: "search_config", params: { query: "Shadow", file: "Defaul
 config_query({ action: "search_config", params: { query: "TSR", file: "DefaultEngine" } })
 ```
 
-## High-Impact INI Settings
+## Measurement before configuration changes
 
-These are the most impactful performance CVars to audit:
+Record target hardware, engine patch, RHI, resolution, scalability, and a repeatable scene. Capture frame-time distributions, CPU/GPU bottlenecks and memory, then change one relevant setting and compare the same workload. Use [Unreal Insights](https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-insights-in-unreal-engine?application_version=5.7) for trace-based investigation.
 
-| Setting | Impact | Notes |
-|---------|--------|-------|
-| `r.Lumen.TraceMeshSDFs` | ~1-2ms GPU | Set to 0 if not using mesh SDF tracing |
-| `r.Shadow.Virtual.SMRT.RayCountDirectional` | ~0.5ms GPU | 8 is default, 4 is often sufficient |
-| `gc.IncrementalBeginDestroyEnabled` | Frame spikes | Enable to eliminate GC hitches |
-| `r.StochasticInterpolation` | ~0.5ms GPU | Set to 2 for better perf |
-| `r.AntiAliasingMethod` | Varies | TSR handles aliasing — MSAA often redundant |
-| `r.Lumen.Reflections.AsyncCompute` | White flash | UE-354891 bug, keep at 0 until 5.7.2 |
+Resolve current CVar values and help before editing. Fixed GPU-millisecond savings, universal shader budgets, or old bug workarounds are not valid evidence for UE 5.7.4 on different hardware. Preserve the baseline and keep changes that improve measured results without unacceptable visual or gameplay regressions.
 
 ## Tips
 
 - Use `explain_setting` before changing any unfamiliar CVar
 - `diff_from_default` is the fastest way to see all project customizations
-- Material instruction counts from `get_all_expressions` correlate with pixel shader cost
+- Inspect compiled shader stats; graph expressions alone cannot establish GPU cost
 - Use `list_emitters` + `list_renderers` to audit Niagara system complexity

@@ -1,35 +1,14 @@
 ---
 name: material-reference
-description: Index of material reference documents. Provides quick-reference PBR rules, HLSL gotchas, and performance budgets. Points to detailed docs on demand. Use when creating, optimizing, or debugging materials.
-type: skill
+description: Version-aware PBR and material performance validation references for Unreal Engine.
 ---
 
-# Material Reference Library
+# Material reference
 
-## Quick Reference
+Choose material inputs from measured or suitable artistic references and verify their appearance under representative lighting. Unreal's physically based material model exposes base color, roughness, metallic and specular inputs; use [Epic's UE 5.7 material guide](https://dev.epicgames.com/documentation/en-us/unreal-engine/physically-based-materials-in-unreal-engine?application_version=5.7) for their meaning and measured examples.
 
-- **Sampler limit:** 16 per material (use Shared:Wrap for more textures)
-- **Instruction budgets:** Opaque < 150, Translucent < 200, Post-process < 100
-- **GPU cost:** MAD=4 cycles, Division=20, Pow/Sin/Cos=16, Tan=52
-- **Static switches:** Each doubles permutations. Max 6 per master material.
-- **Rust is NOT metallic.** Iron oxide is dielectric (Metallic=0.0).
-- **Non-metal BaseColor:** Never below sRGB 30, never above sRGB 240.
-- **Wet surfaces (Lagarde):** Roughness * 0.3, BaseColor squared, saturation boost.
-- **MaterialFloat = half.** Use it for platform portability in Custom HLSL.
-- **clip() disabled on Nanite passes.** ddx/ddy return 0 in compute.
-- **MPC limit:** 2 Material Parameter Collections per material.
-- **CPD over DMI:** Custom Primitive Data keeps draw call batching; Dynamic Material Instances break it.
-- **Alpha gotcha:** NEVER use BLEND_Translucent for RT alpha. Use BLEND_AlphaComposite.
+There is no universal shader-instruction, arithmetic-cycle or GPU-millisecond budget for every material. Record target hardware, shader platform, resolution, blend mode and workload. Inspect compiled shader statistics and compare representative frame captures; graph expression count is not an instruction count.
 
-## Reference Documents
+For custom HLSL, verify helpers, precision types, derivative support and shader pass constraints against the installed engine source and target compiler. Compile on each shipping RHI. Do not infer portability from a single editor preview.
 
-Read these on demand when the topic is relevant:
-
-| File | Content |
-|------|---------|
-| `Docs/references/materials/hlsl-custom-node-guide.md` | FMaterialPixelParameters/VertexParameters fields, View uniforms, helper functions, HLSL gotchas, common recipes (noise, fresnel, dissolve, triplanar, flow map) |
-| `Docs/references/materials/pbr-values.md` | PBR values by category: metals, organics/horror (blood, bone, flesh), building materials, environment, corrosion. Key PBR rules |
-| `Docs/references/materials/material-patterns.md` | Wet surface (Lagarde), subsurface blood/skin, dissolve, emissive pulse, damage overlay, decals, masked vs translucent, degradation, dark environment, hologram, POM |
-| `Docs/references/materials/material-performance.md` | Instruction budgets, GPU cycle costs, sampler budget, static switch math, blend mode costs, CPD vs DMI, texture vs math tradeoffs, debugging tools |
-| `Docs/references/materials/material-systems.md` | Master material architecture, MIC vs MID, MPC layout, material function libraries, material layers, static vs dynamic branch, debugging checklist |
-| `Docs/references/materials/anti-tiling.md` | Iq's 2-sample offset (default technique), macro variation, detail overlay, hex tiling, FluidNinja texture recommendations, anti-tiling checklist |
+For Monolith work, discover `material` and describe the selected action before using it. Use live compiled stats where available, then evaluate overdraw, scene usage and runtime cost. The repository does not include the older `Docs/references/materials/` library; this guide deliberately uses available references.

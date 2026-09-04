@@ -1,0 +1,12 @@
+# Merge into the host configuration after replacing the absolute plugin path.
+# Separate worker processes may point to the same editor endpoint.
+[mcp_servers.monolith]
+command = "python"
+args = ["D:/Projects/MyGame/Plugins/Monolith/Scripts/monolith_proxy.py"]
+tool_timeout_sec = 150
+
+[mcp_servers.monolith.env]
+MONOLITH_URL = "http://localhost:9316/mcp"
+MONOLITH_MAX_IN_FLIGHT = "8"
+MONOLITH_MAX_QUEUED = "64"
+MONOLITH_TIMEOUT_SECONDS = "120"

@@ -1,73 +1,33 @@
 ---
 name: unreal-build
-description: Use when building, compiling, or fixing build errors in Unreal Engine projects. Determines whether to use Live Coding or UBT based on what changed.
+description: Build Unreal projects and diagnose compilation failures using the installed engine, Live Coding status, and reproducible full builds.
 ---
 
-# Unreal Build — Smart Build Decision Guide
+# Unreal build workflow
 
-## Step 1: Check What Changed
+Discover the actual engine root, `.uproject`, target and platform before constructing a build command. Use `Engine/Build/Build.version` to confirm the installed patch; a folder named UE_5.7 alone does not establish 5.7.4. Do not hardcode another developer's engine path.
 
-Analyze the files you modified. Classify each change:
+## Choose a build
 
-| Change Type | Build Method |
-|---|---|
-| `.cpp` body changes only | Live Coding |
-| `.h` modified (members, layout, macros) | UBT (editor must close) |
-| `.h` added | UBT (editor must close) |
-| `.cpp` added | UBT (editor must close) |
-| `.cpp` deleted | UBT (editor must close) |
-| `.Build.cs` changed | UBT (editor must close) |
-| `.uplugin` changed | UBT (editor must close) |
+Use Live Coding for a small implementation change when the editor and Live Coding are available. Prefer a saved, closed-editor full build for module/dependency changes, plugin descriptors, or structural changes whose reinstancing behavior has not been validated. This is a reliability choice: UE supports object reinstancing for reflected classes, so headers are not categorically unsupported. Constructor defaults in `.cpp` do not update existing instances automatically. See [Epic's UE 5.7 Live Coding documentation](https://dev.epicgames.com/documentation/en-us/unreal-engine/using-live-coding-to-recompile-unreal-engine-applications-at-runtime?application_version=5.7).
 
-**Rule: If ANY file requires UBT, the whole build requires UBT.**
+An MCP timeout can mean a wrong URL, unavailable plugin, busy game thread or proxy problem. It does **not** confirm the editor is closed. Verify process/project identity through local process inspection and logs before rebuilding binaries.
 
-## Step 2: Check Editor Status
+For shared-editor work, retain the coordination lease during compilation and status polling. Serialize build/PIE/restart operations across agents. Coordinate editor closure with unsaved work and the user's existing authorization.
 
-Try calling Monolith MCP: `editor_query({action: 'get_build_status'})` or `monolith_status()`.
+## Live Coding
 
-- **MCP responds** → Editor is running
-- **MCP fails/timeout** → Editor is closed
+Discover `editor` and inspect schemas for `trigger_build`, `get_build_status`, `get_compile_output` and `get_build_errors`. Read baseline state, trigger once, then poll at a bounded interval until the requested build reaches a terminal result. Do not substitute a fixed ten-second delay for completion or interpret an old successful build as the new result. A timeout after triggering leaves the outcome unknown; inspect status and logs before retrying.
 
-## Step 3: Execute Build
+## Full project build (PowerShell)
 
-### Live Coding Path (editor open + .cpp-only changes)
+Replace these example values with discovered paths and the actual target:
 
-1. Call `editor_query({ action: "trigger_build" })` via MCP
-2. Wait ~10 seconds for compilation
-3. Call `editor_query({ action: "get_compile_output" })` to check result
-4. If errors: call `editor_query({ action: "get_build_errors", params: { compile_only: true } })`
-
-### UBT Path (editor closed OR header/new-file/Build.cs changes)
-
-**If editor is open and UBT is needed:**
-> Tell the user: "Header/structural changes detected — Live Coding can't handle these. Please close the editor so I can run a full UBT build, then reopen after."
->
-> Do NOT attempt UBT while editor is running. You will get: `"Unable to build while Live Coding is active"`
-
-**When editor is confirmed closed, run:**
-
-```bash
-'C:\Program Files (x86)\UE_5.7\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe' <YourProject>Editor Win64 Development '-Project=<project-root>/<YourProject>.uproject' -waitmutex
+```powershell
+$engineRoot = 'C:\Program Files\Epic Games\UE_5.7'
+$projectFile = 'D:\Projects\MyGame\MyGame.uproject'
+& "$engineRoot\Engine\Build\BatchFiles\Build.bat" MyGameEditor Win64 Development "-Project=$projectFile" -WaitMutex
+if ($LASTEXITCODE -ne 0) { throw 'Unreal build failed; inspect the build output.' }
 ```
 
-> **IMPORTANT:** Use single quotes around the UBT path — bash can't handle `(x86)` in parentheses unquoted. Do NOT use `Build.bat`.
-
-Check exit code: `0` = success, non-zero = failure. On failure, grep output for `error` lines.
-
-## Decision Matrix (Quick Reference)
-
-| Editor | Changes | Action |
-|--------|---------|--------|
-| Open | .cpp only | `editor_query("trigger_build")` via MCP |
-| Open | .h / new files / Build.cs | Ask user to close editor → UBT |
-| Open | .uplugin | Ask user to close editor → UBT |
-| Closed | Any | Run UBT directly |
-
-## Live Coding Gotchas
-
-- **Header changes** (new members, class layout, UCLASS/USTRUCT) → requires editor restart + full UBT build
-- **New .cpp files** are NOT picked up by Live Coding — UBT required
-- **Deleted files** are NOT handled by Live Coding — UBT required
-- After triggering Live Coding, **wait ~10s** before checking compile result
-- `"Unable to build while Live Coding is active"` → use `editor_query("trigger_build")` instead of UBT, or close editor first
-- When in doubt, close editor and use UBT — it always works
+The engine's Build.bat wrapper or a verified direct UBT invocation may be used. A successful Editor build is one gate; asset compile/save/readback, runtime behavior, and a cooked packaged game remain separate checks.

@@ -1,0 +1,18 @@
+# Project instructions for Monolith and Unreal Engine
+
+Target engine: UE 5.7.4. Verify the installed patch and connected project before edits.
+Product objective: build a commercially viable Steam game. Prefer a polished, testable vertical slice with controlled scope and measured production cost; do not equate more generated content or tool calls with player value.
+
+## Working together
+
+- Discover needed Monolith namespaces and exact action schemas before using them. Use the bundled domain skills on demand, not the entire catalog at once.
+- Assign one owner to each asset, map and shared source/configuration file. Independent research and source files can proceed in parallel.
+- One agent holds the global editor lease through read/change/compile/save/readback. Acquire, renew and release with `monolith_coordination`; include its returned `_lease_token` inside every domain call's `params`. Never share a token among concurrent workers. If coordination is unavailable, designate one editor agent.
+- A worker missing MCP tools should prepare research or changes for the tool-enabled lead; copying instructions does not grant access.
+- A timeout leaves submitted mutations uncertain. Inspect state and logs before retrying. Do not infer that the editor is closed from MCP failure.
+- Coordinate builds, PIE changes, saving and restarts across the team. Respect unsaved user work and existing task authorization.
+- Treat `stub`, `partial_stub`, failed item results and incomplete async work as unfinished even inside a successful tool response.
+
+## Definition of done
+
+Compile affected code and assets, save and read back changed assets, and verify intended behavior in a representative scene. For a release candidate, test a cooked packaged build on target hardware and record frame time, memory and loading behavior. Evaluate UI, controls, audiovisual quality and commercial scope with concrete acceptance criteria. Report what was tested and what remains unverified; no tool or plugin guarantees AAA quality or financial success.

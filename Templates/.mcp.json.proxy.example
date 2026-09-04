@@ -1,8 +1,14 @@
 {
   "mcpServers": {
     "monolith": {
-      "command": "Plugins/Monolith/Scripts/monolith_proxy.bat",
-      "args": []
+      "command": "python",
+      "args": ["D:/Projects/MyGame/Plugins/Monolith/Scripts/monolith_proxy.py"],
+      "env": {
+        "MONOLITH_URL": "http://localhost:9316/mcp",
+        "MONOLITH_MAX_IN_FLIGHT": "8",
+        "MONOLITH_MAX_QUEUED": "64",
+        "MONOLITH_TIMEOUT_SECONDS": "120"
+      }
     }
   }
 }

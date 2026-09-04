@@ -28,9 +28,10 @@ description: Use when debugging Unreal Engine issues via Monolith MCP — build 
 
 ### After modifying C++
 ```
+editor_query({ action: "get_build_status", params: {} })
 editor_query({ action: "trigger_build", params: {} })
-// Wait ~10s for Live Coding
-editor_query({ action: "get_build_errors", params: {} })
+// Poll get_build_status to a terminal result for this build, then inspect output.
+editor_query({ action: "get_compile_output", params: {} })
 ```
 
 ### Investigate a crash
@@ -47,8 +48,8 @@ editor_query({ action: "search_logs", params: { pattern: "MyActor", category: "L
 ## Common Error Patterns
 
 - **LNK2019/LNK2001:** Missing module in `.Build.cs`. `DeveloperSettings` is separate from `Engine`.
-- **Include path errors:** Use `source_query("search_source", ...)` to find correct header. Note: `get_include_path` does NOT exist as an action.
-- **Live Coding limits:** Header changes (new members, class layout) require editor restart + UBT build. Only `.cpp` body changes work.
+- **Include path errors:** Discover `source`, then use `get_include_path` or `verify_symbols` when available to verify headers and signatures.
+- **Live Coding:** Structural changes can depend on object reinstancing. Prefer a closed-editor full build when reinstancing has not been validated; consult the build workflow before patching reflected layout.
 - **Package errors:** `CreatePackage` with same path returns existing in-memory package.
 
 ## Reflection Intelligence (context while root-causing)

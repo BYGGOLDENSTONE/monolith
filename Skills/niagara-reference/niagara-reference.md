@@ -1,36 +1,14 @@
 ---
 name: niagara-reference
-description: Index of Niagara VFX reference documents. Provides quick-reference sim rules, particle budgets, and gotchas. Points to detailed docs on demand. Use when creating, optimizing, or debugging Niagara effects.
-type: skill
+description: Version-aware Niagara scalability and simulation validation references for Unreal Engine.
 ---
 
-# Niagara Reference Library
+# Niagara reference
 
-## Quick Reference
+Choose CPU versus GPU simulation by required features and measured target-hardware cost. GPU simulation still has CPU system/emitter overhead. There is no universal particle-count threshold that selects the best simulation target. Consider emitter and system instance counts, pooling, culling, and Effect Type scalability together. See [Epic's UE 5.7 Niagara scalability guide](https://dev.epicgames.com/documentation/en-us/unreal-engine/scalability-and-best-practices-for-niagara?application_version=5.7).
 
-- **CPU sim:** < 100 particles. **GPU sim:** > 1,000 particles. Test in between.
-- **Module execution order matters:** Position -> SolveForcesAndVelocity -> Collision/Readers -> Visual
-- **ALWAYS set fixed bounds.** #1 Niagara optimization. GPU REQUIRES them.
-- **Events are CPU only.** GPU alternative: Attribute Reader.
-- **Light Renderer is CPU only.** GPU alternative: Component Renderer + PointLight.
-- **Map For node: GPU only.** Does NOT work on CPU.
-- **Skeletal Mesh GPU sampling: D3D12 only.** Crashes on Vulkan.
-- **Attribute Reader:** Source emitter must execute BEFORE reader (top-to-bottom order).
-- **1 emitter x 1,000 particles > 10 emitters x 100 particles.** GPU sim has fixed overhead.
-- **Lightweight emitters (UE 5.4+):** Zero tick cost for simple ambient effects.
-- **Additive materials don't need sorting.** Set sort to None for free perf.
-- **Dynamic Parameters:** 4 slots x 4 channels = 16 floats for material communication.
-- **Data Channel Write: CPU only.** GPU can only read.
-- **No spaces in parameter names.** Breaks HLSL and scripting.
+Validate bounds across the complete effect lifetime and expected transforms: overly small bounds can cull visible effects, while oversized bounds reduce culling usefulness. Exercise repeated spawning, burst peaks, offscreen behavior and scalability transitions. Check temporal appearance and measured cost in a representative scene.
 
-## Reference Documents
+For data interfaces, event support, GPU read/write features and HLSL, inspect the installed engine's implementation and compile on the shipping RHI. Do not use historical absolute claims about Vulkan crashes or CPU/GPU-only features as current compatibility evidence.
 
-Read these on demand when the topic is relevant:
-
-| File | Content |
-|------|---------|
-| `Docs/references/niagara/niagara-architecture.md` | CPU vs GPU decision tree, Lightweight emitters, lifecycle patterns, parent-child communication (events, attribute reader, data channels), data interfaces, system archetypes, warm-up/pooling |
-| `Docs/references/niagara/niagara-effect-recipes.md` | Fire (5 emitters), blood splatter (5 emitters), smoke, muzzle flash, sparks, explosions (8 emitters), dust/debris, rain, magic/energy. Each with emitter layout, sim type, modules, materials |
-| `Docs/references/niagara/niagara-performance.md` | Particle count budgets, fixed bounds, emitter count impact, overdraw reduction, sort mode costs, mesh vs sprite, shader budget, scalability integration, collision costs |
-| `Docs/references/niagara/niagara-gotchas.md` | Module order, GPU limitations, attribute reader ordering, Map For CPU bug, static switch permutations, deterministic random, warm-up spikes, parameter naming |
-| `Docs/references/niagara/niagara-material-integration.md` | Particle Color, blend modes, Dynamic Parameters (4x4 slots), Sub-UV/flipbook, soft particles, distortion/heat haze, camera facing modes, usage flags |
+For Monolith work, discover `niagara` and describe the selected action. Compilation and successful API calls do not establish visual quality or performance. The repository does not include the older `Docs/references/niagara/` library; this guide deliberately uses available references.
