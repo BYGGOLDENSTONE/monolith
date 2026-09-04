@@ -6,6 +6,7 @@ against it. Every test owns its server, subprocesses, and temporary cache.
 """
 
 import json
+import importlib.util
 import os
 from pathlib import Path
 import queue
@@ -15,7 +16,45 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+def windows_cache_handle(path, access):
+    """Open a rename-compatible Win32 handle; caller must close or transfer it."""
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+    create.restype = wintypes.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = (wintypes.HANDLE,)
+    close.restype = wintypes.BOOL
+    handle = create(str(path), access, 1 | 2 | 4, None, 3, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    return handle, close
+
+
+def read_cache_snapshot(path):
+    """Observe atomic replacement using Windows rename-compatible sharing.
+
+    CRT open() denies DELETE sharing and can fail even after a complete snapshot
+    has been renamed into place. This reader does not retry or ignore invalid JSON.
+    """
+    if os.name != "nt":
+        return path.read_text(encoding="utf-8")
+    import msvcrt
+    handle, close = windows_cache_handle(path, 0x80000000)  # GENERIC_READ
+    try:
+        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+    except Exception:
+        close(handle)
+        raise
+    with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
+        return stream.read()
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -392,7 +431,7 @@ class TransportContract:
             while not stop.is_set():
                 try:
                     for path in cache_files:
-                        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), TOOLS)
+                        self.assertEqual(json.loads(read_cache_snapshot(path)), TOOLS)
                     observed.set()
                 except Exception as exc:
                     failures.append(exc)
@@ -464,6 +503,25 @@ class PythonTransportTests(TransportContract, unittest.TestCase):
 class NativeTransportTests(TransportContract, unittest.TestCase):
     command = [os.environ.get("MONOLITH_TEST_NATIVE_PROXY", "monolith_proxy.exe")]
 
+    @unittest.skipUnless(os.name == "nt", "Win32 DELETE sharing contract")
+    def test_cache_can_be_read_while_rename_delete_handle_is_open(self):
+        proxy = self.proxy()
+        proxy.send(request("seed", "tools/list"))
+        self.assertEqual(proxy.receive()["result"]["tools"], TOOLS)
+        cache_files = list(Path(self.directory.name).rglob("*.json"))
+        self.assertEqual(len(cache_files), 1)
+        # Deterministically hold the access right MoveFileEx retains after rename.
+        # A CRT ifstream reader fails for the whole interval; the shared reader
+        # must succeed immediately, without waiting for this test to close it.
+        handle, close = windows_cache_handle(cache_files[0], 0x00010000)  # DELETE
+        try:
+            self.editor.offline = True
+            proxy.send(request("held-delete-handle", "tools/list"))
+            self.assertEqual(proxy.receive()["result"]["tools"], TOOLS)
+            self.assertEqual(json.loads(read_cache_snapshot(cache_files[0])), TOOLS)
+        finally:
+            close(handle)
+
     def test_split_editor_read_tool_blocks_mutations_but_allows_diagnostics(self):
         proxy = self.proxy(MONOLITH_SPLIT_EDITOR_QUERY=1)
         for action in ("spawn_actor", "trigger_build"):
@@ -482,6 +540,37 @@ class NativeTransportTests(TransportContract, unittest.TestCase):
         self.assertFalse(response["result"].get("isError"), response)
         self.assertEqual(len(self.editor.received), 1)
         self.assertEqual(self.editor.received[0]["params"]["name"], "editor_query")
+
+
+class PythonCacheReadTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("monolith_cache_contract",
+                                                     ROOT / "Scripts" / "monolith_proxy.py")
+        cls.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.module)
+
+    def cache_read(self, outcomes):
+        path = mock.Mock()
+        path.exists.return_value = True
+        path.read_text.side_effect = outcomes
+        with mock.patch.object(self.module, "_tools_cache_path", return_value=path), \
+                mock.patch.object(self.module.time, "sleep") as sleep, \
+                mock.patch.object(self.module, "_log"):
+            result = self.module._read_tools_cache()
+        return result, path.read_text.call_count, sleep.call_count
+
+    def test_transient_permission_failure_retries_only_cache_read(self):
+        result, reads, sleeps = self.cache_read([PermissionError("sharing violation"), json.dumps(TOOLS)])
+        self.assertEqual((result, reads, sleeps), (TOOLS, 2, 1))
+
+    def test_permission_retry_is_bounded(self):
+        result, reads, sleeps = self.cache_read([PermissionError("denied")] * 3)
+        self.assertEqual((result, reads, sleeps), (None, 3, 2))
+
+    def test_invalid_json_is_not_retried(self):
+        result, reads, sleeps = self.cache_read(["{truncated"])
+        self.assertEqual((result, reads, sleeps), (None, 1, 0))
 
 
 if __name__ == "__main__":

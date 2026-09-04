@@ -491,7 +491,20 @@ def _read_tools_cache() -> list[dict] | None:
         path = _tools_cache_path()
         if not path.exists():
             return None
-        tools = json.loads(path.read_text(encoding="utf-8"))
+        # Windows CRT readers do not share DELETE access. A rename can publish
+        # a complete snapshot before MoveFileEx releases its DELETE handle.
+        # Retry only that transient local open failure, never JSON parsing or
+        # the upstream editor operation (maximum extra wait: 20 ms).
+        # https://devblogs.microsoft.com/oldnewthing/20211022-00/?p=105822
+        for attempt in range(3):
+            try:
+                contents = path.read_text(encoding="utf-8")
+                break
+            except PermissionError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.01)
+        tools = json.loads(contents)
         if isinstance(tools, list) and tools:
             return tools
     except Exception as e:

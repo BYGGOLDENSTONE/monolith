@@ -931,12 +931,24 @@ static void write_tools_cache(const std::string& response)
 
         const auto path = tools_cache_path();
         const auto temp = path + "." + std::to_string(GetCurrentProcessId()) + ".tmp";
+        bool written = false;
         { std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-          if (!out) return;
-          out << tools_it->dump();
-          if (!out) return; }
-        if (!MoveFileExA(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-            DeleteFileA(temp.c_str());
+          if (out) { out << tools_it->dump(); out.flush(); written = bool(out); } }
+        if (!written) { DeleteFileA(temp.c_str()); return; }
+        // Older cache readers / antivirus may omit FILE_SHARE_DELETE. Retry only
+        // this local rename, never the editor request. The old complete cache
+        // remains available if replacement cannot finish within this short bound.
+        DWORD error = ERROR_SUCCESS;
+        for (int attempt = 0; attempt < 10; ++attempt)
+        {
+            if (MoveFileExA(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                return;
+            error = GetLastError();
+            if (error != ERROR_SHARING_VIOLATION && error != ERROR_ACCESS_DENIED) break;
+            if (attempt < 9) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        DeleteFileA(temp.c_str());
+        log_msg("Failed to replace tools/list cache (Windows error " + std::to_string(error) + ")");
     }
     catch (const std::exception& e)
     {
@@ -949,12 +961,29 @@ static std::optional<json> read_tools_cache()
     std::lock_guard<std::mutex> guard(g_cache_lock);
     try
     {
-        std::ifstream in(tools_cache_path(), std::ios::binary);
-        if (!in)
-            return std::nullopt;
-
-        json tools;
-        in >> tools;
+        // CRT ifstream does not share DELETE access. A concurrent atomic rename
+        // can already have published its new name while MoveFileEx still holds
+        // its DELETE handle, making CRT reads fail with a sharing violation.
+        // Sharing delete lets readers consume that complete snapshot immediately.
+        // https://devblogs.microsoft.com/oldnewthing/20211022-00/?p=105822
+        struct CacheReadHandle
+        {
+            HANDLE value;
+            ~CacheReadHandle() { if (value != INVALID_HANDLE_VALUE) CloseHandle(value); }
+        } in{CreateFileA(tools_cache_path().c_str(), GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)};
+        if (in.value == INVALID_HANDLE_VALUE) return std::nullopt;
+        std::string contents;
+        char buffer[16384];
+        DWORD bytes = 0;
+        for (;;)
+        {
+            if (!ReadFile(in.value, buffer, sizeof(buffer), &bytes, nullptr)) return std::nullopt;
+            if (bytes == 0) break;
+            contents.append(buffer, bytes);
+        }
+        json tools = json::parse(contents);
         if (!tools.is_array() || tools.empty())
             return std::nullopt;
 
