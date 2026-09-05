@@ -359,7 +359,7 @@ FMonolithActionResult FMonolithControlRigWriteActions::HandleAddControlRigNode(c
 			bool bSetOk = Controller->SetPinDefaultValue(PinPath, Value, /*bResizeArrays=*/true, /*bSetupUndoRedo=*/true);
 			if (!bSetOk)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("Monolith: Failed to set pin default %s = %s"), *PinPath, *Value);
+				UE_LOG(LogMonolith, Warning, TEXT("Monolith: Failed to set pin default %s = %s"), *PinPath, *Value);
 			}
 		}
 	}

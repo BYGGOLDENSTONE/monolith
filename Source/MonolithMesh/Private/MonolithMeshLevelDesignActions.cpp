@@ -978,7 +978,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::FindReplaceMesh(const TSh
 					// Warn about material slot count mismatch
 					if (TargetMesh->GetStaticMaterials().Num() != SourceMesh->GetStaticMaterials().Num())
 					{
-						UE_LOG(LogTemp, Warning, TEXT("Monolith: Mesh swap on '%s' — material slot count differs (source: %d, target: %d). Material overrides may be invalid."),
+						UE_LOG(LogMonolith, Warning, TEXT("Monolith: Mesh swap on '%s' — material slot count differs (source: %d, target: %d). Material overrides may be invalid."),
 							*Actor->GetActorNameOrLabel(),
 							SourceMesh->GetStaticMaterials().Num(),
 							TargetMesh->GetStaticMaterials().Num());

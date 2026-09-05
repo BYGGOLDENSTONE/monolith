@@ -1072,7 +1072,7 @@ void FMonolithMeshBuildingActions::GenerateEntranceDoorFrames(UDynamicMesh* Mesh
 		UGeometryScriptLibrary_MeshBasicEditFunctions::AppendMesh(
 			Mesh, FrameMesh, FTransform::Identity);
 
-		UE_LOG(LogTemp, Log, TEXT("Generated entrance door frame for '%s' (%.0f x %.0f cm) at wall %s"),
+		UE_LOG(LogMonolith, Log, TEXT("Generated entrance door frame for '%s' (%.0f x %.0f cm) at wall %s"),
 			*Door.DoorId, Door.Width, Door.Height,
 			bVerticalWall ? TEXT("vertical") : TEXT("horizontal"));
 	}
@@ -1101,7 +1101,7 @@ void FMonolithMeshBuildingActions::GenerateStairGeometry(UDynamicMesh* Mesh,
 		// R2-C2: Elevator shafts suppress floor/ceiling slabs but get NO stair geometry
 		if (Stair.VerticalAccess == EVerticalAccessType::Elevator)
 		{
-			UE_LOG(LogTemp, Log, TEXT("Stairwell '%s' is elevator shaft — skipping stair geometry (slab suppression still active)"),
+			UE_LOG(LogMonolith, Log, TEXT("Stairwell '%s' is elevator shaft — skipping stair geometry (slab suppression still active)"),
 				*Stair.StairwellId);
 			continue;
 		}
@@ -1159,7 +1159,7 @@ void FMonolithMeshBuildingActions::GenerateStairGeometry(UDynamicMesh* Mesh,
 			if (LandingDepth < 60.0f)
 			{
 				// Not enough room for landing — fall back to steep capped stair
-				UE_LOG(LogTemp, Warning,
+				UE_LOG(LogMonolith, Warning,
 					TEXT("Stairwell '%s' too small for switchback (%.0fx%.0fcm). "
 						"Minimum for 270cm floor: 200x300cm (4x6 cells at 50cm). "
 						"Falling back to steepest walkable angle."),
@@ -1227,7 +1227,7 @@ void FMonolithMeshBuildingActions::GenerateStairGeometry(UDynamicMesh* Mesh,
 			float UseTread = FMath::Max(MaxTread, CappedTread);
 			float ActualAngle = FMath::RadiansToDegrees(FMath::Atan2(ActualRiser, UseTread));
 
-			UE_LOG(LogTemp, Warning,
+			UE_LOG(LogMonolith, Warning,
 				TEXT("Stairwell '%s' too small for comfortable stairs (%.0fx%.0fcm, angle=%.1f deg). "
 					"Minimum footprint for 270cm floor: 200x300cm (4x6 cells at 50cm)."),
 				*Stair.StairwellId, AvailableWidth, AvailableDepth, ActualAngle);

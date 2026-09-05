@@ -175,11 +175,13 @@ FMonolithActionResult FMonolithUIAccessibilityActions::HandleScaffoldAccessibili
     Cpp += FString::Printf(TEXT("#include \"%s.h\"\n"), *CleanName);
     Cpp += TEXT("#include \"Framework/Application/SlateApplication.h\"\n");
     Cpp += TEXT("#include \"Rendering/SlateRenderer.h\"\n\n");
+    const FString LogCategory = FString::Printf(TEXT("MonolithGenerated_%s::LogMonolith"), *CleanName);
+    Cpp += FString::Printf(TEXT("namespace MonolithGenerated_%s\n{\nDEFINE_LOG_CATEGORY_STATIC(LogMonolith, Log, All);\n}\n\n"), *CleanName);
 
     // Initialize
     Cpp += FString::Printf(TEXT("void %s::Initialize(FSubsystemCollectionBase& Collection)\n{\n"), *ClassName);
     Cpp += TEXT("\tSuper::Initialize(Collection);\n");
-    Cpp += TEXT("\tUE_LOG(LogTemp, Log, TEXT(\"Accessibility subsystem initialized\"));\n");
+    Cpp += TEXT("\tUE_LOG(") + LogCategory + TEXT(", Log, TEXT(\"Accessibility subsystem initialized\"));\n");
     Cpp += TEXT("}\n\n");
 
     // ApplySettings
@@ -208,7 +210,7 @@ FMonolithActionResult FMonolithUIAccessibilityActions::HandleScaffoldAccessibili
     Cpp += TEXT("\t\tGEngine->bSubtitlesEnabled = bSubtitlesEnabled;\n");
     Cpp += TEXT("\t}\n\n");
 
-    Cpp += TEXT("\tUE_LOG(LogTemp, Log, TEXT(\"Accessibility settings applied: ColorblindMode=%d, FontScale=%.2f, Subtitles=%s\"),\n");
+    Cpp += TEXT("\tUE_LOG(") + LogCategory + TEXT(", Log, TEXT(\"Accessibility settings applied: ColorblindMode=%d, FontScale=%.2f, Subtitles=%s\"),\n");
     Cpp += TEXT("\t\t(int32)ColorblindMode, FontScale, bSubtitlesEnabled ? TEXT(\"On\") : TEXT(\"Off\"));\n");
     Cpp += TEXT("}\n");
 

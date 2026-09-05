@@ -542,7 +542,7 @@ void FMonolithMeshFacadeActions::CutOpeningsSelectionInset(UDynamicMesh* Mesh,
 		// triangles with unpredictable normals, or floating-point precision misses vertices.
 		if (FrontSel.GetNumSelected() == 0)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("CutOpeningsSelectionInset: Empty selection for opening — skipping (likely degenerate geometry from plane slice)"));
+			UE_LOG(LogMonolith, Warning, TEXT("CutOpeningsSelectionInset: Empty selection for opening — skipping (likely degenerate geometry from plane slice)"));
 			return;
 		}
 

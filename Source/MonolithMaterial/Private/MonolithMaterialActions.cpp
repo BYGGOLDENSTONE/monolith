@@ -8252,7 +8252,7 @@ FMonolithActionResult FMonolithMaterialActions::CreatePbrMaterialFromDisk(const 
 
 		if (!TexSample)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("CreatePbrMaterialFromDisk: Failed to create TextureSample for '%s'"), *Imported.MapType);
+			UE_LOG(LogMonolith, Warning, TEXT("CreatePbrMaterialFromDisk: Failed to create TextureSample for '%s'"), *Imported.MapType);
 			YPos += YSpacing;
 			continue;
 		}

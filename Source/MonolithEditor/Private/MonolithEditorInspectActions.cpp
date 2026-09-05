@@ -25,6 +25,7 @@
 // =============================================================================
 
 #include "MonolithEditorActions.h"
+#include "MonolithJsonUtils.h"
 
 #include "CoreMinimal.h"
 #include "Dom/JsonObject.h"
@@ -538,7 +539,7 @@ FMonolithActionResult FMonolithEditorActions::HandleInspectTextureChannels(const
 			else
 			{
 				bAnyWriteFailed = true;
-				UE_LOG(LogTemp, Warning,
+				UE_LOG(LogMonolith, Warning,
 					TEXT("inspect_texture_channels: failed to write split PNG for channel %s at %s"),
 					Emit.Suffix, *PngPath);
 			}

@@ -1,4 +1,5 @@
 #include "MonolithAbpWriteActions.h"
+#include "MonolithJsonUtils.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithParamSchema.h"
 
@@ -1349,7 +1350,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimGraphNode(const TSh
 		else
 		{
 			// Non-asset-player node doesn't support anim_asset — just warn via log, don't fail
-			UE_LOG(LogTemp, Warning, TEXT("Monolith: Node type '%s' does not support anim_asset parameter — ignored"), *NodeType);
+			UE_LOG(LogMonolith, Warning, TEXT("Monolith: Node type '%s' does not support anim_asset parameter — ignored"), *NodeType);
 		}
 	}
 

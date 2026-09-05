@@ -84,7 +84,7 @@ void FMonolithMeshProceduralCache::LoadManifest()
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
 	if (!FJsonSerializer::Deserialize(Reader, Parsed) || !Parsed.IsValid())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[MonolithCache] Failed to parse manifest, starting fresh: %s"), *Path);
+		UE_LOG(LogMonolith, Warning, TEXT("[MonolithCache] Failed to parse manifest, starting fresh: %s"), *Path);
 		Manifest = MakeShared<FJsonObject>();
 		Manifest->SetNumberField(TEXT("version"), 1);
 		Manifest->SetObjectField(TEXT("entries"), MakeShared<FJsonObject>());
@@ -112,7 +112,7 @@ void FMonolithMeshProceduralCache::SaveManifest()
 		TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&JsonStr);
 	if (!FJsonSerializer::Serialize(Manifest.ToSharedRef(), Writer))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[MonolithCache] Failed to serialize manifest"));
+		UE_LOG(LogMonolith, Error, TEXT("[MonolithCache] Failed to serialize manifest"));
 		return;
 	}
 
@@ -122,14 +122,14 @@ void FMonolithMeshProceduralCache::SaveManifest()
 	// Atomic write: write to temp file, then rename
 	if (!FFileHelper::SaveStringToFile(JsonStr, *TempPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[MonolithCache] Failed to write temp manifest: %s"), *TempPath);
+		UE_LOG(LogMonolith, Error, TEXT("[MonolithCache] Failed to write temp manifest: %s"), *TempPath);
 		return;
 	}
 
 	// Move temp -> final (replace existing)
 	if (!IFileManager::Get().Move(*ManifestPath, *TempPath, /*bReplace=*/true, /*bEvenIfReadOnly=*/true))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[MonolithCache] Failed to rename temp manifest to: %s"), *ManifestPath);
+		UE_LOG(LogMonolith, Error, TEXT("[MonolithCache] Failed to rename temp manifest to: %s"), *ManifestPath);
 		// Clean up temp file on failure
 		IFileManager::Get().Delete(*TempPath);
 	}
@@ -293,7 +293,7 @@ bool FMonolithMeshProceduralCache::TryGetCached(const FString& Hash, FString& Ou
 		// Stale entry — asset was deleted. Remove and save.
 		Entries->RemoveField(Hash);
 		SaveManifest();
-		UE_LOG(LogTemp, Log, TEXT("[MonolithCache] Removed stale entry %s -> %s"), *Hash.Left(8), *AssetPath);
+		UE_LOG(LogMonolith, Log, TEXT("[MonolithCache] Removed stale entry %s -> %s"), *Hash.Left(8), *AssetPath);
 		return false;
 	}
 
@@ -349,7 +349,7 @@ void FMonolithMeshProceduralCache::Register(const FString& Hash, const FString& 
 	Entries->SetObjectField(Hash, Entry);
 	SaveManifest();
 
-	UE_LOG(LogTemp, Log, TEXT("[MonolithCache] Registered %s -> %s (%s, %d tris)"),
+	UE_LOG(LogMonolith, Log, TEXT("[MonolithCache] Registered %s -> %s (%s, %d tris)"),
 		*Hash.Left(8), *AssetPath, *Type, TriangleCount);
 }
 
@@ -420,7 +420,7 @@ int32 FMonolithMeshProceduralCache::ValidateCache()
 	if (StaleHashes.Num() > 0)
 	{
 		SaveManifest();
-		UE_LOG(LogTemp, Log, TEXT("[MonolithCache] Validated cache: removed %d stale entries"), StaleHashes.Num());
+		UE_LOG(LogMonolith, Log, TEXT("[MonolithCache] Validated cache: removed %d stale entries"), StaleHashes.Num());
 	}
 
 	return StaleHashes.Num();
@@ -442,7 +442,7 @@ int32 FMonolithMeshProceduralCache::ClearCache(const FString& TypeFilter)
 		const int32 Count = Entries->Values.Num();
 		Manifest->SetObjectField(TEXT("entries"), MakeShared<FJsonObject>());
 		SaveManifest();
-		UE_LOG(LogTemp, Log, TEXT("[MonolithCache] Cleared all %d cache entries"), Count);
+		UE_LOG(LogMonolith, Log, TEXT("[MonolithCache] Cleared all %d cache entries"), Count);
 		return Count;
 	}
 
@@ -470,7 +470,7 @@ int32 FMonolithMeshProceduralCache::ClearCache(const FString& TypeFilter)
 	if (ToRemove.Num() > 0)
 	{
 		SaveManifest();
-		UE_LOG(LogTemp, Log, TEXT("[MonolithCache] Cleared %d entries of type '%s'"), ToRemove.Num(), *TypeFilter);
+		UE_LOG(LogMonolith, Log, TEXT("[MonolithCache] Cleared %d entries of type '%s'"), ToRemove.Num(), *TypeFilter);
 	}
 
 	return ToRemove.Num();

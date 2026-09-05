@@ -11406,7 +11406,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCopyBonePoseBetweenSequen
 	const bool bSourceTimeClamped = !FMath::IsNearlyEqual(SourceTime, OriginalSourceTime);
 	if (bSourceTimeClamped)
 	{
-		UE_LOG(LogTemp, Verbose,
+		UE_LOG(LogMonolith, Verbose,
 			TEXT("copy_bone_pose_between_sequences: source_time clamped from %f to %f (play_length=%f)"),
 			OriginalSourceTime, SourceTime, SourcePlayLength);
 	}

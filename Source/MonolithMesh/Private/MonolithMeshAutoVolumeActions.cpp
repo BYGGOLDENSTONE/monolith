@@ -183,7 +183,7 @@ AActor* FMonolithMeshAutoVolumeActions::SpawnNavLinkActor(
 
 	if (!NavLinkProxyClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AutoVolume: Could not load ANavLinkProxy class. Is AIModule enabled?"));
+		UE_LOG(LogMonolith, Warning, TEXT("AutoVolume: Could not load ANavLinkProxy class. Is AIModule enabled?"));
 		return nullptr;
 	}
 
