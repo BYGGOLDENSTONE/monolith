@@ -789,42 +789,12 @@ namespace MonolithCommonUIButton
 		return FMonolithActionResult::Success(Result);
 	}
 
-	// ----- Phase 2 Item #10 — apply_token_binding ------------------------------
-	//
-	// Tokenforge-backed style binding. The full implementation programmatically
-	// writes BP-graph nodes into the WBP's NativeConstruct event graph so the
-	// widget calls UUISubsystem::GetColor / GetFont / etc. at construct time and
-	// pipes the result into a target property's setter.
-	//
-	// PHASE 2 IMPLEMENTATION LEVEL: MVP-STUB.
-	//
-	// Why stub: writing K2 node graphs programmatically (UK2Node_CallFunction,
-	// UK2Node_VariableSet, UK2Node_Knot for routing, ULinker::Resolve for the
-	// pin schema) is non-trivial — the canonical surface lives in
-	// MonolithBlueprint/Private/MonolithBlueprintNodeActions.cpp and would
-	// require either (a) cross-module include of those helpers (currently NOT
-	// in MonolithUI.Build.cs PrivateDependencyModuleNames) or (b) re-implementing
-	// the K2Node construction + pin-wiring inside MonolithUI. Either path
-	// inflates this dispatch beyond the time budget; the action is registered
-	// here so downstream callers don't 404, the Tokenforge availability probe
-	// works end-to-end, and a follow-up issue can land the BP-graph node-write
-	// surface.
-	//
-	// Tokenforge probe + -32011 error code path are FULLY implemented per the
-	// design spec — that's the critical bit for the Steam build's "optional dep
-	// absent" telemetry. The BP-graph node-write half is deferred.
-
-	static FMonolithActionResult HandleApplyTokenBinding(const TSharedPtr<FJsonObject>& Params)
+	// Provider probing stays at the boundary. The shared implementation receives
+	// its result so Automation can exercise both capability paths without loading
+	// or impersonating an optional plugin.
+	static FMonolithActionResult ApplyTokenBindingWithProvider(
+		const TSharedPtr<FJsonObject>& Params, bool bTokenforgeAvailable, const FString& ProviderVersion)
 	{
-		// --- Tokenforge availability probe (FULL impl) --------------------------
-		// Mirrors the -32010 EffectSurface pattern from SPEC_MonolithUI §
-		// "Error Contract — Optional EffectSurface Provider Absence (-32010)".
-		// -32011 is the next reserved slot from the JSON-RPC server-defined
-		// range (-32011..-32019 left open per MonolithJsonUtils.h:50).
-		TSharedPtr<IPlugin> TokenforgePlugin =
-			IPluginManager::Get().FindPlugin(TEXT("TokenforgeRuntime"));
-		const bool bTokenforgeAvailable = TokenforgePlugin.IsValid() && TokenforgePlugin->IsEnabled();
-
 		if (!bTokenforgeAvailable)
 		{
 			// Same shape as MakeOptionalDepUnavailableError but using -32011 so
@@ -864,9 +834,7 @@ namespace MonolithCommonUIButton
 		FMonolithActionResult Loaded = MonolithCommonUI::LoadWidgetForMutation(WbpPath, FName(*WidgetName), Wbp, Target);
 		if (!Loaded.bSuccess) return Loaded;
 
-		// Verify the target_property actually exists on the widget class — this
-		// catches typos before we ship the stub response, so a follow-up
-		// full-impl can rely on the validated property path.
+		// Preserve target validation even though graph binding is not implemented.
 		if (!FindFProperty<FProperty>(Target->GetClass(), FName(*TargetProperty)))
 		{
 			return FMonolithActionResult::Error(
@@ -875,24 +843,28 @@ namespace MonolithCommonUIButton
 				-32602);
 		}
 
-		// --- MVP-STUB response --------------------------------------------------
-		// Action registered, params validated, Tokenforge probe ran. The actual
-		// BP-graph node-write into NativeConstruct is deferred — flagged with a
-		// machine-readable status field so callers know the difference between
-		// "everything wired" and "registered but not yet binding".
+		// Validation and provider availability do not mean a graph was written.
 		TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
 		Result->SetStringField(TEXT("wbp_path"), WbpPath);
 		Result->SetStringField(TEXT("widget_name"), WidgetName);
 		Result->SetStringField(TEXT("target_property"), TargetProperty);
 		Result->SetStringField(TEXT("token_key"), TokenKey);
 		Result->SetBoolField(TEXT("tokenforge_available"), true);
-		Result->SetStringField(TEXT("tokenforge_version"), TokenforgePlugin->GetDescriptor().VersionName);
-		Result->SetStringField(TEXT("status"), TEXT("stub"));
-		Result->SetStringField(TEXT("reason"),
-			TEXT("BP-graph node-write surface deferred. Param validation + Tokenforge probe FULL — "
-				 "node construction in NativeConstruct event graph awaits issue #2-10b follow-up. "
-				 "Action is registered + discoverable so callers can branch on status='stub'."));
-		return FMonolithActionResult::Success(Result);
+		Result->SetStringField(TEXT("tokenforge_version"), ProviderVersion);
+		Result->SetStringField(TEXT("reason"), TEXT("not_implemented"));
+		Result->SetBoolField(TEXT("implemented"), false);
+		Result->SetStringField(TEXT("part"), TEXT("apply_token_binding.NativeConstruct_graph"));
+		return FMonolithActionResult::Error(
+			TEXT("Token binding graph construction in NativeConstruct is not implemented; no binding was applied."),
+			-32004).WithErrorData(Result);
+	}
+
+	static FMonolithActionResult HandleApplyTokenBinding(const TSharedPtr<FJsonObject>& Params)
+	{
+		const TSharedPtr<IPlugin> Provider = IPluginManager::Get().FindPlugin(TEXT("TokenforgeRuntime"));
+		const bool bAvailable = Provider.IsValid() && Provider->IsEnabled();
+		return ApplyTokenBindingWithProvider(Params, bAvailable,
+			bAvailable ? Provider->GetDescriptor().VersionName : FString());
 	}
 
 	// ----- Phase 2 Item #12 — convert_textblock_to_common ----------------------
@@ -1452,17 +1424,11 @@ namespace MonolithCommonUIButton
 				.Build(),
 			Cat);
 
-		// Phase 2 Item #10 (2026-05-16 UI gap audit): apply_token_binding.
-		// MVP-STUB — Tokenforge probe + param validation are FULL; BP-graph
-		// node-write into NativeConstruct is deferred (issue #2-10b). Returns
-		// -32011 ErrTokenforgeRuntimeUnavailable when the plugin is absent.
 		Registry.RegisterAction(
 			TEXT("ui"), TEXT("apply_token_binding"),
-			TEXT("Bind a widget property to a UI design token sourced from TokenforgeRuntime. "
-				 "Returns -32011 with {dep_name, widget_type, alternative, category} when Tokenforge is not enabled "
-				 "(mirrors the -32010 EffectSurface contract). Current implementation level: MVP-STUB — "
-				 "param validation and Tokenforge probe FULL, BP-graph node-write into NativeConstruct deferred. "
-				 "Successful response carries status='stub' so callers can branch on partial implementation."),
+			TEXT("Validate a widget property and TokenforgeRuntime availability. Returns -32011 when the "
+				 "provider is absent. Graph binding in NativeConstruct is not implemented: otherwise returns "
+				 "an error with reason='not_implemented', implemented=false and the unimplemented part."),
 			FMonolithActionHandler::CreateStatic(&HandleApplyTokenBinding),
 			FParamSchemaBuilder()
 				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path (alias: asset_path)"))
@@ -1543,5 +1509,82 @@ namespace MonolithCommonUIButton
 			Cat);
 	}
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Tests/UIHonestyTestUtils.h"
+#include "EdGraph/EdGraph.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithUITokenBindingProviderStateTest,
+	"Monolith.UI.Honesty.TokenBindingProviderState", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithUITokenBindingProviderStateTest::RunTest(const FString& Parameters)
+{
+	using namespace MonolithUI::HonestyTests;
+	FScopedWidget Widget(*this);
+	const auto Built = FMonolithToolRegistry::Get().ExecuteAction(
+		TEXT("ui"), TEXT("build_menu_from_spec"), Menu(Widget, true, false));
+	if (!TestTrue(TEXT("Binding fixture built"), Built.bSuccess && Built.Result.IsValid() && Built.Result->GetBoolField(TEXT("bSuccess"))))
+		return false;
+	UWidgetBlueprint* WBP = Widget.Load();
+	if (!TestNotNull(TEXT("Binding fixture loaded"), WBP)) return false;
+
+	auto CountNodes = [WBP]()
+	{
+		TArray<UEdGraph*> Graphs;
+		WBP->GetAllGraphs(Graphs);
+		int32 Count = 0;
+		for (UEdGraph* Graph : Graphs) if (Graph) Count += Graph->Nodes.Num();
+		return Count;
+	};
+	const int32 Before = CountNodes();
+	auto Params = MakeShared<FJsonObject>();
+	Params->SetStringField(TEXT("wbp_path"), Widget.Path);
+	Params->SetStringField(TEXT("widget_name"), TEXT("RootBox"));
+	Params->SetStringField(TEXT("target_property"), TEXT("RenderOpacity"));
+	Params->SetStringField(TEXT("token_key"), TEXT("color.surface.default"));
+
+	// Stub only the provider probe result. Real widget loading and property
+	// validation execute; this does not claim integration with Tokenforge.
+	const auto Data = CheckNotImplemented(*this,
+		MonolithCommonUIButton::ApplyTokenBindingWithProvider(Params, true, TEXT("controlled-test-provider")));
+	if (Data.IsValid())
+	{
+		TestEqual(TEXT("Unimplemented graph part is named"), Data->GetStringField(TEXT("part")),
+			FString(TEXT("apply_token_binding.NativeConstruct_graph")));
+		TestTrue(TEXT("Controlled provider state reaches binding branch"), Data->GetBoolField(TEXT("tokenforge_available")));
+	}
+	TestEqual(TEXT("No graph binding nodes were added"), CountNodes(), Before);
+
+	// Invalid properties must still fail validation before the capability result.
+	Params->SetStringField(TEXT("target_property"), TEXT("Phase0DoesNotExist"));
+	const auto Invalid = MonolithCommonUIButton::ApplyTokenBindingWithProvider(Params, true, TEXT("controlled-test-provider"));
+	TestFalse(TEXT("Invalid property is rejected"), Invalid.bSuccess);
+	TestEqual(TEXT("Invalid property retains invalid-params code"), Invalid.ErrorCode, -32602);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithUITokenBindingLiveProbeTest,
+	"Monolith.UI.Honesty.TokenBindingLiveProbe", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithUITokenBindingLiveProbeTest::RunTest(const FString& Parameters)
+{
+	const TSharedPtr<IPlugin> Provider = IPluginManager::Get().FindPlugin(TEXT("TokenforgeRuntime"));
+	if (Provider.IsValid() && Provider->IsEnabled())
+	{
+		AddInfo(TEXT("Tokenforge is enabled; missing-provider scenario is not applicable. Controlled provider-state coverage is separate."));
+		return true;
+	}
+	auto Params = MakeShared<FJsonObject>();
+	Params->SetStringField(TEXT("wbp_path"), TEXT("/Game/Tests/Monolith/UI/Phase0/WBP_NotNeeded"));
+	Params->SetStringField(TEXT("widget_name"), TEXT("RootBox"));
+	Params->SetStringField(TEXT("target_property"), TEXT("RenderOpacity"));
+	Params->SetStringField(TEXT("token_key"), TEXT("color.surface.default"));
+	const auto Result = FMonolithToolRegistry::Get().ExecuteAction(TEXT("ui"), TEXT("apply_token_binding"), Params);
+	TestFalse(TEXT("Actual absent provider is rejected"), Result.bSuccess);
+	TestEqual(TEXT("Existing optional-provider code is preserved"), Result.ErrorCode, -32011);
+	TestTrue(TEXT("Provider absence is explained"), Result.ErrorMessage.Contains(TEXT("TokenforgeRuntime")));
+	return true;
+}
+#endif
 
 #endif // WITH_COMMONUI
