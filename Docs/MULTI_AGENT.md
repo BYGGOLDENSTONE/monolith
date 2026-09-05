@@ -94,3 +94,5 @@ Default destination is `$CODEX_HOME/skills`, or `~/.codex/skills` when unset. `-
 Grant the editor lease to one tool-enabled worker at a time. Each handoff reports changed asset paths, compile and save results, readback/runtime evidence, outstanding background operations and unresolved failures. Run representative gameplay and packaging checks after integration. A tool success or a generated scaffold does not establish production quality; see [UE 5.7 audit and release gates](AUDIT_UE57.md).
 
 Coordination errors use `-32020` for busy/executing (`retryable:true`) and `-32021` for an invalid or stale lease (`retryable:false`). Both include `executed:false`. Optional-dependency errors retain `-32010`.
+
+Omitting `ttl_seconds` on renewal retains the last acquired or explicitly renewed duration. When a leased action or batch finishes past its deadline, the owner gets `min(30, TTL/4)` seconds to release or renew cleanly. Idle leases still expire at their deadline.

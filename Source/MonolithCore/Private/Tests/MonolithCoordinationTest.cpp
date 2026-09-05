@@ -109,7 +109,9 @@ bool FMonolithLeaseGuardTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("No takeover during running action"), Coordinator.Handle(Acquire(TEXT("agent-b"))).ErrorCode, FMonolithJsonUtils::ErrCoordinationBusy);
 		TestFalse(TEXT("No release during running action"), Coordinator.Handle(Request(TEXT("release"), Token)).bSuccess);
 	}
-	TestEqual(TEXT("Expired token denied after action returns"), Coordinator.CheckAccess(TEXT("editor"), TEXT("mutate"), OwnedParams, ExecutionToken).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
+	TestTrue(TEXT("Owner retains access during release grace"), Coordinator.CheckAccess(TEXT("editor"), TEXT("mutate"), OwnedParams, ExecutionToken).bSuccess);
+	Now = 17.5;
+	TestEqual(TEXT("Expired token denied after release grace"), Coordinator.CheckAccess(TEXT("editor"), TEXT("mutate"), OwnedParams, ExecutionToken).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
 	TestTrue(TEXT("No inherited context leaks after scope"), Coordinator.CheckAccess(TEXT("editor"), TEXT("mutate"), Empty, ExecutionToken).bSuccess);
 	TestTrue(TEXT("Context cleared"), ExecutionToken.IsEmpty());
 	return true;
@@ -250,8 +252,59 @@ bool FMonolithLeaseBatchPinTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Both leased batch items executed"), Executed, 2);
 	TestFalse(TEXT("Batch pin cleared"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("executing")));
-	TestEqual(TEXT("Expired lease no longer pinned after batch"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), OwnedParams, ExecutionToken, false).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
+	TestTrue(TEXT("Batch owner retains release grace"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), OwnedParams, ExecutionToken, false).bSuccess);
+	Now = 13.5;
+	TestEqual(TEXT("Expired lease no longer pinned after batch grace"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), OwnedParams, ExecutionToken, false).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
 	TestTrue(TEXT("No token context leaks after batch"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), Empty, ExecutionToken, false).bSuccess);
+	return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithLeaseRenewDefaultTest, "Monolith.Coordination.RenewRetainsTTL",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMonolithLeaseRenewDefaultTest::RunTest(const FString& Parameters)
+{
+	using namespace MonolithCoordinationTest;
+	double Now = 100;
+	FMonolithCoordination Coordinator([&Now] { return Now; });
+	const FString Token = TokenOf(Coordinator.Handle(Acquire(TEXT("owner"), 600)));
+	Now = 200;
+	auto Renew = Request(TEXT("renew"), Token);
+	TestEqual(TEXT("Omitted TTL retains acquired 600 seconds"), Coordinator.Handle(Renew).Result->GetNumberField(TEXT("remaining_seconds")), 600.0);
+	Renew->SetNumberField(TEXT("ttl_seconds"), 40);
+	TestEqual(TEXT("Explicit renewal replaces TTL"), Coordinator.Handle(Renew).Result->GetNumberField(TEXT("remaining_seconds")), 40.0);
+	Now = 210;
+	Renew->RemoveField(TEXT("ttl_seconds"));
+	TestEqual(TEXT("Later omitted TTL retains renewed duration"), Coordinator.Handle(Renew).Result->GetNumberField(TEXT("remaining_seconds")), 40.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithLeaseReleaseGraceTest, "Monolith.Coordination.ReleaseGrace",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMonolithLeaseReleaseGraceTest::RunTest(const FString& Parameters)
+{
+	using namespace MonolithCoordinationTest;
+	for (const double TTL : {10.0, 600.0})
+	{
+		double Now = 0;
+		FMonolithCoordination Coordinator([&Now] { return Now; });
+		const FString Token = TokenOf(Coordinator.Handle(Acquire(TEXT("owner"), TTL)));
+		FString ExecutionToken;
+		TestTrue(TEXT("Owned action allowed"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), Request(TEXT("unused"), Token), ExecutionToken).bSuccess);
+		{
+			FMonolithCoordination::FExecutionScope Scope(Coordinator, ExecutionToken);
+			Now = TTL + 5;
+		}
+		const double Grace = FMath::Min(30.0, TTL / 4.0);
+		TestEqual(TEXT("Grace is TTL/4 capped at 30"), Coordinator.Handle(Request(TEXT("status"))).Result->GetNumberField(TEXT("remaining_seconds")), Grace);
+		Now += Grace / 2;
+		TestTrue(TEXT("Owner releases cleanly after overlong action"), Coordinator.Handle(Request(TEXT("release"), Token)).bSuccess);
+		const FString NextToken = TokenOf(Coordinator.Handle(Acquire(TEXT("owner"), TTL)));
+		{
+			FMonolithCoordination::FExecutionScope Scope(Coordinator, NextToken);
+			Now += TTL;
+		}
+		Now += Grace;
+		TestFalse(TEXT("Grace expires at exact boundary"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("active")));
+	}
 	return true;
 }
 #endif

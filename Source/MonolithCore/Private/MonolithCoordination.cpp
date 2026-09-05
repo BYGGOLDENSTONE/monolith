@@ -28,7 +28,7 @@ void FMonolithCoordination::RegisterTool()
 	};
 	AddParam(TEXT("operation"), TEXT("string"), TEXT("status (default), acquire, renew, or release."));
 	AddParam(TEXT("owner"), TEXT("string"), TEXT("Required for acquire: human-readable agent/workflow label, max 128 characters. A label is not proof of ownership."));
-	AddParam(TEXT("ttl_seconds"), TEXT("number"), TEXT("Lease duration for acquire/renew, 10..600 seconds; default 120. Renew before expiry."));
+	AddParam(TEXT("ttl_seconds"), TEXT("number"), TEXT("Lease duration, 10..600 seconds; acquire defaults to 120, renew retains the current duration when omitted. Renew before expiry."));
 	AddParam(TEXT("_lease_token"), TEXT("string"), TEXT("Opaque token returned by acquire; required for renew/release. Also pass in every protected tool call's params."));
 	TArray<TSharedPtr<FJsonValue>> Operations;
 	for (const TCHAR* Operation : { TEXT("status"), TEXT("acquire"), TEXT("renew"), TEXT("release") })
@@ -39,7 +39,6 @@ void FMonolithCoordination::RegisterTool()
 	Schema->GetObjectField(TEXT("operation"))->SetStringField(TEXT("default"), TEXT("status"));
 	Schema->GetObjectField(TEXT("ttl_seconds"))->SetNumberField(TEXT("minimum"), 10);
 	Schema->GetObjectField(TEXT("ttl_seconds"))->SetNumberField(TEXT("maximum"), 600);
-	Schema->GetObjectField(TEXT("ttl_seconds"))->SetNumberField(TEXT("default"), 120);
 	FMonolithToolRegistry::Get().RegisterAction(TEXT("monolith"), TEXT("coordination"),
 		TEXT("Coordinate multiple agents sharing one Unreal Editor. Acquire an exclusive workflow lease, pass _lease_token in domain tool params, renew before expiry, release in finally. Status is public and never reveals tokens. Busy/stale requests fail before execution. This does not run UObjects concurrently or undo completed work."),
 		FMonolithActionHandler::CreateLambda([](const TSharedPtr<FJsonObject>& Params) { return Get().Handle(Params); }), Schema);
@@ -123,7 +122,7 @@ FMonolithActionResult FMonolithCoordination::Handle(const TSharedPtr<FJsonObject
 		return FMonolithActionResult::Success(StatusLocked());
 	}
 
-	double TTL = 120.0;
+	double TTL = Operation == TEXT("renew") ? LeaseTTLSeconds : 120.0;
 	if (Params.IsValid() && Params->HasField(TEXT("ttl_seconds")) &&
 		(!Params->TryGetNumberField(TEXT("ttl_seconds"), TTL) || !FMath::IsFinite(TTL) || TTL < 10.0 || TTL > 600.0))
 	{
@@ -144,6 +143,7 @@ FMonolithActionResult FMonolithCoordination::Handle(const TSharedPtr<FJsonObject
 		Owner = RequestedOwner.TrimStartAndEnd();
 		LeaseToken = FGuid::NewGuid().ToString(EGuidFormats::Digits);
 	}
+	LeaseTTLSeconds = TTL;
 	ExpiresAt = Clock() + TTL;
 	auto Result = StatusLocked();
 	Result->SetStringField(TEXT("_lease_token"), LeaseToken);
@@ -195,6 +195,16 @@ FMonolithActionResult FMonolithCoordination::CheckAccess(const FString& Namespac
 	return FMonolithActionResult::Success(nullptr);
 }
 
+void FMonolithCoordination::EndLeasedExecutionLocked()
+{
+	--ActiveExecutions;
+	const double Now = Clock();
+	if (ActiveExecutions == 0 && !LeaseToken.IsEmpty() && Now >= ExpiresAt)
+	{
+		ExpiresAt = Now + FMath::Min(30.0, LeaseTTLSeconds / 4.0);
+	}
+}
+
 FMonolithCoordination::FBatchScope::FBatchScope(FMonolithCoordination& InCoordinator)
 	: Coordinator(InCoordinator)
 {
@@ -209,7 +219,7 @@ FMonolithCoordination::FBatchScope::~FBatchScope()
 	FScopeLock Lock(&Coordinator.Mutex);
 	check(Coordinator.CurrentBatch == this);
 	Coordinator.CurrentBatch = PreviousBatch;
-	if (bPinned) { --Coordinator.ActiveExecutions; }
+	if (bPinned) { Coordinator.EndLeasedExecutionLocked(); }
 }
 
 FMonolithCoordination::FExecutionScope::FExecutionScope(FMonolithCoordination& InCoordinator, const FString& Token)
@@ -236,5 +246,5 @@ FMonolithCoordination::FExecutionScope::~FExecutionScope()
 	FScopeLock Lock(&Coordinator.Mutex);
 	Coordinator.ExecutionToken = MoveTemp(PreviousToken);
 	--Coordinator.DispatchDepth;
-	if (bLeased) { --Coordinator.ActiveExecutions; }
+	if (bLeased) { Coordinator.EndLeasedExecutionLocked(); }
 }

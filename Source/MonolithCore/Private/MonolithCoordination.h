@@ -37,8 +37,8 @@ public:
 	};
 
 	/** Synchronous nested registry dispatch inherits the validated parent's token.
-	 * Active calls finish even if their lease expires; expiration applies before the
-	 * next top-level call. Never propagate this context to asynchronous/background work.
+	 * Active calls finish even if their lease expires, then receive a short release
+	 * grace window. Never propagate this context to asynchronous/background work.
 	 */
 	class FExecutionScope
 	{
@@ -55,6 +55,7 @@ public:
 
 private:
 	void ExpireLocked();
+	void EndLeasedExecutionLocked();
 	TSharedPtr<FJsonObject> StatusLocked() const;
 	FMonolithActionResult ErrorLocked(const TCHAR* Reason, const TCHAR* Message, int32 Code) const;
 	static bool IsExempt(const FString& Namespace, const FString& Action);
@@ -63,6 +64,7 @@ private:
 	FString Owner;
 	FString LeaseToken;
 	double ExpiresAt = 0;
+	double LeaseTTLSeconds = 120;
 	int32 ActiveExecutions = 0;
 	int32 DispatchDepth = 0;
 	// Accessed only on the game thread, never by transport worker threads.
