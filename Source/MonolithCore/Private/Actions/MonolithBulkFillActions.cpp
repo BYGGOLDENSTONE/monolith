@@ -9,6 +9,7 @@
 #include "Reflection/MonolithDryRunGuard.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithJsonUtils.h"
+#include "MonolithFuzzyMatch.h"
 #include "MonolithParamSchema.h"
 #include "Dom/JsonObject.h"
 
@@ -271,9 +272,30 @@ namespace MonolithBulkFillActionsInternal
 
 		if (!Found)
 		{
+			const TArray<FString> Namespaces = Reg.GetNamespaces();
+			const bool bKnownNamespace = Namespaces.Contains(TargetNamespace);
+			TArray<FString> Candidates;
+			if (bKnownNamespace)
+			{
+				for (const auto& Info : Actions) { Candidates.Add(Info.Action); }
+			}
+			else { Candidates = Namespaces; }
+			const FString Kind = bKnownNamespace ? TEXT("action") : TEXT("namespace");
+			TArray<TSharedPtr<FJsonValue>> Suggestions;
+			for (const auto& Candidate : MonolithFuzzyMatchDetail::ScoreFuzzyMatches(
+				bKnownNamespace ? ActionName : TargetNamespace, Candidates, 3))
+			{
+				auto Suggestion = MakeShared<FJsonObject>();
+				Suggestion->SetStringField(Kind, Candidate.Key);
+				Suggestion->SetNumberField(TEXT("score"), Candidate.Score);
+				Suggestions.Add(MakeShared<FJsonValueObject>(Suggestion));
+			}
+			auto ErrorData = MakeShared<FJsonObject>();
+			ErrorData->SetStringField(TEXT("kind"), Kind);
+			ErrorData->SetArrayField(TEXT("suggestions"), Suggestions);
 			return FMonolithActionResult::Error(FString::Printf(
 				TEXT("action '%s' not found in namespace '%s'. Use monolith_discover(\"%s\") to list available actions."),
-				*ActionName, *TargetNamespace, *TargetNamespace));
+				*ActionName, *TargetNamespace, *TargetNamespace)).WithErrorData(ErrorData);
 		}
 
 		TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();

@@ -13,6 +13,7 @@
 #include "Misc/ScopeExit.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithFuzzyMatch.h"
+#include "MonolithJsonUtils.h"
 #include "Async/Async.h"
 #include "Async/Future.h"
 #include "HAL/PlatformTime.h"
@@ -350,6 +351,46 @@ bool FMonolithFuzzyMatchScoringOrderTest::RunTest(const FString& /*Parameters*/)
 				i, Top3[i].Score, i - 1, Top3[i - 1].Score),
 			Top3[i].Score <= Top3[i - 1].Score);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithFuzzyDiscoveryTest, "Monolith.FuzzyMatch.DiscoverySuggestions",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMonolithFuzzyDiscoveryTest::RunTest(const FString& Parameters)
+{
+	using namespace MonolithFuzzyMatchTestDetail;
+	auto& Registry = FMonolithToolRegistry::Get();
+	auto CheckSuggestions = [this](const FMonolithActionResult& Result, const TCHAR* Kind, const TCHAR* Expected, int32 Code)
+	{
+		TestFalse(TEXT("Typo remains an error"), Result.bSuccess);
+		TestEqual(TEXT("Existing error code preserved"), Result.ErrorCode, Code);
+		TArray<FString> Keys;
+		TArray<float> Scores;
+		if (!TestTrue(TEXT("Error carries structured suggestions"), GetSuggestions(Result, Keys, Scores))) return;
+		TestEqual(TEXT("Suggestion kind retained"), Result.ErrorData->AsObject()->GetStringField(TEXT("kind")), FString(Kind));
+		TestTrue(TEXT("Suggestions include intended name"), Keys.Contains(Expected));
+		TestTrue(TEXT("At most three suggestions"), Keys.Num() <= 3);
+		for (int32 Index = 0; Index < Scores.Num(); ++Index)
+		{
+			TestTrue(TEXT("Score within normalized bounds"), Scores[Index] >= 0 && Scores[Index] <= 1);
+			if (Index > 0) TestTrue(TEXT("Scores descending"), Scores[Index] <= Scores[Index - 1]);
+		}
+	};
+	auto Params = MakeShared<FJsonObject>();
+	Params->SetStringField(TEXT("namespace"), TEXT("monolih"));
+	CheckSuggestions(Registry.ExecuteAction(TEXT("monolith"), TEXT("discover"), Params),
+		TEXT("namespace"), TEXT("monolith"), FMonolithJsonUtils::ErrInvalidParams);
+	Params = MakeShared<FJsonObject>();
+	Params->SetStringField(TEXT("target_namespace"), TEXT("monolith"));
+	Params->SetStringField(TEXT("target_action"), TEXT("discove"));
+	CheckSuggestions(Registry.ExecuteAction(TEXT("describe"), TEXT("action_schema"), Params),
+		TEXT("action"), TEXT("discover"), FMonolithJsonUtils::ErrInternalError);
+	Params->SetStringField(TEXT("target_namespace"), TEXT("monolih"));
+	Params->SetStringField(TEXT("target_action"), TEXT("discover"));
+	CheckSuggestions(Registry.ExecuteAction(TEXT("describe"), TEXT("action_schema"), Params),
+		TEXT("namespace"), TEXT("monolith"), FMonolithJsonUtils::ErrInternalError);
+	Params->SetStringField(TEXT("target_namespace"), TEXT("monolith"));
+	TestTrue(TEXT("Correct action schema still succeeds"), Registry.ExecuteAction(TEXT("describe"), TEXT("action_schema"), Params).bSuccess);
 	return true;
 }
 
