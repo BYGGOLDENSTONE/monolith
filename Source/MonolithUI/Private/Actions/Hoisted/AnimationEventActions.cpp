@@ -3,6 +3,7 @@
 
 // Monolith registry
 #include "MonolithToolRegistry.h"
+#include "MonolithParamSchema.h"
 
 // JSON
 #include "Dom/JsonObject.h"
@@ -336,7 +337,12 @@ void MonolithUI::FAnimationEventActions::Register(FMonolithToolRegistry& Registr
              "UWidgetAnimation on a WBP. Inserts timed FMovieSceneEvent keys for animation lifecycle events. "
              "Params: asset_path (string, /Game/... WBP path), animation_name (string, must exist), "
              "events (array of { time: number (seconds), event_name: string })."),
-        FMonolithActionHandler::CreateStatic(&MonolithUI::FAnimationEventActions::HandleAddAnimationEventTrack));
+        FMonolithActionHandler::CreateStatic(&MonolithUI::FAnimationEventActions::HandleAddAnimationEventTrack),
+        FParamSchemaBuilder()
+            .Required(TEXT("asset_path"), TEXT("string"), TEXT("Widget Blueprint asset path"))
+            .Required(TEXT("animation_name"), TEXT("string"), TEXT("Animation display name"))
+            .Required(TEXT("events"), TEXT("array"), TEXT("Nonempty event keys: {time:number in seconds,event_name:string}"))
+            .Build());
 
     Registry.RegisterAction(
         TEXT("ui"),
@@ -346,5 +352,11 @@ void MonolithUI::FAnimationEventActions::Register(FMonolithToolRegistry& Registr
              "Params: asset_path (string), animation_name (string, must exist), "
              "widget_event (string, one of: OnHovered, OnUnhovered, OnPressed, OnReleased, OnFocusReceived, OnFocusLost), "
              "animation_event (string, optional, 'Started' or 'Finished', default 'Started')."),
-        FMonolithActionHandler::CreateStatic(&MonolithUI::FAnimationEventActions::HandleBindAnimationToEvent));
+        FMonolithActionHandler::CreateStatic(&MonolithUI::FAnimationEventActions::HandleBindAnimationToEvent),
+        FParamSchemaBuilder()
+            .Required(TEXT("asset_path"), TEXT("string"), TEXT("Widget Blueprint asset path"))
+            .Required(TEXT("animation_name"), TEXT("string"), TEXT("Animation display name"))
+            .Required(TEXT("widget_event"), TEXT("string"), TEXT("OnHovered | OnUnhovered | OnPressed | OnReleased | OnFocusReceived | OnFocusLost"))
+            .Optional(TEXT("animation_event"), TEXT("string"), TEXT("Started or Finished"), TEXT("Started"))
+            .Build());
 }

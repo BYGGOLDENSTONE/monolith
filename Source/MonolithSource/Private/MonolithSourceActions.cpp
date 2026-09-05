@@ -76,6 +76,7 @@ void FMonolithSourceActions::RegisterAll()
 		FMonolithActionHandler::CreateStatic(&FMonolithSourceActions::HandleGetClassHierarchy),
 		FParamSchemaBuilder()
 			.Required(TEXT("symbol"), TEXT("string"), TEXT("Class name"))
+			.Optional(TEXT("class_name"), TEXT("string"), TEXT("Legacy handler fallback when symbol is absent; registered calls still require symbol"))
 			.Optional(TEXT("direction"), TEXT("string"), TEXT("Direction: up (parents) or down (children)"), TEXT("both"))
 			.Optional(TEXT("depth"), TEXT("integer"), TEXT("Max hierarchy depth"), TEXT("5"))
 			.Build());

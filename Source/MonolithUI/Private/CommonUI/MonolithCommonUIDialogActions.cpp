@@ -132,7 +132,8 @@ namespace MonolithCommonUIDialog
 			TEXT("Add a UBackgroundBlur widget behind a parent panel in a WBP. Intended for modal dim/blur effect."),
 			FMonolithActionHandler::CreateStatic(&HandleConfigureModalOverlay),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("parent_widget"), TEXT("string"), TEXT("Parent panel name to add blur into"))
 				.Optional(TEXT("blur_widget_name"), TEXT("string"), TEXT("Name for the blur widget"), TEXT("ModalBackdropBlur"))
 				.Optional(TEXT("blur_strength"), TEXT("number"), TEXT("Blur radius"))

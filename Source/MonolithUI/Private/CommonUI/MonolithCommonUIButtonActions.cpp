@@ -1338,7 +1338,8 @@ namespace MonolithCommonUIButton
 				 "Override via 'target_class' for project-specific subclasses. Old UButton child is NOT auto-transferred."),
 			FMonolithActionHandler::CreateStatic(&HandleConvertButtonToCommon),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Target Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of the UButton to convert"))
 				.Optional(TEXT("target_class"), TEXT("string"),
 					TEXT("Concrete UCommonButtonBase subclass to construct. Use /Script/Module.ClassName or a loaded class name. "
@@ -1351,7 +1352,8 @@ namespace MonolithCommonUIButton
 			TEXT("Set UCommonButtonBase properties: toggle, hold, dimensions, click method, disabled reason"),
 			FMonolithActionHandler::CreateStatic(&HandleConfigureCommonButton),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of the UCommonButtonBase"))
 				.Optional(TEXT("is_toggleable"), TEXT("boolean"), TEXT("Enable toggle behavior"))
 				.Optional(TEXT("requires_hold"), TEXT("boolean"), TEXT("Require hold-to-confirm"))
@@ -1402,7 +1404,8 @@ namespace MonolithCommonUIButton
 			TEXT("Assign a UCommonButtonStyle / UCommonTextStyle / UCommonBorderStyle class to a widget in a WBP"),
 			FMonolithActionHandler::CreateStatic(&HandleApplyStyleToWidget),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of widget to style"))
 				.Required(TEXT("style_asset"), TEXT("string"), TEXT("Style class path (usually ends with _C)"))
 				.Build(),
@@ -1424,7 +1427,8 @@ namespace MonolithCommonUIButton
 			TEXT("Configure UCommonTextBlock: wrap, case, line-height, scroll, mobile multiplier"),
 			FMonolithActionHandler::CreateStatic(&HandleConfigureCommonText),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of UCommonTextBlock"))
 				.Optional(TEXT("wrap_text_width"), TEXT("number"), TEXT("Wrap width (px)"))
 				.Optional(TEXT("line_height_percentage"), TEXT("number"), TEXT("Line height as fraction (1.0 = default)"))
@@ -1439,7 +1443,8 @@ namespace MonolithCommonUIButton
 			TEXT("Configure UCommonBorder: reduce_padding_by_safezone, minimum_padding"),
 			FMonolithActionHandler::CreateStatic(&HandleConfigureCommonBorder),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of UCommonBorder"))
 				.Optional(TEXT("reduce_padding_by_safezone"), TEXT("boolean"), TEXT("Honor platform safe-zone"))
 				.Optional(TEXT("minimum_padding"), TEXT("string"), TEXT("FMargin text format, e.g. '(Left=0,Top=0,Right=0,Bottom=0)'"))
@@ -1453,7 +1458,8 @@ namespace MonolithCommonUIButton
 				 "an error with reason='not_implemented', implemented=false and the unimplemented part."),
 			FMonolithActionHandler::CreateStatic(&HandleApplyTokenBinding),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path (alias: asset_path)"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Target widget FName"))
 				.Required(TEXT("target_property"), TEXT("string"), TEXT("UPROPERTY name on the widget to drive from the token"))
 				.Required(TEXT("token_key"), TEXT("string"), TEXT("Tokenforge token identifier (e.g. 'color.surface.default')"))
@@ -1472,7 +1478,8 @@ namespace MonolithCommonUIButton
 				 "chain apply_style_to_widget with a UCommonTextStyle reference to complete the rethemed migration."),
 			FMonolithActionHandler::CreateStatic(&HandleConvertTextBlockToCommon),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of the UTextBlock to convert"))
 				.Build(),
 			Cat);
@@ -1493,7 +1500,8 @@ namespace MonolithCommonUIButton
 				 "/Script/Module.ClassName path, or registered native class name."),
 			FMonolithActionHandler::CreateStatic(&HandleSetActionBarButtonClass),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of the UCommonBoundActionBar"))
 				.Required(TEXT("button_class"), TEXT("string"), TEXT("UCommonButtonBase subclass path (e.g. /Game/UI/BP_MyButton.BP_MyButton_C)"))
 				.Build(),
@@ -1509,7 +1517,8 @@ namespace MonolithCommonUIButton
 				 "is needed. Chain apply_style_to_widget with a UCommonBorderStyle to finish the rethemed migration."),
 			FMonolithActionHandler::CreateStatic(&HandleConvertBorderToCommon),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path (alias: asset_path)"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of the UBorder to convert"))
 				.Build(),
 			Cat);
@@ -1525,7 +1534,8 @@ namespace MonolithCommonUIButton
 				 "children onto the new root. new_class must be a concrete UPanelWidget subclass."),
 			FMonolithActionHandler::CreateStatic(&HandleReparentWidgetRoot),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path (alias: asset_path)"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("new_class"), TEXT("string"), TEXT("New root class (UPanelWidget subclass) resolved by string"))
 				.Build(),
 			Cat);

@@ -65,6 +65,7 @@ void FMonolithMeshBuildingActions::RegisterActions(FMonolithToolRegistry& Regist
 			.Optional(TEXT("floor_thickness"), TEXT("number"), TEXT("Floor/ceiling slab thickness in cm"), TEXT("3"))
 			.Optional(TEXT("materials"), TEXT("object"), TEXT("Map of slot ID to material asset path (0=exterior, 1=interior, 2=floor, 3=trim)"))
 			.Optional(TEXT("location"), TEXT("array"), TEXT("World location [x, y, z]"))
+			.Optional(TEXT("snap_to_floor"), TEXT("boolean"), TEXT("Snap the spawned building actor to the floor"), TEXT("true"))
 			.Optional(TEXT("label"), TEXT("string"), TEXT("Actor label"))
 			.OptionalAssetPath(TEXT("folder"), TEXT("Outliner folder path"))
 			.Optional(TEXT("building_id"), TEXT("string"), TEXT("Building ID for the descriptor"))

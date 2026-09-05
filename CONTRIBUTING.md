@@ -148,6 +148,29 @@ void FMonolithFooModule::StartupModule()
 
 The argument order and `CreateStatic` delegate follow the existing `editor.get_crash_context` registration in `MonolithEditorActions.cpp`. Add `MonolithCore` to your module's Build.cs dependencies if it is not already present. Unregister the namespace during shutdown when your module owns the whole namespace.
 
+Every production registration needs an explicit, non-null parameter schema;
+use `FParamSchemaBuilder().Build()` when it takes no inputs. Declare all literal
+top-level input keys read by the handler, including legacy fallback names. Nested
+descriptor keys belong in the containing array/object description, not at the
+action's top level. Describe the handler's actual types and defaults: schema
+defaults are documentation, and are not injected into incoming parameters.
+
+Run `python Scripts/check_schema_drift.py` before committing. It checks production
+registrations in headers and source files, resolves static/lambda handlers and
+schema builders/getters, and fails on unresolved syntax, missing schemas, or
+undeclared literal input reads. It checks all compile-gated implementations;
+Automation fixture registrations under `Tests` are excluded. The check also runs
+through repository lint and the CI lint job.
+
+When a handler forwards its original input to a helper, record the reviewed
+helper, argument position, consumed keys, and reason in
+`Scripts/schema_drift_forwarding.json`. These entries add helper inputs to the
+check; they never exempt direct reads. Keep them current when the helper changes.
+This source lint does not infer arbitrary dynamic keys or general C++ data flow.
+For existing fallback fields, adding an explicit optional field preserves the
+handler's precedence; declaring a schema alias also enables alias rewriting and
+canonical/alias collision checks, so that is a separate behavior decision.
+
 ### 4. Update the related files
 
 For every new action, update its handler declaration and implementation, registration, relevant `Docs/specs/SPEC_<Module>.md` action table, `Docs/API_REFERENCE.md`, domain skill action table, and `CHANGELOG.md`. Add appropriate verification for the behavior.

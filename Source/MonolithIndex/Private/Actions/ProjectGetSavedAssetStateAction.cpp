@@ -112,5 +112,6 @@ TSharedPtr<FJsonObject> FProjectGetSavedAssetStateAction::GetSchema()
 {
 	return FParamSchemaBuilder()
 		.Required(TEXT("asset_path"), TEXT("string"), TEXT("Package path of the asset (e.g. /Game/Tests/Monolith/Foo)"))
+		.Optional(TEXT("package_path"), TEXT("string"), TEXT("Legacy fallback used when asset_path is empty"))
 		.Build();
 }

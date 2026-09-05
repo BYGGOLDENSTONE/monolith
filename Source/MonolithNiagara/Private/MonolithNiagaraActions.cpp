@@ -2580,6 +2580,9 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset path"))
 			.Required(TEXT("emitter_asset"), TEXT("string"), TEXT("Emitter asset path to add"))
 			.Optional(TEXT("name"), TEXT("string"), TEXT("Custom name for the emitter"))
+			.Optional(TEXT("emitter_path"), TEXT("string"), TEXT("Fallback emitter asset path when emitter_asset is empty; precedes template and template_path."))
+			.Optional(TEXT("template"), TEXT("string"), TEXT("Fallback emitter asset path when emitter_asset and emitter_path are empty; precedes template_path."))
+			.Optional(TEXT("template_path"), TEXT("string"), TEXT("Fallback emitter asset path when emitter_asset, emitter_path, and template are empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("remove_emitter"), TEXT("Remove an emitter from a Niagara system"),
 		FMonolithActionHandler::CreateStatic(&HandleRemoveEmitter),
@@ -2593,6 +2596,7 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset path"))
 			.Required(TEXT("source_emitter"), TEXT("string"), TEXT("Name of emitter to duplicate"))
 			.Optional(TEXT("new_name"), TEXT("string"), TEXT("Name for the duplicated emitter"))
+			.Optional(TEXT("emitter"), TEXT("string"), TEXT("Fallback source emitter name or GUID when source_emitter is empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("set_emitter_enabled"), TEXT("Enable or disable an emitter"),
 		FMonolithActionHandler::CreateStatic(&HandleSetEmitterEnabled),
@@ -2614,11 +2618,14 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("emitter"), TEXT("string"), TEXT("Emitter name"))
 			.Required(TEXT("property"), TEXT("string"), TEXT("Property name"))
 			.Required(TEXT("value"), TEXT("string"), TEXT("Property value"))
+			.Optional(TEXT("property_name"), TEXT("string"), TEXT("Fallback property name when property is empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("request_compile"), TEXT("Request compilation of a Niagara system"),
 		FMonolithActionHandler::CreateStatic(&HandleRequestCompile),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset path"))
+			.Optional(TEXT("force"), TEXT("boolean"), TEXT("Force recompilation instead of reusing an existing compile result."), TEXT("false"))
+			.Optional(TEXT("synchronous"), TEXT("boolean"), TEXT("Wait for compilation to complete before returning."), TEXT("false"))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("create_system"), TEXT("Create a new Niagara system"),
 		FMonolithActionHandler::CreateStatic(&HandleCreateSystem),
@@ -2650,6 +2657,8 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset path"))
 			.Required(TEXT("emitter"), TEXT("string"), TEXT("Emitter name"))
 			.Required(TEXT("module_node"), TEXT("string"), TEXT("Module node name"))
+			.Optional(TEXT("module_name"), TEXT("string"), TEXT("Fallback module name or GUID when module_node is empty; precedes module."))
+			.Optional(TEXT("module"), TEXT("string"), TEXT("Fallback module name or GUID when module_node and module_name are empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("get_module_graph"), TEXT("Get the node graph of a module script"),
 		FMonolithActionHandler::CreateStatic(&HandleGetModuleGraph),
@@ -2714,6 +2723,9 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("module_node"), TEXT("string"), TEXT("Module node name"))
 			.Required(TEXT("input"), TEXT("string"), TEXT("Input parameter name"))
 			.Required(TEXT("value"), TEXT("string"), TEXT("Value to set"))
+			.Optional(TEXT("module_name"), TEXT("string"), TEXT("Fallback module name or GUID when module_node is empty; precedes module."))
+			.Optional(TEXT("module"), TEXT("string"), TEXT("Fallback module name or GUID when module_node and module_name are empty."))
+			.Optional(TEXT("input_name"), TEXT("string"), TEXT("Fallback input parameter name when input is empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("set_module_input_binding"), TEXT("Bind a module input to a parameter"),
 		FMonolithActionHandler::CreateStatic(&HandleSetModuleInputBinding),
@@ -2723,6 +2735,9 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("module_node"), TEXT("string"), TEXT("Module node name"))
 			.Required(TEXT("input"), TEXT("string"), TEXT("Input parameter name"))
 			.Required(TEXT("binding"), TEXT("string"), TEXT("Parameter binding path"))
+			.Optional(TEXT("module_name"), TEXT("string"), TEXT("Fallback module name or GUID when module_node is empty; precedes module."))
+			.Optional(TEXT("module"), TEXT("string"), TEXT("Fallback module name or GUID when module_node and module_name are empty."))
+			.Optional(TEXT("input_name"), TEXT("string"), TEXT("Fallback input parameter name when input is empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("set_module_input_di"), TEXT("Set a data interface on a module input"),
 		FMonolithActionHandler::CreateStatic(&HandleSetModuleInputDI),
@@ -2733,6 +2748,9 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("input"), TEXT("string"), TEXT("Input parameter name"))
 			.Required(TEXT("di_class"), TEXT("string"), TEXT("Data interface class name"))
 			.Optional(TEXT("config"), TEXT("object"), TEXT("Data interface configuration"))
+			.Optional(TEXT("module_name"), TEXT("string"), TEXT("Fallback module name or GUID when module_node is empty; precedes module."))
+			.Optional(TEXT("module"), TEXT("string"), TEXT("Fallback module name or GUID when module_node and module_name are empty."))
+			.Optional(TEXT("input_name"), TEXT("string"), TEXT("Fallback input parameter name when input is empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("create_module_from_hlsl"), TEXT("Create a Niagara module script from custom HLSL"),
 		FMonolithActionHandler::CreateStatic(&HandleCreateModuleFromHLSL),
@@ -2792,6 +2810,8 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("name"), TEXT("string"), TEXT("Parameter name"))
 			.Required(TEXT("type"), TEXT("string"), TEXT("Niagara type name"))
 			.Optional(TEXT("default"), TEXT("string"), TEXT("Default value"))
+			.Optional(TEXT("parameter_name"), TEXT("string"), TEXT("Fallback parameter name only when name is absent; a present name takes precedence even when empty."))
+			.Optional(TEXT("default_value"), TEXT("any"), TEXT("Fallback default only when default is absent. Number or boolean for scalar types; object or JSON string for vectors/color."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("remove_user_parameter"), TEXT("Remove a user parameter"),
 		FMonolithActionHandler::CreateStatic(&HandleRemoveUserParameter),
@@ -2814,6 +2834,9 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("module_node"), TEXT("string"), TEXT("Module node name"))
 			.Required(TEXT("input"), TEXT("string"), TEXT("Input parameter name"))
 			.Required(TEXT("keys"), TEXT("array"), TEXT("Array of curve key objects"))
+			.Optional(TEXT("module"), TEXT("string"), TEXT("Fallback module name when module_node is empty; precedes module_name."))
+			.Optional(TEXT("module_name"), TEXT("string"), TEXT("Fallback module name when module_node and module are empty."))
+			.Optional(TEXT("input_name"), TEXT("string"), TEXT("Fallback input parameter name when input is empty."))
 			.Build());
 
 	// Renderer (6)
@@ -2823,6 +2846,8 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset path"))
 			.Required(TEXT("emitter"), TEXT("string"), TEXT("Emitter name"))
 			.Required(TEXT("class"), TEXT("string"), TEXT("Renderer class (e.g. Sprite, Mesh, Ribbon)"))
+			.Optional(TEXT("renderer_class"), TEXT("string"), TEXT("Fallback renderer class when class is empty; precedes renderer_type."))
+			.Optional(TEXT("renderer_type"), TEXT("string"), TEXT("Fallback renderer class when class and renderer_class are empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("remove_renderer"), TEXT("Remove a renderer from an emitter"),
 		FMonolithActionHandler::CreateStatic(&HandleRemoveRenderer),
@@ -2847,6 +2872,7 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("renderer_index"), TEXT("integer"), TEXT("Renderer index"))
 			.Required(TEXT("property"), TEXT("string"), TEXT("Property name"))
 			.Required(TEXT("value"), TEXT("string"), TEXT("Property value"))
+			.Optional(TEXT("property_name"), TEXT("string"), TEXT("Fallback property name when property is empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("get_renderer_bindings"), TEXT("Get renderer attribute bindings"),
 		FMonolithActionHandler::CreateStatic(&HandleGetRendererBindings),
@@ -2938,6 +2964,7 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset path"))
 			.Required(TEXT("property"), TEXT("string"), TEXT("Property name or snake_case alias: warmup_time, determinism, random_seed, max_pool_size, etc."))
+			.Optional(TEXT("property_name"), TEXT("string"), TEXT("Fallback property name when property is empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("set_system_property"), TEXT("Set a system-level property (WarmupTime, bDeterminism, etc.)"),
 		FMonolithActionHandler::CreateStatic(&HandleSetSystemProperty),
@@ -2945,6 +2972,7 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset path"))
 			.Required(TEXT("property"), TEXT("string"), TEXT("Property: WarmupTime, WarmupTickCount, WarmupTickDelta, bFixedTickDelta, FixedTickDeltaTime, bDeterminism, RandomSeed, bSupportLargeWorldCoordinates, bNeedsSortedSignificanceHandling, SignificanceHandlerLink, MaxPoolSize"))
 			.Required(TEXT("value"), TEXT("string"), TEXT("Property value"))
+			.Optional(TEXT("property_name"), TEXT("string"), TEXT("Fallback property name when property is empty."))
 			.Build());
 
 	// Static Switch (1)
@@ -2956,6 +2984,8 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("module_node"), TEXT("string"), TEXT("Module node name"))
 			.Required(TEXT("input"), TEXT("string"), TEXT("Static switch input name"))
 			.Required(TEXT("value"), TEXT("string"), TEXT("Value to set (true/false for bool, enum value name for enums, integer for int switches)"))
+			.Optional(TEXT("module_name"), TEXT("string"), TEXT("Fallback module name or GUID when module_node is empty."))
+			.Optional(TEXT("input_name"), TEXT("string"), TEXT("Fallback static switch input name when input is empty."))
 			.Build());
 
 	// --- Wave 2: Summary & Discovery (4 new) ---
@@ -3163,6 +3193,7 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset path"))
 			.Required(TEXT("emitter"), TEXT("string"), TEXT("Emitter name"))
 			.Required(TEXT("property"), TEXT("string"), TEXT("Property name or snake_case alias (sim_target, local_space, determinism, bounds_mode, random_seed, allocation_mode, pre_allocation_count, requires_persistent_ids, max_gpu_particles_spawn_per_frame)"))
+			.Optional(TEXT("property_name"), TEXT("string"), TEXT("Fallback property name when property is empty."))
 			.Build());
 
 	// --- Phase 5: Renderer & DI Improvements (4 new) ---
@@ -3181,6 +3212,7 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Optional(TEXT("scale"), TEXT("object"), TEXT("Scale {x,y,z} (default: 1,1,1)"))
 			.Optional(TEXT("rotation"), TEXT("object"), TEXT("Rotation {pitch,yaw,roll} in degrees"))
 			.Optional(TEXT("pivot_offset"), TEXT("object"), TEXT("Pivot offset {x,y,z}"))
+			.Optional(TEXT("mesh_path"), TEXT("string"), TEXT("Fallback static mesh asset path when mesh is empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("configure_ribbon"), TEXT("High-level ribbon/trail/beam setup with presets (trail, beam, lightning, tube)"),
 		FMonolithActionHandler::CreateStatic(&HandleConfigureRibbon),
@@ -3388,6 +3420,7 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("emitter"), TEXT("string"), TEXT("Emitter name or handle ID"))
 			.Required(TEXT("module_node"), TEXT("string"), TEXT("Module node GUID"))
 			.Optional(TEXT("input"), TEXT("string"), TEXT("Static switch name — omit to list all"))
+			.Optional(TEXT("module_name"), TEXT("string"), TEXT("Fallback module name or GUID when module_node is empty."))
 			.Build());
 	Registry.RegisterAction(TEXT("niagara"), TEXT("import_system_spec"), TEXT("Overwrite an existing Niagara system with a JSON spec (removes all emitters/params, applies spec fresh)"),
 		FMonolithActionHandler::CreateStatic(&HandleImportSystemSpec),

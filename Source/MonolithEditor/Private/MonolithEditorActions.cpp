@@ -481,6 +481,7 @@ void FMonolithEditorActions::RegisterActions(FMonolithLogCapture* LogCapture)
 		FMonolithActionHandler::CreateStatic(&HandleGetRecentLogs),
 		FParamSchemaBuilder()
 			.Optional(TEXT("count"), TEXT("integer"), TEXT("Number of entries to return"), TEXT("50"))
+			.Optional(TEXT("max"), TEXT("integer"), TEXT("Legacy fallback for count; ignored when count is supplied"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("editor"), TEXT("search_logs"),
@@ -667,6 +668,8 @@ void FMonolithEditorActions::RegisterActions(FMonolithLogCapture* LogCapture)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Asset path to preview"))
 			.Required(TEXT("asset_type"), TEXT("string"), TEXT("niagara | material | static_mesh | skeletal_mesh | widget"))
 			.Optional(TEXT("preview_mesh"), TEXT("string"), TEXT("Mesh for materials: plane, sphere, cube"), TEXT("plane"))
+			.Optional(TEXT("background_color"), TEXT("array"), TEXT("Material preview only: linear [r,g,b] or [r,g,b,a] clear color"), TEXT("[0.18,0.18,0.18,1]"))
+			.Optional(TEXT("uv_tiling"), TEXT("number"), TEXT("Material plane preview only: UV repeat scale; nonpositive values use 1"), TEXT("1"))
 			.Optional(TEXT("seek_time"), TEXT("number"), TEXT("Advance Niagara sim or skeletal animation to this time (seconds)"), TEXT("0.0"))
 			.OptionalAssetPath(TEXT("animation_path"), TEXT("skeletal_mesh only: UAnimSequence to pose with at seek_time"))
 			.Optional(TEXT("scale"), TEXT("number"), TEXT("widget only: DPI multiplier (>=0.01)"), TEXT("1.0"))

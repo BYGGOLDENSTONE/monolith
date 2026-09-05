@@ -324,6 +324,7 @@ void FMonolithAIBlackboardActions::RegisterActions(FMonolithToolRegistry& Regist
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("source_path"), TEXT("Source blackboard asset path"))
 			.RequiredAssetPath(TEXT("dest_path"), TEXT("Destination asset path for the copy"))
+			.Optional(TEXT("overwrite"), TEXT("boolean"), TEXT("Replace an existing destination blackboard"), TEXT("false"))
 			.Build());
 
 	// 6. add_bb_key

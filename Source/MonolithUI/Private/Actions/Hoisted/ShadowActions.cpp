@@ -4,6 +4,7 @@
 
 // Monolith registry
 #include "MonolithToolRegistry.h"
+#include "MonolithParamSchema.h"
 
 // JSON
 #include "Dom/JsonObject.h"
@@ -612,5 +613,15 @@ void MonolithUI::FShadowActions::Register(FMonolithToolRegistry& Registry)
              "shadow_mid_destination (string, optional -- if set, saves a UMaterialInstanceConstant per layer at /Game/... instead of transient MID), "
              "compile (bool, optional, default true). "
              "Fails with -32602 on malformed params or incompatible parent material; -32603 on tree/asset errors."),
-        FMonolithActionHandler::CreateStatic(&MonolithUI::FShadowActions::HandleApplyBoxShadow));
+        FMonolithActionHandler::CreateStatic(&MonolithUI::FShadowActions::HandleApplyBoxShadow),
+        FParamSchemaBuilder()
+            .Required(TEXT("asset_path"), TEXT("string"), TEXT("Widget Blueprint asset path"))
+            .Required(TEXT("widget_name"), TEXT("string"), TEXT("Target widget name"))
+            .Required(TEXT("shadow_material_path"), TEXT("string"), TEXT("Parent material with ShadowColor vector and BlurRadius scalar"))
+            .Optional(TEXT("shadow"), TEXT("object"), TEXT("Single layer {color:string required,x?:number,y?:number,blur?:number,spread?:number,inset?:boolean}; use exactly one of shadow or shadows"))
+            .Optional(TEXT("shadows"), TEXT("array"), TEXT("Nonempty layer objects shaped like shadow; first two applied; mutually exclusive with shadow"))
+            .Optional(TEXT("shadow_mid_destination"), TEXT("string"), TEXT("Optional output material instance package path; omitted creates transient MIDs"))
+            .Optional(TEXT("target_size"), TEXT("array"), TEXT("[width,height] override; otherwise derives size from the target canvas slot or desired size"))
+            .Optional(TEXT("compile"), TEXT("boolean"), TEXT("Compile after applying the changes"), TEXT("true"))
+            .Build());
 }

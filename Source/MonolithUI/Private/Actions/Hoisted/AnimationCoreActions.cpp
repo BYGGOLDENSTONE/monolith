@@ -3,6 +3,7 @@
 
 // Monolith registry
 #include "MonolithToolRegistry.h"
+#include "MonolithParamSchema.h"
 
 // JSON
 #include "Dom/JsonObject.h"
@@ -892,7 +893,14 @@ void MonolithUI::FAnimationCoreActions::Register(FMonolithToolRegistry& Registry
              "tracks (array of { widget_name, property, keys: [{ time, value, interp?: 'cubic'|'linear'|'constant', "
              "arrive_tangent?, leave_tangent?, arrive_weight?, leave_weight? }] }), "
              "compile_once (bool, optional, default true)."),
-        FMonolithActionHandler::CreateStatic(&MonolithUI::FAnimationCoreActions::HandleCreateAnimationV2));
+        FMonolithActionHandler::CreateStatic(&MonolithUI::FAnimationCoreActions::HandleCreateAnimationV2),
+        FParamSchemaBuilder()
+            .Required(TEXT("asset_path"), TEXT("string"), TEXT("Widget Blueprint asset path"))
+            .Required(TEXT("animation_name"), TEXT("string"), TEXT("Animation display name"))
+            .Required(TEXT("duration_sec"), TEXT("number"), TEXT("Positive animation duration in seconds"))
+            .Required(TEXT("tracks"), TEXT("array"), TEXT("Nonempty tracks: {widget_name, property, keys:[{time,value,interp?:cubic|linear|constant,arrive_tangent?,leave_tangent?,arrive_weight?,leave_weight?}]}"))
+            .Optional(TEXT("compile_once"), TEXT("boolean"), TEXT("Compile the Widget Blueprint once after authoring"), TEXT("true"))
+            .Build());
 
     Registry.RegisterAction(
         TEXT("ui"),
@@ -902,7 +910,18 @@ void MonolithUI::FAnimationCoreActions::Register(FMonolithToolRegistry& Registry
              "Params: asset_path (string), animation_name (string), widget_name (string), property (string), "
              "from_value (number), to_value (number), start_time (number), end_time (number), "
              "bezier (array of 4 numbers [x1, y1, x2, y2])."),
-        FMonolithActionHandler::CreateStatic(&MonolithUI::FAnimationCoreActions::HandleAddBezierEasedSegment));
+        FMonolithActionHandler::CreateStatic(&MonolithUI::FAnimationCoreActions::HandleAddBezierEasedSegment),
+        FParamSchemaBuilder()
+            .Required(TEXT("asset_path"), TEXT("string"), TEXT("Widget Blueprint asset path"))
+            .Required(TEXT("animation_name"), TEXT("string"), TEXT("Animation display name"))
+            .Required(TEXT("widget_name"), TEXT("string"), TEXT("Target widget name"))
+            .Required(TEXT("property"), TEXT("string"), TEXT("Float property path to animate"))
+            .Required(TEXT("from_value"), TEXT("number"), TEXT("Initial value"))
+            .Required(TEXT("to_value"), TEXT("number"), TEXT("Final value"))
+            .Required(TEXT("start_time"), TEXT("number"), TEXT("Segment start in seconds"))
+            .Required(TEXT("end_time"), TEXT("number"), TEXT("Segment end in seconds; must exceed start_time"))
+            .Required(TEXT("bezier"), TEXT("array"), TEXT("Exactly four numeric control points [x1,y1,x2,y2]"))
+            .Build());
 
     Registry.RegisterAction(
         TEXT("ui"),
@@ -910,8 +929,22 @@ void MonolithUI::FAnimationCoreActions::Register(FMonolithToolRegistry& Registry
         TEXT("Bakes a damped harmonic spring simulation into dense linear keyframes on a WBP animation. "
              "Semi-implicit Euler integrator with convergence early-out. "
              "Params: asset_path (string), animation_name (string), widget_name (string), property (string), "
-             "from_value (number), to_value (number), stiffness (number, default 100), damping (number, default 10), "
-             "mass (number, default 1), fps (number, optional, default 60), duration (number, optional, default 2.0), "
+             "from_value (number), to_value (number), stiffness (number, required), damping (number, required), "
+             "mass (number, required), fps (number, optional, default 60), duration (number, optional, default 2.0), "
              "compile_once (bool, optional, default true)."),
-        FMonolithActionHandler::CreateStatic(&MonolithUI::FAnimationCoreActions::HandleBakeSpringAnimation));
+        FMonolithActionHandler::CreateStatic(&MonolithUI::FAnimationCoreActions::HandleBakeSpringAnimation),
+        FParamSchemaBuilder()
+            .Required(TEXT("asset_path"), TEXT("string"), TEXT("Widget Blueprint asset path"))
+            .Required(TEXT("animation_name"), TEXT("string"), TEXT("Animation display name"))
+            .Required(TEXT("widget_name"), TEXT("string"), TEXT("Target widget name"))
+            .Required(TEXT("property"), TEXT("string"), TEXT("Float property path to animate"))
+            .Required(TEXT("from_value"), TEXT("number"), TEXT("Initial value"))
+            .Required(TEXT("to_value"), TEXT("number"), TEXT("Final value"))
+            .Required(TEXT("stiffness"), TEXT("number"), TEXT("Positive spring stiffness"))
+            .Required(TEXT("damping"), TEXT("number"), TEXT("Nonnegative damping coefficient"))
+            .Required(TEXT("mass"), TEXT("number"), TEXT("Positive simulated mass"))
+            .Optional(TEXT("fps"), TEXT("number"), TEXT("Positive sample rate"), TEXT("60"))
+            .Optional(TEXT("duration"), TEXT("number"), TEXT("Positive maximum duration in seconds"), TEXT("2.0"))
+            .Optional(TEXT("compile_once"), TEXT("boolean"), TEXT("Compile the Widget Blueprint once after authoring"), TEXT("true"))
+            .Build());
 }

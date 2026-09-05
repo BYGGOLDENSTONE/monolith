@@ -114,6 +114,10 @@ def main(argv=None):
         result = subprocess.run([sys.executable, str(root / "Scripts/check_skill_actions.py")], cwd=root)
         if result.returncode:
             failures.append("Skill action validation failed")
+    schema_result = subprocess.run([sys.executable, str(Path(__file__).with_name("check_schema_drift.py")),
+                                    "--root", str(root)], cwd=root)
+    if schema_result.returncode:
+        failures.append("Schema drift validation failed")
     for failure in failures:
         print(failure, file=sys.stderr)
     print("Repository lint: " + ("FAILED" if failures else "passed"))

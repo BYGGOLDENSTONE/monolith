@@ -1,0 +1,634 @@
+[
+  {
+    "action": "monolith.coordination",
+    "handler": "<lambda>",
+    "helper": "Handle",
+    "input_arg": 0,
+    "keys": [
+      "operation",
+      "owner",
+      "ttl_seconds",
+      "_lease_token"
+    ],
+    "reason": "Registration lambda forwards the unchanged input to FMonolithCoordination::Handle, which reads these four top-level fields."
+  },
+  {
+    "action": "ui.set_effect_surface_dropShadow",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetDropShadow",
+    "helper": "HandleShadowStack",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "widget_name",
+      "layers",
+      "compile"
+    ],
+    "reason": "Thin handler forwards the unchanged input to EffectActionsInternal::HandleShadowStack. Layer entries are nested and are not top-level action keys."
+  },
+  {
+    "action": "ui.set_effect_surface_innerShadow",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetInnerShadow",
+    "helper": "HandleShadowStack",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "widget_name",
+      "layers",
+      "compile"
+    ],
+    "reason": "Thin handler forwards the unchanged input to EffectActionsInternal::HandleShadowStack. Layer entries are nested and are not top-level action keys."
+  },
+  {
+    "action": "ui.set_effect_surface_corners",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetCorners",
+    "helper": "ResolveEffectSurface",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "widget_name"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_corners",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetCorners",
+    "helper": "TryGetFloat",
+    "input_arg": 0,
+    "keys": [
+      "smoothness"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_fill",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetFill",
+    "helper": "ResolveEffectSurface",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "widget_name"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_fill",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetFill",
+    "helper": "TryGetColor",
+    "input_arg": 0,
+    "keys": [
+      "color"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_fill",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetFill",
+    "helper": "TryGetFloat",
+    "input_arg": 0,
+    "keys": [
+      "angle"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_fill",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetFill",
+    "helper": "TryGetVector2D",
+    "input_arg": 0,
+    "keys": [
+      "radial_center"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_border",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetBorder",
+    "helper": "ResolveEffectSurface",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "widget_name"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_border",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetBorder",
+    "helper": "TryGetFloat",
+    "input_arg": 0,
+    "keys": [
+      "glow",
+      "offset",
+      "width"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_border",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetBorder",
+    "helper": "TryGetColor",
+    "input_arg": 0,
+    "keys": [
+      "color",
+      "glow_color"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_glow",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetGlow",
+    "helper": "ResolveEffectSurface",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "widget_name"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_glow",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetGlow",
+    "helper": "TryGetFloat",
+    "input_arg": 0,
+    "keys": [
+      "inner_outer_mix",
+      "intensity",
+      "radius"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_glow",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetGlow",
+    "helper": "TryGetColor",
+    "input_arg": 0,
+    "keys": [
+      "color"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_filter",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetFilter",
+    "helper": "ResolveEffectSurface",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "widget_name"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_filter",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetFilter",
+    "helper": "TryGetFloat",
+    "input_arg": 0,
+    "keys": [
+      "brightness",
+      "contrast",
+      "saturation"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_backdropBlur",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetBackdropBlur",
+    "helper": "ResolveEffectSurface",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "widget_name"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_backdropBlur",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetBackdropBlur",
+    "helper": "TryGetFloat",
+    "input_arg": 0,
+    "keys": [
+      "strength"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_insetHighlight",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetInsetHighlight",
+    "helper": "ResolveEffectSurface",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "widget_name"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_insetHighlight",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetInsetHighlight",
+    "helper": "TryGetVector2D",
+    "input_arg": 0,
+    "keys": [
+      "offset"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_insetHighlight",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetInsetHighlight",
+    "helper": "TryGetFloat",
+    "input_arg": 0,
+    "keys": [
+      "blur",
+      "intensity"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_effect_surface_insetHighlight",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleSetInsetHighlight",
+    "helper": "TryGetColor",
+    "input_arg": 0,
+    "keys": [
+      "color"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.apply_effect_surface_preset",
+    "handler": "MonolithUI::FEffectSurfaceActions::HandleApplyPreset",
+    "helper": "ResolveEffectSurface",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "widget_name"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.configure_activatable",
+    "handler": "MonolithCommonUIActivatable::HandleConfigureActivatable",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_activatable_transition",
+    "handler": "MonolithCommonUIActivatable::HandleSetActivatableTransition",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.audit_commonui_widget",
+    "handler": "MonolithCommonUIAudit::HandleAuditCommonUIWidget",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.convert_button_to_common",
+    "handler": "MonolithCommonUIButton::HandleConvertButtonToCommon",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.configure_common_button",
+    "handler": "MonolithCommonUIButton::HandleConfigureCommonButton",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.apply_style_to_widget",
+    "handler": "MonolithCommonUIButton::HandleApplyStyleToWidget",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.configure_common_text",
+    "handler": "MonolithCommonUIButton::HandleConfigureCommonText",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.configure_common_border",
+    "handler": "MonolithCommonUIButton::HandleConfigureCommonBorder",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.convert_textblock_to_common",
+    "handler": "MonolithCommonUIButton::HandleConvertTextBlockToCommon",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_action_bar_button_class",
+    "handler": "MonolithCommonUIButton::HandleSetActionBarButtonClass",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.convert_border_to_common",
+    "handler": "MonolithCommonUIButton::HandleConvertBorderToCommon",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.reparent_widget_root",
+    "handler": "MonolithCommonUIButton::HandleReparentWidgetRoot",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.configure_numeric_text",
+    "handler": "MonolithCommonUIContent::HandleConfigureNumericText",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.configure_rotator",
+    "handler": "MonolithCommonUIContent::HandleConfigureRotator",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.configure_modal_overlay",
+    "handler": "MonolithCommonUIDialog::HandleConfigureModalOverlay",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.bind_common_action_widget",
+    "handler": "MonolithCommonUIInput::HandleBindCommonActionWidget",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.create_bound_action_bar",
+    "handler": "MonolithCommonUIInput::HandleCreateBoundActionBar",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.setup_common_list_view",
+    "handler": "MonolithCommonUIList::HandleSetupCommonListView",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.configure_animated_switcher",
+    "handler": "MonolithCommonUIList::HandleConfigureAnimatedSwitcher",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.create_hardware_visibility_border",
+    "handler": "MonolithCommonUIList::HandleCreateHardwareVisibilityBorder",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_widget_navigation",
+    "handler": "MonolithCommonUINavigation::HandleSetWidgetNavigation",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_widget_navigation_bulk",
+    "handler": "MonolithCommonUINavigation::HandleSetWidgetNavigationBulk",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.dump_widget_navigation",
+    "handler": "MonolithCommonUINavigation::HandleDumpWidgetNavigation",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.set_initial_focus_target",
+    "handler": "MonolithCommonUINavigation::HandleSetInitialFocusTarget",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.audit_focus_chain",
+    "handler": "MonolithCommonUINavigation::HandleAuditFocusChain",
+    "helper": "MonolithCommonUI::GetWbpPath",
+    "input_arg": 0,
+    "keys": [
+      "asset_path",
+      "wbp_path"
+    ],
+    "reason": "Reviewed helper consumes these fields from the unchanged top-level input. Nested objects and response fields remain outside this mapping."
+  },
+  {
+    "action": "ui.create_activatable_stack",
+    "handler": "MonolithCommonUIActivatable::HandleCreateActivatableStack",
+    "helper": "AddContainerToWbp",
+    "input_arg": 1,
+    "keys": [
+      "wbp_path",
+      "asset_path",
+      "widget_name",
+      "parent_widget"
+    ],
+    "reason": "MonolithCommonUIActivatable::AddContainerToWbp receives the unchanged top-level input; GetWbpPath supplies the path aliases. The remaining listed fields are read directly by that helper."
+  },
+  {
+    "action": "ui.create_activatable_switcher",
+    "handler": "MonolithCommonUIActivatable::HandleCreateActivatableSwitcher",
+    "helper": "AddContainerToWbp",
+    "input_arg": 1,
+    "keys": [
+      "wbp_path",
+      "asset_path",
+      "widget_name",
+      "parent_widget"
+    ],
+    "reason": "MonolithCommonUIActivatable::AddContainerToWbp receives the unchanged top-level input; GetWbpPath supplies the path aliases. The remaining listed fields are read directly by that helper."
+  },
+  {
+    "action": "ui.create_widget_carousel",
+    "handler": "MonolithCommonUIList::HandleCreateWidgetCarousel",
+    "helper": "AddPanelToWbp",
+    "input_arg": 1,
+    "keys": [
+      "wbp_path",
+      "asset_path",
+      "widget_name",
+      "parent_widget"
+    ],
+    "reason": "MonolithCommonUIList::AddPanelToWbp receives the unchanged top-level input; GetWbpPath supplies the path aliases. The remaining listed fields are read directly by that helper."
+  },
+  {
+    "action": "ui.create_hardware_visibility_border",
+    "handler": "MonolithCommonUIList::HandleCreateHardwareVisibilityBorder",
+    "helper": "AddPanelToWbp",
+    "input_arg": 1,
+    "keys": [
+      "wbp_path",
+      "asset_path",
+      "widget_name",
+      "parent_widget"
+    ],
+    "reason": "MonolithCommonUIList::AddPanelToWbp receives the unchanged top-level input; GetWbpPath supplies the path aliases. The remaining listed fields are read directly by that helper."
+  },
+  {
+    "action": "ui.create_lazy_image",
+    "handler": "MonolithCommonUIContent::HandleCreateLazyImage",
+    "helper": "AddWidgetToWbp",
+    "input_arg": 1,
+    "keys": [
+      "wbp_path",
+      "asset_path",
+      "widget_name",
+      "parent_widget"
+    ],
+    "reason": "MonolithCommonUIContent::AddWidgetToWbp receives the unchanged top-level input; GetWbpPath supplies the path aliases. The remaining listed fields are read directly by that helper."
+  },
+  {
+    "action": "ui.create_load_guard",
+    "handler": "MonolithCommonUIContent::HandleCreateLoadGuard",
+    "helper": "AddWidgetToWbp",
+    "input_arg": 1,
+    "keys": [
+      "wbp_path",
+      "asset_path",
+      "widget_name",
+      "parent_widget"
+    ],
+    "reason": "MonolithCommonUIContent::AddWidgetToWbp receives the unchanged top-level input; GetWbpPath supplies the path aliases. The remaining listed fields are read directly by that helper."
+  },
+  {
+    "action": "ui.apply_token_binding",
+    "handler": "MonolithCommonUIButton::HandleApplyTokenBinding",
+    "helper": "ApplyTokenBindingWithProvider",
+    "input_arg": 0,
+    "keys": [
+      "wbp_path",
+      "asset_path",
+      "widget_name",
+      "target_property",
+      "token_key"
+    ],
+    "reason": "MonolithCommonUIButton::ApplyTokenBindingWithProvider receives the unchanged top-level input; GetWbpPath supplies the path aliases. The remaining listed fields are read directly by that helper."
+  }
+]

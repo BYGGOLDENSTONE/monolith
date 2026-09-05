@@ -1,4 +1,5 @@
 #include "MonolithCoreTools.h"
+#include "MonolithParamSchema.h"
 #include "MonolithCoordination.h"
 #include "MonolithGuideTool.h"
 #include "MonolithCoreModule.h"
@@ -220,7 +221,8 @@ void FMonolithCoreTools::RegisterAll()
 		Registry.RegisterAction(
 			TEXT("monolith"), TEXT("status"),
 			TEXT("Get Monolith server health: version, uptime, port, registered action count, module status."),
-			FMonolithActionHandler::CreateStatic(&FMonolithCoreTools::HandleStatus)
+			FMonolithActionHandler::CreateStatic(&FMonolithCoreTools::HandleStatus),
+			FParamSchemaBuilder().Build()
 		);
 		// Survivor A (plan §3.A) — pure server-health probe; read-only + idempotent.
 		Registry.SetActionAnnotations(TEXT("monolith"), TEXT("status"),
@@ -253,7 +255,10 @@ void FMonolithCoreTools::RegisterAll()
 		Registry.RegisterAction(
 			TEXT("monolith"), TEXT("reindex"),
 			TEXT("Re-index the Monolith project database. Incremental by default (delta only). Pass force=true for full wipe+rebuild."),
-			FMonolithActionHandler::CreateStatic(&FMonolithCoreTools::HandleReindex)
+			FMonolithActionHandler::CreateStatic(&FMonolithCoreTools::HandleReindex),
+			FParamSchemaBuilder()
+				.Optional(TEXT("force"), TEXT("boolean"), TEXT("Wipe and rebuild the index instead of updating incrementally"), TEXT("false"))
+				.Build()
 		);
 		// Survivor A (plan §3.A) — destructive of cache state, but functionally
 		// idempotent (re-running yields the same on-disk index). Conservative

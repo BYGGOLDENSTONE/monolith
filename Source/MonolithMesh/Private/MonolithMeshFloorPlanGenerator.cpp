@@ -44,6 +44,7 @@ void FMonolithMeshFloorPlanGenerator::RegisterActions(FMonolithToolRegistry& Reg
 			.Optional(TEXT("horror_level"), TEXT("number"), TEXT("Horror intensity 0.0-1.0. Controls door locking, dead-end ratio, loop breaking, wrong-room injection. 0=normal, 1=maximum horror. Hospice mode caps at 0.3."), TEXT("0.0"))
 			.Optional(TEXT("template"), TEXT("string"), TEXT("Specific template name to load (e.g. 'small_ranch_01'). Must exist in the template_category directory."))
 			.Optional(TEXT("template_category"), TEXT("string"), TEXT("Template category to select from (e.g. 'residential', 'commercial', 'horror'). A matching template is chosen randomly."))
+			.Optional(TEXT("exclude_templates"), TEXT("array"), TEXT("Template names to exclude from random selection, for deduplication across a block"))
 			.Optional(TEXT("use_templates"), TEXT("boolean"), TEXT("Enable template-based floor plans. When false, always uses algorithmic treemap. Default true."), TEXT("true"))
 			.Optional(TEXT("genre"), TEXT("string"), TEXT("Game genre hint. When 'horror', overrides template_category to 'horror'."))
 			.Build());

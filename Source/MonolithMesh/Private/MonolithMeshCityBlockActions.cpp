@@ -58,6 +58,7 @@ void FMonolithMeshCityBlockActions::RegisterActions(FMonolithToolRegistry& Regis
 			.Optional(TEXT("buildings"), TEXT("integer"), TEXT("Number of buildings"), TEXT("4"))
 			.Optional(TEXT("block_size"), TEXT("array"), TEXT("[width, height] in cm"), TEXT("[6000,4000]"))
 			.Optional(TEXT("genre"), TEXT("string"), TEXT("horror, suburban, downtown"), TEXT("horror"))
+			.Optional(TEXT("facade_style"), TEXT("string"), TEXT("Facade preset forwarded to each generated building; empty uses the existing automatic selection"))
 			.Optional(TEXT("seed"), TEXT("integer"), TEXT("Random seed (default: random)"))
 			.Optional(TEXT("decay"), TEXT("number"), TEXT("Horror decay level 0-1"), TEXT("0.3"))
 			.Optional(TEXT("street_width"), TEXT("number"), TEXT("Street width in cm"), TEXT("600"))

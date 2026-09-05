@@ -264,7 +264,8 @@ namespace MonolithCommonUIAudit
 			TEXT("Lint a single WBP for CommonUI best-practice violations (missing style, unbound action widget, etc.)"),
 			FMonolithActionHandler::CreateStatic(&HandleAuditCommonUIWidget),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint to audit"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Build(),
 			Cat);
 
@@ -281,14 +282,14 @@ namespace MonolithCommonUIAudit
 			TEXT("ui"), TEXT("hot_reload_styles"),
 			TEXT("[RUNTIME, EXPERIMENTAL] Re-apply current style class to all UCommonButtonBase in PIE (after iterating on style asset)"),
 			FMonolithActionHandler::CreateStatic(&HandleHotReloadStyles),
-			nullptr,
+			FParamSchemaBuilder().Build(),
 			Cat);
 
 		Registry.RegisterAction(
 			TEXT("ui"), TEXT("dump_action_router_state"),
 			TEXT("[RUNTIME, EXPERIMENTAL] Dump current input type + activatable container states for debugging UI input routing"),
 			FMonolithActionHandler::CreateStatic(&HandleDumpActionRouterState),
-			nullptr,
+			FParamSchemaBuilder().Build(),
 			Cat);
 	}
 }

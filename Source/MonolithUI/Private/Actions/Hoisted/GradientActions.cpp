@@ -4,6 +4,7 @@
 
 // Monolith registry
 #include "MonolithToolRegistry.h"
+#include "MonolithParamSchema.h"
 
 // JSON
 #include "Dom/JsonObject.h"
@@ -390,5 +391,11 @@ void MonolithUI::FGradientActions::Register(FMonolithToolRegistry& Registry)
              "spec (object, required: { angle_deg?: number, stops: [{ pos: number in [0,1], color: '#RRGGBB' | '#RRGGBBAA' | 'R,G,B[,A]' }, ...] }), "
              "save (bool, optional, default true). "
              "Validates parent has Stop0Pos/Stop0Color before creating any asset -- returns -32602 on incompatible parent."),
-        FMonolithActionHandler::CreateStatic(&MonolithUI::FGradientActions::HandleCreateGradientMidFromSpec));
+        FMonolithActionHandler::CreateStatic(&MonolithUI::FGradientActions::HandleCreateGradientMidFromSpec),
+        FParamSchemaBuilder()
+            .Required(TEXT("parent_material"), TEXT("string"), TEXT("Parent material exposing StopNPos and StopNColor parameters"))
+            .Required(TEXT("destination"), TEXT("string"), TEXT("Output material instance package path"))
+            .Required(TEXT("spec"), TEXT("object"), TEXT("Gradient: stops:[{pos:number,color:string}] (first eight used); optional angle_deg:number, corner_radii:[TL,TR,BR,BL], widget_size:[x,y]"))
+            .Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the newly created assets to disk"), TEXT("true"))
+            .Build());
 }

@@ -194,6 +194,7 @@ void FMonolithMaterialActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Optional(TEXT("resolution"), TEXT("integer"), TEXT("Preview resolution in pixels"), TEXT("256"))
 			.Optional(TEXT("uv_tiling"), TEXT("number"), TEXT("UV tiling multiplier (e.g. 3.0 to preview at 3x3 tiling)"), TEXT("1.0"))
 			.Optional(TEXT("preview_mesh"), TEXT("string"), TEXT("Preview mesh shape: plane, sphere, cube (default: sphere)"), TEXT("sphere"))
+			.Optional(TEXT("background_color"), TEXT("array"), TEXT("Background [r,g,b] or [r,g,b,a], default [0.18,0.18,0.18,1]. Used only by the custom capture pipeline when uv_tiling differs from 1 or preview_mesh differs from sphere."))
 			.Build());
 
 	Registry.RegisterAction(TEXT("material"), TEXT("get_thumbnail"),
@@ -350,6 +351,8 @@ void FMonolithMaterialActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Optional(TEXT("to_expression"), TEXT("string"), TEXT("Target expression name (for expr-to-expr)"))
 			.Optional(TEXT("to_input"), TEXT("string"), TEXT("Target input pin name (empty = default). Alias: to_pin"))
 			.Optional(TEXT("to_property"), TEXT("string"), TEXT("Material property name: BaseColor, Roughness, etc. (for expr-to-material)"))
+			.Optional(TEXT("from_pin"), TEXT("string"), TEXT("Fallback for from_output only when from_output is absent; a present empty from_output selects the default pin."))
+			.Optional(TEXT("to_pin"), TEXT("string"), TEXT("Fallback for to_input only when to_input is absent; a present empty to_input selects the default pin."))
 			.Build());
 
 	// --- Wave 3: Free wins (graph utilities & inspection) ---

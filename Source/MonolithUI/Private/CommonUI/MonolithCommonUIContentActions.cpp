@@ -259,7 +259,8 @@ namespace MonolithCommonUIContent
 			TEXT("Configure UCommonNumericTextBlock: numeric type, current value, formatting, interpolation"),
 			FMonolithActionHandler::CreateStatic(&HandleConfigureNumericText),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of UCommonNumericTextBlock"))
 				.Optional(TEXT("numeric_type"), TEXT("string"), TEXT("ECommonNumericType: Number|Percentage|Seconds|Distance"))
 				.Optional(TEXT("current_value"), TEXT("number"), TEXT("Initial value"))
@@ -274,7 +275,8 @@ namespace MonolithCommonUIContent
 			TEXT("Configure UCommonRotator: populate labels, set selected index"),
 			FMonolithActionHandler::CreateStatic(&HandleConfigureRotator),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of UCommonRotator"))
 				.Optional(TEXT("labels"), TEXT("array"), TEXT("Array of text labels to populate"))
 				.Optional(TEXT("selected_index"), TEXT("integer"), TEXT("Initial selected index"))
@@ -286,7 +288,8 @@ namespace MonolithCommonUIContent
 			TEXT("Add a UCommonLazyImage (async texture load with loading throbber) to an existing WBP"),
 			FMonolithActionHandler::CreateStatic(&HandleCreateLazyImage),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Target WBP path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name for the lazy image"))
 				.Optional(TEXT("parent_widget"), TEXT("string"), TEXT("Parent panel (default: root)"))
 				.Build(),
@@ -297,7 +300,8 @@ namespace MonolithCommonUIContent
 			TEXT("Add a UCommonLoadGuard (loading-overlay wrapper) to an existing WBP"),
 			FMonolithActionHandler::CreateStatic(&HandleCreateLoadGuard),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Target WBP path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name for the load guard"))
 				.Optional(TEXT("parent_widget"), TEXT("string"), TEXT("Parent panel (default: root)"))
 				.Build(),

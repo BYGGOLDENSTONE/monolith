@@ -412,7 +412,8 @@ void FMonolithUIRegistryActions::RegisterActions(FMonolithToolRegistry& Registry
              "the editor's 'add variable' affordance."),
         FMonolithActionHandler::CreateStatic(&MonolithUIRegistryPhase2::HandleAddWidgetVariable),
         FParamSchemaBuilder()
-            .RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path (alias: asset_path)"))
+            .OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required. A supplied string wbp_path takes precedence."))
+            .Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
             .Required(TEXT("var_name"), TEXT("string"), TEXT("New variable FName (uniqueness enforced by AddMemberVariable)"))
             .Required(TEXT("var_type"), TEXT("string"), TEXT("Type token. See action description for grammar."))
             .Optional(TEXT("default_value"), TEXT("string"), TEXT("Default value as UE text format (engine ImportText grammar)"))

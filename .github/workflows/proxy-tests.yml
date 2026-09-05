@@ -19,6 +19,8 @@ jobs:
           python-version: '3.12'
       - name: Parse plugin descriptor
         run: python -c "import json; json.load(open('Monolith.uplugin'))"
+      - name: Check action parameter schema drift
+        run: python Scripts/check_schema_drift.py
       - name: Check templates, versions, skills, and repository hygiene
         run: python Scripts/check_repo_lint.py
 

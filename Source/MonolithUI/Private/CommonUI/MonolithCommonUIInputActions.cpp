@@ -462,7 +462,8 @@ namespace MonolithCommonUIInput
 			TEXT("Configure a UCommonActionWidget in a WBP to point at a DataTable row (glyph + hold behavior)"),
 			FMonolithActionHandler::CreateStatic(&HandleBindCommonActionWidget),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of UCommonActionWidget"))
 				.RequiredAssetPath(TEXT("table_path"), TEXT("Input-action DataTable path"))
 				.Required(TEXT("row_name"), TEXT("string"), TEXT("Row name (FName)"))
@@ -474,7 +475,8 @@ namespace MonolithCommonUIInput
 			TEXT("Add a UCommonBoundActionBar to an existing WBP's tree (auto-populated action glyph bar). Writes ActionButtonClass = action_button_class (default: MonolithDefaultCommonButton_C) so the blueprint compiles cleanly — bare bars fail validation in UCommonBoundActionBar::ValidateCompiledDefaults."),
 			FMonolithActionHandler::CreateStatic(&HandleCreateBoundActionBar),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Target Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name to assign the bar"))
 				.Optional(TEXT("parent_widget"), TEXT("string"), TEXT("Parent panel (default: root)"))
 				.Optional(TEXT("action_button_class"), TEXT("string"), TEXT("Path to a UCommonButtonBase subclass with _C suffix (default: /Game/Monolith/CommonUI/MonolithDefaultCommonButton.MonolithDefaultCommonButton_C). Required to be a UCommonButtonBase subclass."))
@@ -485,7 +487,7 @@ namespace MonolithCommonUIInput
 			TEXT("ui"), TEXT("get_active_input_type"),
 			TEXT("[RUNTIME] Get current ECommonInputType + per-method active flags from PIE LocalPlayer's CommonInputSubsystem"),
 			FMonolithActionHandler::CreateStatic(&HandleGetActiveInputType),
-			nullptr,
+			FParamSchemaBuilder().Build(),
 			Cat);
 
 		Registry.RegisterAction(
@@ -501,7 +503,7 @@ namespace MonolithCommonUIInput
 			TEXT("ui"), TEXT("list_platform_input_tables"),
 			TEXT("List registered UCommonInputBaseControllerData entries from CommonInputSettings.ControllerData"),
 			FMonolithActionHandler::CreateStatic(&HandleListPlatformInputTables),
-			nullptr,
+			FParamSchemaBuilder().Build(),
 			Cat);
 	}
 }

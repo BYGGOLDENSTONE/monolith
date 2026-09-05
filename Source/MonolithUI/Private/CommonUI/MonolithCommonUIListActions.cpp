@@ -408,7 +408,8 @@ namespace MonolithCommonUIList
 			TEXT("Configure a UCommonListView / UCommonTileView in a WBP: entry widget class, spacing, pool size"),
 			FMonolithActionHandler::CreateStatic(&HandleSetupCommonListView),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of the list view"))
 				.Required(TEXT("entry_class"), TEXT("string"), TEXT("UUserWidget class path for entries"))
 				.Optional(TEXT("entry_spacing"), TEXT("number"), TEXT("Spacing (px, CommonListView only)"))
@@ -452,7 +453,8 @@ namespace MonolithCommonUIList
 			TEXT("Configure UCommonAnimatedSwitcher: transition type, duration, curve"),
 			FMonolithActionHandler::CreateStatic(&HandleConfigureAnimatedSwitcher),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name of UCommonAnimatedSwitcher"))
 				.Optional(TEXT("transition_type"), TEXT("string"), TEXT("ECommonSwitcherTransition enum name"))
 				.Optional(TEXT("transition_duration"), TEXT("number"), TEXT("Seconds"))
@@ -465,7 +467,8 @@ namespace MonolithCommonUIList
 			TEXT("Add a UCommonWidgetCarousel to an existing WBP tree"),
 			FMonolithActionHandler::CreateStatic(&HandleCreateWidgetCarousel),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Target Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name for the carousel"))
 				.Optional(TEXT("parent_widget"), TEXT("string"), TEXT("Parent panel (default: root)"))
 				.Build(),
@@ -476,7 +479,8 @@ namespace MonolithCommonUIList
 			TEXT("Add a UCommonHardwareVisibilityBorder with an optional FGameplayTagQuery (platform/input gating)"),
 			FMonolithActionHandler::CreateStatic(&HandleCreateHardwareVisibilityBorder),
 			FParamSchemaBuilder()
-				.RequiredAssetPath(TEXT("wbp_path"), TEXT("Target Widget Blueprint path"))
+				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
+				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Name for the border"))
 				.Optional(TEXT("parent_widget"), TEXT("string"), TEXT("Parent panel (default: root)"))
 				.Optional(TEXT("visibility_query"), TEXT("string"), TEXT("FGameplayTagQuery text, e.g. 'AnyTags=(Input.Gamepad)'"))

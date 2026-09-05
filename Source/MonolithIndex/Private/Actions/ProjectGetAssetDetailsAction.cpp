@@ -37,5 +37,6 @@ TSharedPtr<FJsonObject> FProjectGetAssetDetailsAction::GetSchema()
 {
 	return FParamSchemaBuilder()
 		.Required(TEXT("asset_path"), TEXT("string"), TEXT("Package path of the asset (e.g. /Game/Characters/BP_Hero)"))
+		.Optional(TEXT("package_path"), TEXT("string"), TEXT("Legacy fallback used when asset_path is empty"))
 		.Build();
 }

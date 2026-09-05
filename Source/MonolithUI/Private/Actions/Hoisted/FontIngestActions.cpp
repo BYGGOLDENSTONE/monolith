@@ -4,6 +4,7 @@
 
 // Monolith registry
 #include "MonolithToolRegistry.h"
+#include "MonolithParamSchema.h"
 
 // Core / JSON
 #include "Dom/JsonObject.h"
@@ -421,5 +422,13 @@ void MonolithUI::FFontIngestActions::Register(FMonolithToolRegistry& Registry)
              "save (bool, optional, default true). "
              "Per-face errors don't abort the batch -- if at least one face imports, the composite UFont is still created; "
              "failed faces appear in the warnings array. Returns { family_asset_path, face_asset_paths[], faces_imported, faces_requested, warnings? }."),
-        FMonolithActionHandler::CreateStatic(&MonolithUI::FFontIngestActions::HandleImportFontFamily));
+        FMonolithActionHandler::CreateStatic(&MonolithUI::FFontIngestActions::HandleImportFontFamily),
+        FParamSchemaBuilder()
+            .Required(TEXT("destination"), TEXT("string"), TEXT("Output content directory"))
+            .Required(TEXT("family_name"), TEXT("string"), TEXT("Composite UFont asset name"))
+            .Required(TEXT("faces"), TEXT("array"), TEXT("Nonempty unique typefaces: {typeface:string,source_path:string absolute TTF filename}"))
+            .Optional(TEXT("loading_policy"), TEXT("string"), TEXT("LazyLoad | Stream | Inline; unknown values fall back to LazyLoad"), TEXT("LazyLoad"))
+            .Optional(TEXT("hinting"), TEXT("string"), TEXT("Default | Auto | AutoLight | Monochrome | None; unknown values fall back to Default"), TEXT("Default"))
+            .Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the newly created assets to disk"), TEXT("true"))
+            .Build());
 }
