@@ -923,6 +923,30 @@ static json make_seed_tools()
         "Re-index the Monolith project database. Requires the editor-side Monolith server.",
         make_empty_object_schema()));
 
+    tools.push_back(make_tool(
+        "monolith_guide",
+        "Read Monolith workflow recipes, onboarding, decisions, and recovery guidance.",
+        {{"type", "object"}, {"properties", {
+            {"section", {{"type", "string"}, {"description", "Optional section: onboarding, recipes, decisions, errors, skills_map, gotchas. Omit for all sections."}}}
+        }}}));
+    tools.push_back(make_tool(
+        "monolith_coordination",
+        "Acquire, renew, release, or inspect an editor-wide workflow lease.",
+        {{"type", "object"}, {"properties", {
+            {"operation", {{"type", "string"}, {"enum", {"status", "acquire", "renew", "release"}}, {"default", "status"}}},
+            {"owner", {{"type", "string"}, {"description", "Required for acquire: nonempty owner label, at most 128 characters."}}},
+            {"ttl_seconds", {{"type", "number"}, {"minimum", 10}, {"maximum", 600},
+                {"description", "Acquire defaults to 120 seconds; renew retains the current duration when omitted."}}},
+            {"_lease_token", {{"type", "string"}, {"description", "Token returned by acquire; required for renew and release."}}}
+        }}}));
+    for (auto& tool : tools) {
+        if (tool["name"].get<std::string>().rfind("monolith_", 0) == 0 &&
+            !tool["inputSchema"]["properties"].contains("_lease_token")) {
+            tool["inputSchema"]["properties"]["_lease_token"] = {
+                {"type", "string"}, {"description", "Optional owner token for a protected core tool call."}};
+        }
+    }
+
     return tools;
 }
 

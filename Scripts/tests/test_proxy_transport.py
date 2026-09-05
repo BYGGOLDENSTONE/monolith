@@ -568,6 +568,20 @@ class TransportContract:
         tools = proxy.receive()["result"]["tools"]
         self.assertIn("monolith_discover", {tool["name"] for tool in tools})
         self.assertTrue(all(isinstance(tool.get("inputSchema"), dict) for tool in tools))
+        by_name = {tool["name"]: tool for tool in tools}
+        self.assertEqual({name for name in by_name if name.startswith("monolith_")}, {
+            "monolith_discover", "monolith_status", "monolith_update", "monolith_reindex",
+            "monolith_guide", "monolith_coordination"})
+        self.assertEqual(by_name["monolith_guide"]["inputSchema"]["properties"]["section"]["type"], "string")
+        coordination = by_name["monolith_coordination"]["inputSchema"]["properties"]
+        self.assertEqual(coordination["operation"]["enum"], ["status", "acquire", "renew", "release"])
+        self.assertEqual(coordination["operation"]["default"], "status")
+        self.assertEqual(coordination["owner"]["type"], "string")
+        self.assertEqual((coordination["ttl_seconds"]["minimum"], coordination["ttl_seconds"]["maximum"]), (10, 600))
+        self.assertNotIn("default", coordination["ttl_seconds"])
+        for name, tool in by_name.items():
+            if name.startswith("monolith_"):
+                self.assertEqual(tool["inputSchema"]["properties"]["_lease_token"]["type"], "string")
 
     def test_concurrent_tools_cache_is_complete_and_survives_restart(self):
         proxies = [self.proxy(), self.proxy()]
