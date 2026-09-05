@@ -5,7 +5,7 @@ description: Use when writing or debugging Unreal Engine C++ code via Monolith M
 
 # Unreal C++ Development Workflows
 
-**~18+ source actions** via `source_query()`, **6 config actions** via `config_query()`.
+**Source actions** via `source_query()`, **Config actions** via `config_query()`.
 
 ```
 monolith_discover({ namespace: "source" })
@@ -70,7 +70,7 @@ config_query({ action: "explain_setting", params: { setting: "r.DefaultFeature.A
 
 `source_query` reads symbol-level engine + project SOURCE. The Reflection Intelligence (RI) namespaces add a higher-level STRUCTURAL view of the reflected surface, mined from UHT artefacts (`*.gen.cpp`) — use these when you want the as-declared UCLASS/UPROPERTY/UFUNCTION shape rather than the raw source text. Scope: project game module + project plugins (default); marketplace plugins gated (`bIndexMarketplacePluginReflection`, off); Epic engine built-ins excluded.
 
-**`cppreflect_query` (6 actions)** — C++ reflection structure:
+**`cppreflect_query`** — C++ reflection structure:
 
 | Action | Purpose |
 |--------|---------|
@@ -83,7 +83,7 @@ config_query({ action: "explain_setting", params: { setting: "r.DefaultFeature.A
 
 Call `list_class_specifiers` first to learn what `find_class_specifier` can match — the `flags` column stores UHT metadata keys (`IsBlueprintBase`, `BlueprintType`, `Abstract`), NOT raw C++ specifiers.
 
-**`network_query` (4 actions)** — replication/RPC structure of your C++ (covers project plugins): `list_replicated_classes`, `list_rpc_functions` (specifier-based — `FUNC_NetServer`/`Client`/`Multicast`), `list_onrep_handlers`, `audit_unbalanced_onreps` (catch `ReplicatedUsing=OnRep_X` with no `OnRep_X` handler).
+**`network_query`** — replication/RPC structure of your C++ (covers project plugins): `list_replicated_classes`, `list_rpc_functions` (specifier-based — `FUNC_NetServer`/`Client`/`Multicast`), `list_onrep_handlers`, `audit_unbalanced_onreps` (catch `ReplicatedUsing=OnRep_X` with no `OnRep_X` handler).
 
 **`reflect_query("rebuild_reflection_index")`** — project-only force-rebuild of the RI `reflect_*` tables. Call it after changing C++ reflection structure (new/renamed UCLASS/UPROPERTY/UFUNCTION) when lazy bootstrap + Live-Coding refresh haven't fired. It does NOT touch `source_query`'s engine source index.
 

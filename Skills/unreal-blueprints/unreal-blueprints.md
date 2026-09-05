@@ -5,7 +5,7 @@ description: Use when working with Unreal Engine Blueprints via Monolith MCP —
 
 # Unreal Blueprint Workflows
 
-**89 Blueprint actions** via `blueprint_query()`. Discover first: `monolith_discover({ namespace: "blueprint" })`
+**Blueprint actions** via `blueprint_query()`. Discover first: `monolith_discover({ namespace: "blueprint" })`
 
 Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 
@@ -18,7 +18,7 @@ Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 
 ## Action Reference
 
-### Read (19)
+### Read
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -42,20 +42,20 @@ Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 | `get_blueprint_info` | `asset_path` | Comprehensive overview |
 | `get_event_dispatcher_details` | `asset_path`, `dispatcher_name` | Signature + referencing nodes |
 
-### CDO (2)
+### CDO
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
 | `get_cdo_properties` | `asset_path`, `category_filter`? | Read UPROPERTY defaults |
 | `set_cdo_property` | `asset_path`, `property_name`, `value` | Write CDO property (ImportText) |
 
-### Discovery (1)
+### Discovery
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
 | `resolve_node` | `node_type`, `function_name`?, `target_class`? | Dry-run: returns resolved type + pins |
 
-### Variable CRUD (8)
+### Variable CRUD
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -68,7 +68,7 @@ Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 
 **Type strings:** `bool`, `int`, `int64`, `float`, `double`, `string`, `name`, `text`, `byte`, `object:Class`, `class:Class`, `struct:Struct`, `enum:Enum`, `exec`, `wildcard`, `array:T`, `set:T`, `map:K:V`
 
-### Component CRUD (6)
+### Component CRUD
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -78,7 +78,7 @@ Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 | `set_component_property` | `asset_path`, `component_name`, `property_name`, `value` | Set via reflection |
 | `duplicate_component` | `asset_path`, `component_name`, `new_name`? | Duplicate |
 
-### Graph Management (14)
+### Graph Management
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -92,7 +92,7 @@ Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 | `scaffold_interface_implementation` | `asset_path`, `interface_class` | Add + create stubs |
 | `reparent_blueprint` | `asset_path`, `new_parent_class` | Change parent |
 
-### Node & Pin (7)
+### Node & Pin
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -130,7 +130,7 @@ Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 | `CallDelegate` | `delegate_property_name`, `target_class`? | "Call ..." — broadcasts a BP-resident multicast delegate to all listeners. Spawned node has one input pin per delegate signature parameter |
 | *(any UK2Node_ class)* | — | Generic fallback |
 
-### Compile & Create (6)
+### Compile & Create
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -141,7 +141,7 @@ Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 | `get_dependencies` | `asset_path`, `direction`? | Asset deps |
 | `save_asset` | `asset_path` | Save to disk |
 
-### Timeline (4)
+### Timeline
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -150,7 +150,7 @@ Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 | `add_timeline_track` | `asset_path`, `timeline_name`, `track_name`, `track_type`? | float/vector/event/color track |
 | `set_timeline_keys` | `asset_path`, `timeline_name`, `track_name`, `keys` | `[{time, value, interp_mode?}]` |
 
-### Struct, Enum & DataTable (6)
+### Struct, Enum & DataTable
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -161,7 +161,7 @@ Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 | `add_data_table_row` | `asset_path`, `row_name`, `values` | `{column: value}` |
 | `get_data_table_rows` | `asset_path`, `row_name`? | Read rows |
 
-### Build from Spec (1)
+### Build from Spec
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -169,7 +169,7 @@ Also works on: Level Blueprints (map path or `$current`), Widget Blueprints.
 
 Nodes use spec IDs (e.g., `"id": "evt"`) mapped to real IDs in connections/pin_defaults.
 
-### Graph Export (3)
+### Graph Export
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -177,7 +177,7 @@ Nodes use spec IDs (e.g., `"id": "evt"`) mapped to real IDs in connections/pin_d
 | `copy_nodes` | `source_asset`, `source_graph`, `node_ids`, `target_asset`, `target_graph` | Copy via T3D |
 | `duplicate_graph` | `asset_path`, `graph_name`, `new_name` | Duplicate within BP |
 
-### Diff, Template, Layout, Batch, Events (11)
+### Diff, Template, Layout, Batch, Events
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|

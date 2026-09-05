@@ -5,176 +5,170 @@ description: Use when working with Logic Driver Pro plugin via Monolith MCP -- c
 
 # Unreal Logic Driver Pro Workflows
 
-**66 LogicDriver actions** across 10 categories via `logicdriver_query()`. Discover first: `monolith_discover({ namespace: "logicdriver" })`
+Use `logicdriver_query()` and discover the installed actions with `monolith_discover({ namespace: "logicdriver" })`. Logic Driver Pro must be available; inspect live schemas before writing assets.
 
 ## Key Parameters
 
-- `asset_path` / `state_machine_path` -- SM Blueprint path (e.g., `/Game/StateMachines/SM_EnemyBehavior`)
-- `node_id` / `state_name` -- node identifier or human-readable name
-- `transition_id` -- transition identifier
-- `save_path` -- destination for new assets
-- `spec` -- JSON spec for `build_sm_from_spec`
-- `template` -- scaffold template (e.g., `hello_world`, `horror_encounter`)
-- `format` -- text output: `ascii`, `mermaid`, `dot`
-- `instance_index` -- runtime SM instance (default 0)
+- `asset_path` -- existing SM Blueprint path.
+- `save_path` -- destination for a new SM or Node Blueprint.
+- `node_guid` / `transition_guid` -- identifiers returned by graph inspection.
+- `actor` -- actor label or name in PIE; `component_name` selects its SM component.
+- `spec` -- JSON object accepted by `build_sm_from_spec`; use `export_sm_spec` to inspect its format.
 
 ## Action Reference
 
-### Asset CRUD (8)
+Names, parameters and descriptions below are taken from `RegisterAction` calls in `Source/MonolithLogicDriver/Private/`. A question mark marks an optional parameter. The namespace prefix identifies the dispatcher; send the part after the dot as `action`.
 
-| Action | Key Params | Purpose |
-|--------|-----------|---------|
-| `create_state_machine` | `save_path`, `sm_name`? | Create SM Blueprint |
-| `get_state_machine` | `asset_path` | Read full structure |
-| `list_state_machines` | `path_filter`?, `limit`? | List all SMs |
-| `delete_state_machine` | `asset_path` | Delete SM |
-| `duplicate_state_machine` | `asset_path`, `save_path` | Duplicate |
-| `rename_state_machine` | `asset_path`, `new_name` | Rename |
-| `validate_state_machine` | `asset_path` | Lint: orphans, dead ends, unreachable |
-| `compile_state_machine` | `asset_path` | Compile (required before PIE) |
+### Assets
 
-### Graph Read/Write (20)
+| Action | Parameters | Purpose |
+|---|---|---|
+| `logicdriver.create_state_machine` | `save_path`, `name`?, `parent_class`? | Create a new Logic Driver State Machine Blueprint via USMBlueprintFactory |
+| `logicdriver.get_state_machine` | `asset_path` | Get full JSON dump of a state machine's structure: states, transitions, conduits, nested SMs |
+| `logicdriver.list_state_machines` | `path_filter`? | List all Logic Driver State Machine Blueprints in the project via AssetRegistry |
+| `logicdriver.delete_state_machine` | `asset_path` | Delete a Logic Driver State Machine Blueprint asset |
+| `logicdriver.duplicate_state_machine` | `source_path`, `dest_path` | Deep copy a Logic Driver State Machine Blueprint to a new path |
+| `logicdriver.create_node_blueprint` | `save_path`, `name`, `node_type`, `parent_class`? | Create a new Logic Driver Node Blueprint (custom state, transition, conduit, or state machine node class) |
+| `logicdriver.get_node_blueprint` | `asset_path` | Get info about a Logic Driver Node Blueprint: class hierarchy, node type, properties |
+| `logicdriver.list_node_blueprints` | `path_filter`?, `node_type`? | List all Logic Driver Node Blueprints in the project |
 
-| Action | Key Params | Purpose |
-|--------|-----------|---------|
-| `get_graph_structure` | `asset_path` | Full topology: nodes, edges, nesting |
-| `get_state_info` | `asset_path`, `node_id` | State details: class, properties |
-| `get_transition_info` | `asset_path`, `transition_id` | Transition: conditions, priority, color |
-| `get_nested_graph` | `asset_path`, `node_id` | Nested SM graph |
-| `add_state` | `asset_path`, `state_class`, `state_name`? | Add state node |
-| `remove_state` | `asset_path`, `node_id` | Remove state + transitions |
-| `add_transition` | `asset_path`, `source_node`, `target_node`, `condition_class`? | Add transition |
-| `remove_transition` | `asset_path`, `transition_id` | Remove transition |
-| `set_state_property` / `get_state_property` | `asset_path`, `node_id`, `property_name`, `value`? | Set/read state UPROPERTY |
-| `set_transition_property` / `get_transition_property` | `asset_path`, `transition_id`, `property_name`, `value`? | Set/read transition UPROPERTY |
-| `set_entry_state` | `asset_path`, `node_id` | Set entry point |
-| `add_conduit` | `asset_path`, `conduit_name`? | Add conduit node |
-| `add_state_machine_ref` | `asset_path`, `ref_path`, `node_name`? | Add nested SM reference |
-| `set_node_position` | `asset_path`, `node_id`, `x`, `y` | Set graph position |
-| `get_all_states` | `asset_path` | All states with IDs and classes |
-| `get_all_transitions` | `asset_path` | All transitions with source/target |
-| `auto_arrange_graph` | `asset_path`, `spacing`? | Auto-layout (BA bridge) |
-| `set_graph_property` | `asset_path`, `property_name`, `value` | Top-level graph UPROPERTY |
+### Graph read/write
 
-### Node Config (8)
+| Action | Parameters | Purpose |
+|---|---|---|
+| `logicdriver.get_sm_structure` | `asset_path`, `depth`? | Get hierarchical JSON structure of an entire state machine: states, transitions, conduits, nested SMs, GUIDs |
+| `logicdriver.get_node_details` | `asset_path`, `node_guid` | Get detailed info for a specific node including all UPROPERTY values and connections |
+| `logicdriver.get_node_connections` | `asset_path`, `node_guid` | List all inbound and outbound transitions for a node |
+| `logicdriver.find_nodes_by_type` | `asset_path`, `node_type` | Find all nodes of a given type (state/transition/conduit/any_state/state_machine) in the SM |
+| `logicdriver.add_state` | `asset_path`, `name`?, `position_x`?, `position_y`? | Add a state node to a Logic Driver state machine graph |
+| `logicdriver.add_transition` | `asset_path`, `source_guid`, `target_guid`, `priority`? | Add a transition between two nodes in a Logic Driver state machine |
+| `logicdriver.add_conduit` | `asset_path`, `name`?, `position_x`?, `position_y`? | Add a conduit node to a Logic Driver state machine graph |
+| `logicdriver.add_state_machine_node` | `asset_path`, `name`?, `reference_path`?, `position_x`?, `position_y`? | Add a nested state machine node to a Logic Driver state machine graph |
+| `logicdriver.add_any_state_node` | `asset_path`, `position_x`?, `position_y`? | Add an Any State node to a Logic Driver state machine graph |
+| `logicdriver.remove_node` | `asset_path`, `node_guid` | Remove a node from a Logic Driver state machine graph (breaks all connections first) |
+| `logicdriver.set_node_properties` | `asset_path`, `node_guid`, `properties` | Set UPROPERTY values on a Logic Driver node via reflection |
+| `logicdriver.set_initial_state` | `asset_path`, `node_guid` | Set a state as the initial state by rewiring the entry node |
+| `logicdriver.set_end_state` | `asset_path`, `node_guid`, `is_end_state` | Set or clear the end state flag on a state node |
+| `logicdriver.set_node_class` | `asset_path`, `node_guid`, `class_path` | Set the custom node class (NodeInstanceClass) on a Logic Driver node via reflection |
+| `logicdriver.rename_node` | `asset_path`, `node_guid`, `new_name` | Rename a node in a Logic Driver state machine |
+| `logicdriver.compile_state_machine` | `asset_path` | Compile a Logic Driver State Machine Blueprint and return success/failure with error messages |
+| `logicdriver.find_nodes_by_class` | `asset_path`, `class_name` | Find all nodes whose class name matches a given string (full or partial match) |
+| `logicdriver.get_sm_statistics` | `asset_path` | Get statistics for a state machine: state/transition/conduit/nested SM counts, max depth, total nodes |
+| `logicdriver.move_node` | `asset_path`, `node_guid`, `position_x`, `position_y` | Move a node to a specific position in the graph editor |
+| `logicdriver.auto_arrange_graph` | `asset_path`, `formatter`? | Auto-arrange all nodes in a state machine graph. Uses Blueprint Assist formatter if available, otherwise built-in BFS layout |
 
-| Action | Key Params | Purpose |
-|--------|-----------|---------|
-| `set_on_state_begin` / `update` / `end` | `asset_path`, `node_id`, `graph_nodes` | Configure state event graphs |
-| `set_transition_condition` | `asset_path`, `transition_id`, `condition_class`, `params`? | Set condition |
-| `set_transition_priority` | `asset_path`, `transition_id`, `priority` | Set priority (lower = first) |
-| `add_state_tag` / `remove_state_tag` | `asset_path`, `node_id`, `tag` | Add/remove gameplay tag |
-| `set_state_color` | `asset_path`, `node_id`, `color` | Set node color |
+### Node configuration
 
-### Runtime/PIE (7)
+| Action | Parameters | Purpose |
+|---|---|---|
+| `logicdriver.configure_state` | `asset_path`, `node_guid`, `always_update`?, `disable_tick_transition`?, `exclude_from_any_state`? | Set state node configuration flags (always_update, disable_tick_transition, exclude_from_any_state) via reflection |
+| `logicdriver.configure_transition` | `asset_path`, `node_guid`, `priority`?, `color`?, `eval_mode`?, `can_eval_with_start_state`? | Set transition properties (priority, color, eval_mode, can_eval_with_start_state) via reflection |
+| `logicdriver.configure_conduit` | `asset_path`, `node_guid`, `eval_with_transitions`?, `conduit_as_state`? | Set conduit properties (eval_with_transitions, conduit_as_state) via reflection |
+| `logicdriver.set_transition_condition` | `asset_path`, `transition_guid`, `condition_type`, `params`? | Set transition condition type: always_true, time_delay, event_based, or tag_check. Sets properties via reflection (no graph rewiring). |
+| `logicdriver.set_state_tags` | `asset_path`, `node_guid`, `gameplay_tags` | Set gameplay tags on a state node. Clears existing tags and applies the provided array. |
+| `logicdriver.get_exposed_properties` | `asset_path`, `node_guid`? | Read all exposed graph properties on SM nodes — FSMGraphProperty variables visible in the graph editor |
+| `logicdriver.set_exposed_property` | `asset_path`, `node_guid`, `property_name`, `value` | Set an exposed property value on an SM node by name via reflection |
+| `logicdriver.configure_state_machine_node` | `asset_path`, `node_guid`, `reuse_if_not_end_state`?, `reuse_current_state`?, `allow_independent_tick`? | Configure a nested state machine node: reuse behavior, independent tick, and other settings |
 
-| Action | Key Params | Purpose |
-|--------|-----------|---------|
-| `runtime_get_active_states` | `actor_label`?, `component_name`? | Current active states |
-| `runtime_force_state` | `actor_label`, `state_name`, `instance_index`? | Force to state |
-| `runtime_send_event` | `actor_label`, `event_name`, `instance_index`? | Send event |
-| `runtime_get_variables` | `actor_label`, `instance_index`? | Read SM variables |
-| `runtime_set_variable` | `actor_label`, `variable_name`, `value`, `instance_index`? | Set SM variable |
-| `runtime_restart` | `actor_label`, `instance_index`? | Restart SM |
-| `runtime_stop` | `actor_label`, `instance_index`? | Stop SM |
+### Runtime / PIE
 
-### JSON/Spec (5)
+| Action | Parameters | Purpose |
+|---|---|---|
+| `logicdriver.runtime_get_sm_state` | `actor`, `component_name`? | Get the active state(s) of a live SM instance in PIE — state name, GUID, time in state |
+| `logicdriver.runtime_start_sm` | `actor`, `component_name`? | Initialize and start a live SM instance during PIE |
+| `logicdriver.runtime_stop_sm` | `actor`, `component_name`? | Stop a live SM instance during PIE |
+| `logicdriver.runtime_restart_sm` | `actor`, `component_name`? | Restart a live SM instance during PIE (stop + initialize + start) |
+| `logicdriver.runtime_switch_state` | `actor`, `state_guid`, `component_name`? | Force-switch to a specific state by GUID during PIE |
+| `logicdriver.runtime_evaluate_transitions` | `actor`, `component_name`? | Force transition evaluation on a live SM instance during PIE |
+| `logicdriver.runtime_get_state_history` | `actor`, `component_name`?, `limit`? | Get state transition history from a live SM instance during PIE |
 
-| Action | Key Params | Purpose |
-|--------|-----------|---------|
-| `build_sm_from_spec` | `save_path`, `spec` | **POWER ACTION** -- full SM from JSON in one call |
-| `export_sm_to_spec` | `asset_path` | Export to JSON spec |
-| `import_sm_from_json` | `save_path`, `json_path` | Import from JSON file |
-| `export_sm_to_json` | `asset_path`, `json_path` | Export to JSON file |
-| `diff_state_machines` | `asset_path_a`, `asset_path_b` | Structural diff |
+### JSON and specs
 
-### Scaffolding (7)
+| Action | Parameters | Purpose |
+|---|---|---|
+| `logicdriver.export_sm_json` | `asset_path`, `output_path`? | Export a state machine's full structure as JSON. Optionally write to a file on disk |
+| `logicdriver.build_sm_from_spec` | `save_path`, `spec` | Create a complete state machine from a JSON spec in one call. The crown jewel — states, transitions, conduits, nested SMs, initial/end markers, all wired and compiled |
+| `logicdriver.export_sm_spec` | `asset_path` | Export a state machine as a spec JSON (same format as build_sm_from_spec input). Inverse of build_sm_from_spec |
+| `logicdriver.import_sm_json` | `save_path`, `json_path_or_data` | Import a state machine from a JSON spec — either a file path or inline JSON string. Parses and delegates to build_sm_from_spec logic |
+| `logicdriver.compare_state_machines` | `path_a`, `path_b` | Compare two state machines structurally: diff states, transitions, and topology by name |
 
-| Action | Key Params | Purpose |
-|--------|-----------|---------|
-| `scaffold_hello_world` | `save_path` | Minimal 2-state SM |
-| `scaffold_dialogue` | `save_path`, `dialogue_lines`? | Dialogue tree with branching |
-| `scaffold_quest` | `save_path`, `quest_stages`? | Quest progression |
-| `scaffold_interactable` | `save_path`, `interaction_type`? | Idle->Interact->Cooldown |
-| `scaffold_weapon` | `save_path`, `weapon_type`? | Idle->Fire->Reload->Overheat |
-| `scaffold_horror_encounter` | `save_path`, `phases`? | Ambient->Alert->Chase->Attack->Reset |
-| `scaffold_game_flow` | `save_path`, `flow_stages`? | MainMenu->Loading->Gameplay->Pause->GameOver |
+### Scaffolding
 
-### Discovery (6)
+| Action | Parameters | Purpose |
+|---|---|---|
+| `logicdriver.scaffold_hello_world_sm` | `save_path`, `name`? | Create a ready-to-use SM Blueprint with 3 states (Idle->Active->Complete) and transitions — a quick-start template |
+| `logicdriver.scaffold_weapon_sm` | `save_path`, `name`? | Create an FPS weapon state machine: Idle->Drawing->Ready->Firing->Cooldown->Reloading with transitions |
+| `logicdriver.scaffold_horror_encounter_sm` | `save_path`, `name`? | Create a horror encounter state machine: Dormant->Lurking->Stalking->Chasing->Attacking->Retreating->Despawned |
+| `logicdriver.scaffold_game_flow_sm` | `save_path`, `name`? | Create a game flow state machine: MainMenu->Loading->Gameplay->Pause->Results->Credits with loops |
+| `logicdriver.scaffold_dialogue_sm` | `save_path`, `name`, `dialogue_nodes`? | Create a dialogue state machine with speaker/text states wired in sequence, with optional branching choices |
+| `logicdriver.scaffold_quest_sm` | `save_path`, `name`, `objectives`? | Create a quest state machine: Inactive -> Active -> [objectives] -> Complete/Failed |
+| `logicdriver.scaffold_interactable_sm` | `save_path`, `name`, `states`? | Create an interactable state machine with custom states (default: locked/unlocked/open/closed) |
 
-| Action | Key Params | Purpose |
-|--------|-----------|---------|
-| `list_state_classes` / `list_transition_classes` / `list_conduit_classes` | `filter`? | Available node classes |
-| `get_sm_class_hierarchy` | `class_name` | Inheritance hierarchy |
-| `find_sm_references` | `asset_path` | Assets referencing SM |
-| `get_sm_stats` | `asset_path` | State/transition count, depth, complexity |
+### Discovery
 
-### Component (3)
+| Action | Parameters | Purpose |
+|---|---|---|
+| `logicdriver.get_sm_overview` | `path_filter`? | Project scan: list and count SM Blueprints and Node Blueprints; component usage is not indexed |
+| `logicdriver.validate_state_machine` | `asset_path` | Validate a state machine for common issues: missing initial state, orphaned states, unreachable nodes |
+| `logicdriver.find_sm_references` | `asset_path` | Find all Blueprints in the project that reference a given SM Blueprint (via dependencies) |
+| `logicdriver.visualize_sm_as_text` | `asset_path`, `format` | Generate a text diagram of a state machine in ASCII, Mermaid, or DOT format |
+| `logicdriver.explain_state_machine` | `asset_path` | Generate a structured explanation of a state machine: purpose, states, flow paths, key decisions, complexity rating |
+| `logicdriver.find_node_class_usages` | `node_bp_path` | Search all SM Blueprints in the project for nodes that use a specific Node Blueprint class |
 
-| Action | Key Params | Purpose |
-|--------|-----------|---------|
-| `add_sm_component` | `blueprint_path`, `sm_asset_path`, `component_name`? | Add SMInstance component |
-| `configure_sm_component` | `blueprint_path`, `component_name`, `properties` | Configure (auto-start, tick) |
-| `list_sm_components` | `blueprint_path` | List SM components |
+Project overview does not index SM component usage. Inspect a specific actor Blueprint with `logicdriver.get_sm_component_config`.
 
-### Text Graph (2)
+### Components
 
-| Action | Key Params | Purpose |
-|--------|-----------|---------|
-| `visualize_sm_as_text` | `asset_path`, `format`? | Render as ascii/mermaid/dot |
-| `search_sm_content` | `query`, `path_filter`? | Full-text search across SMs |
+| Action | Parameters | Purpose |
+|---|---|---|
+| `logicdriver.get_sm_component_config` | `blueprint_path`, `component_name`? | Read SM component configuration on an actor Blueprint: state machine class, auto-start, tick interval, network config, and all SM-specific properties |
+| `logicdriver.add_sm_component` | `blueprint_path`, `sm_path`?, `component_name`? | Add a Logic Driver SM component to an actor Blueprint via SimpleConstructionScript |
+| `logicdriver.configure_sm_component` | `blueprint_path`, `component_name`?, `auto_start`?, `tick_interval`?, `network_config`? | Set SM component properties on an actor Blueprint: auto_start, tick_interval, network_config via reflection |
 
-## Technical Notes
+### Text graphs
 
-1. **Reflection only** -- Marketplace plugin. MonolithLogicDriver uses UObject reflection, not direct C++ linkage. Works across LD versions.
-2. **`#if WITH_LOGICDRIVER`** -- Probes `Plugins/` and `Plugins/Marketplace/`. Empty stub when absent.
-3. **Settings toggle** -- `bEnableLogicDriver` in `UMonolithSettings` (default: true).
-4. **SM Architecture** -- `USMBlueprint` assets with compiled `USMInstance`. Edits update both EdGraph and runtime layers.
-5. **State hierarchy** -- Root: `USMStateInstance_Base`. Key: `USMStateInstance` (standard), `USMStateMachineInstance` (nested), `USMConduitInstance` (branch). Transitions: `USMTransitionInstance`.
-6. **`build_sm_from_spec` format** -- `{ states: [{name, class, properties, event_graphs}], transitions: [{source, target, condition}], entry_state?, metadata? }`.
-7. **Blueprint Assist** -- `auto_arrange_graph` reads FBACache if BA installed, falls back to grid layout.
-8. **Runtime actions require PIE** -- `runtime_*` locate SM instances via actor label + component name.
+| Action | Parameters | Purpose |
+|---|---|---|
+| `logicdriver.get_text_graph_content` | `asset_path`, `node_guid`? | Read FSMTextGraphProperty content (dialogue text, speaker names) from state nodes |
+| `logicdriver.get_dialogue_flow` | `asset_path` | Walk entire SM and extract dialogue flow: speakers, lines, choices, branching paths |
 
-## Common Workflows
+## Workflow Examples
 
-### Create SM from Spec (Fastest)
-```
+### Create, compile and inspect
+
+```javascript
 logicdriver_query({ action: "build_sm_from_spec", params: {
   save_path: "/Game/StateMachines/SM_EnemyAI",
   spec: {
-    entry_state: "Idle",
     states: [
-      { name: "Idle", class: "USMStateInstance" },
-      { name: "Patrol", class: "USMStateInstance" },
-      { name: "Chase", class: "USMStateInstance" },
-      { name: "Attack", class: "USMStateInstance" }
+      { name: "Idle", is_initial: true },
+      { name: "Patrol" },
+      { name: "Chase" }
     ],
     transitions: [
-      { source: "Idle", target: "Patrol" },
-      { source: "Patrol", target: "Chase" },
-      { source: "Chase", target: "Attack" },
-      { source: "Attack", target: "Idle" }
+      { from: "Idle", to: "Patrol" },
+      { from: "Patrol", to: "Chase" },
+      { from: "Chase", to: "Idle" }
     ]
   }
 }})
+logicdriver_query({ action: "compile_state_machine", params: {
+  asset_path: "/Game/StateMachines/SM_EnemyAI"
+}})
+logicdriver_query({ action: "get_sm_structure", params: {
+  asset_path: "/Game/StateMachines/SM_EnemyAI"
+}})
 ```
 
-### Scaffold + Customize + Compile
-```
-logicdriver_query({ action: "scaffold_horror_encounter", params: {
-  save_path: "/Game/StateMachines/SM_GhostEncounter",
-  phases: ["Ambient", "Whispers", "Apparition", "Chase", "Vanish"]
+### Scaffold a horror encounter
+
+```javascript
+logicdriver_query({ action: "scaffold_horror_encounter_sm", params: {
+  save_path: "/Game/StateMachines/SM_GhostEncounter"
 }})
-logicdriver_query({ action: "compile_state_machine", params: {
+logicdriver_query({ action: "validate_state_machine", params: {
   asset_path: "/Game/StateMachines/SM_GhostEncounter"
 }})
 ```
 
-## Validation Catches
-
-- Orphan states (no in/out transitions except entry)
-- Dead-end non-terminal states
-- Unreachable states from entry point
-- Missing `compile_state_machine` after structural edits
-- Circular transitions without exit condition
-- SM exists but no actor has SMInstance component referencing it
+Wait for each result before the next call. Inspect generated state transitions and verify runtime behavior in PIE; scaffold creation alone does not prove the encounter works. Runtime actions require an actor with an SM component in the PIE world. Keep a coordination lease for the complete edit, compile and readback workflow when sharing an editor.

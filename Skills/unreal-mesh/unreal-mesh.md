@@ -5,7 +5,7 @@ description: Use when working with Unreal Engine meshes, scene spatial queries, 
 
 # Unreal Mesh & Spatial Workflows
 
-**242 Mesh actions** (197 core + 45 experimental town gen) via `mesh_query()`. Town gen requires `bEnableProceduralTownGen = true` (disabled by default, known geometry issues).
+**Mesh actions**, including optional experimental town generation, via `mesh_query()`. Town gen requires `bEnableProceduralTownGen = true` (disabled by default, known geometry issues).
 
 **Overhaul additions:** `create_blueprint_prefab`, proc mesh cache (`list_cached_meshes`/`clear_cache`/`validate_cache`/`get_cache_stats`), sweep thin walls (`wall_mode: "sweep"`), auto-collision on `save_handle`, floor snap (`snap_to_floor`), collision-aware scatter (`collision_mode`), trim frames (`add_trim: true`), proc mesh caching (`use_cache`/`auto_save`).
 
@@ -33,7 +33,7 @@ monolith_discover({ namespace: "mesh" })
 
 ## Action Reference
 
-### Mesh Inspection (12)
+### Mesh Inspection
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -50,7 +50,7 @@ monolith_discover({ namespace: "mesh" })
 | `search_meshes_by_size` | `min_bounds`, `max_bounds`, `category`? | Find meshes by dimension range |
 | `get_mesh_catalog_stats` | -- | Total indexed meshes, category + size breakdown |
 
-### Scene Manipulation (8)
+### Scene Manipulation
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -63,7 +63,7 @@ monolith_discover({ namespace: "mesh" })
 | `set_actor_properties` | `actor_name`, `mobility`?, `simulate_physics`?, `tags`? | Mobility, physics, shadows, tags, mass |
 | `batch_execute` | `actions` | Multiple actions in single undo transaction (cap 200) |
 
-### Scene Spatial Queries (11)
+### Scene Spatial Queries
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -79,7 +79,7 @@ monolith_discover({ namespace: "mesh" })
 | `get_spatial_relationships` | `actor_name`, `radius`?, `limit`? | Neighbors with relationships (on_top_of, adjacent, near...) |
 | `query_navmesh` | `start`, `end`, `agent_radius`? | Navigation path query |
 
-### Level Blockout (15)
+### Level Blockout
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -98,7 +98,7 @@ monolith_discover({ namespace: "mesh" })
 | `scan_volume` | `volume_name`, `ray_density`? | Daredevil scan -- walls, floor, ceiling, openings |
 | `scatter_props` | `volume_name`, `asset_paths`, `count`, `min_spacing`?, `seed`? | Poisson disk scatter |
 
-### Mesh Operations (12) -- `#if WITH_GEOMETRYSCRIPT`, handle-based
+### Mesh Operations -- `#if WITH_GEOMETRYSCRIPT`, handle-based
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -112,7 +112,7 @@ monolith_discover({ namespace: "mesh" })
 | `fill_holes` / `mirror_mesh` | `handle`, `axis`? | Auto hole fill / mirror X/Y/Z |
 | `compute_uvs` | `handle`, `method` | Auto-unwrap/box/planar/cylinder |
 
-### Horror Spatial Analysis (8)
+### Horror Spatial Analysis
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -125,7 +125,7 @@ monolith_discover({ namespace: "mesh" })
 | `analyze_pacing_curve` | `path_points` | Tension along path, scare point detection |
 | `find_dead_ends` | `region_min/max`? | Navmesh flood-fill for single-exit regions |
 
-### Accessibility Analysis (6) -- Serves the hospice mission
+### Accessibility Analysis -- Serves the hospice mission
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -136,7 +136,7 @@ monolith_discover({ namespace: "mesh" })
 | `validate_interactive_reach` | `region`, `tags`? | Height/distance/obstruction checks |
 | `generate_accessibility_report` | `start`, `end`, `profile`? | Motor/vision/cognitive profile, A-F grade |
 
-### Lighting Analysis (5)
+### Lighting Analysis
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -146,7 +146,7 @@ monolith_discover({ namespace: "mesh" })
 | `get_light_coverage` | `volume_name` | % lit/shadow/dark, light inventory |
 | `suggest_light_placement` | `volume_name`, `mood`? | Inverse-square placement (horror_dim/safe_room/clinical) |
 
-### Audio & Acoustics (14)
+### Audio & Acoustics
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -165,7 +165,7 @@ monolith_discover({ namespace: "mesh" })
 | `set_surface_type` | `actor_name`, `surface_type` | Set physical material override |
 | `create_surface_datatable` | `template`? | Bootstrap acoustic system (12 horror surfaces) |
 
-### Performance Analysis (5)
+### Performance Analysis
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -175,7 +175,7 @@ monolith_discover({ namespace: "mesh" })
 | `analyze_shadow_cost` | `region_min`, `region_max` | Flag small props casting shadows pointlessly |
 | `get_triangle_budget` | `viewpoint`, `fov`?, `budget`? | Frustum-culled LOD-aware count vs budget |
 
-### Decal & Detail (4)
+### Decal & Detail
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -184,7 +184,7 @@ monolith_discover({ namespace: "mesh" })
 | `analyze_prop_density` | `volume_name`, `target_density`? | Grid-cell density vs target |
 | `place_storytelling_scene` | `location`, `pattern`, `intensity`? | 5 horror presets (violence/abandoned/dragged/medical/corruption) |
 
-### Level Design (9)
+### Level Design
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -198,7 +198,7 @@ monolith_discover({ namespace: "mesh" })
 | `convert_to_hism` | `mesh`, `actors` | Convert to HISM |
 | `get_actor_component_properties` | `actor_name`, `component_class`? | Read UPROPERTYs |
 
-### Volumes & Properties (7)
+### Volumes & Properties
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -210,7 +210,7 @@ monolith_discover({ namespace: "mesh" })
 | `snap_to_surface` | `actor_names`, `direction`? | Trace + normal alignment |
 | `set_collision_preset` | `actor_name`, `preset` | Set collision profile |
 
-### Horror Intelligence (4)
+### Horror Intelligence
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -219,7 +219,7 @@ monolith_discover({ namespace: "mesh" })
 | `suggest_scare_positions` | `path_points` | Optimal scripted event positions |
 | `evaluate_encounter_pacing` | `encounters`, `path_points` | Spacing/intensity/rest analysis |
 
-### Tech Art Pipeline (7)
+### Tech Art Pipeline
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -231,7 +231,7 @@ monolith_discover({ namespace: "mesh" })
 | `set_mesh_collision` | `asset_path`, `type`?, `auto_convex`? | Write collision |
 | `analyze_lightmap_density` | `region` or `actors` | Lightmap resolution + UV density |
 
-### Advanced Level Design (8)
+### Advanced Level Design
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -243,7 +243,7 @@ monolith_discover({ namespace: "mesh" })
 | `get_level_actors` | filters... | Filtered actor enumeration |
 | `measure_distance` | `from`, `to`, `mode`? | Euclidean/horizontal/navmesh |
 
-### Context-Aware Props (8)
+### Context-Aware Props
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -255,7 +255,7 @@ monolith_discover({ namespace: "mesh" })
 | `scatter_on_walls` | `volume_name`, `assets`, `count` | Horizontal trace wall placement |
 | `scatter_on_ceiling` | `volume_name`, `assets`, `count` | Upward trace ceiling placement |
 
-### Procedural Geometry (8) -- GeometryScript, handle pool
+### Procedural Geometry -- GeometryScript, handle pool
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -268,35 +268,35 @@ monolith_discover({ namespace: "mesh" })
 | `create_fragments` | `source_handle`, `count`?, `seed`? | Plane-slice mesh fragmentation |
 | `create_terrain_patch` | `size`, `noise`? | Perlin noise heightmap mesh |
 
-### Procedural Town Generation (46) -- EXPERIMENTAL
+### Procedural Town Generation -- EXPERIMENTAL
 
 Layered pipeline: floor plans -> grid geometry -> facades -> roofs -> streets -> spatial registry -> volumes -> furnishing.
 
-**SP1 Grid Building (2):** `create_building_from_grid` (grid->geometry, `omit_exterior_walls` for facade), `create_grid_from_rooms` (room rects->grid)
+**SP1 Grid Building:** `create_building_from_grid` (grid->geometry, `omit_exterior_walls` for facade), `create_grid_from_rooms` (room rects->grid)
 
-**SP2 Floor Plans (3):** `generate_floor_plan` (archetype+footprint->grid/rooms/doors), `list_building_archetypes`, `get_building_archetype`
+**SP2 Floor Plans:** `generate_floor_plan` (archetype+footprint->grid/rooms/doors), `list_building_archetypes`, `get_building_archetype`
 
-**SP3 Facades (3):** `generate_facade` (exterior faces->windows/doors/trim), `list_facade_styles`, `apply_horror_damage`
+**SP3 Facades:** `generate_facade` (exterior faces->windows/doors/trim), `list_facade_styles`, `apply_horror_damage`
 
-**SP4 Roofs (1):** `generate_roof` (gable/hip/flat/shed/gambrel)
+**SP4 Roofs:** `generate_roof` (gable/hip/flat/shed/gambrel)
 
-**SP5 City Blocks (4):** `create_city_block` (full pipeline), `create_lot_layout`, `create_street`, `place_street_furniture`
+**SP5 City Blocks:** `create_city_block` (full pipeline), `create_lot_layout`, `create_street`, `place_street_furniture`
 
-**SP6 Spatial Registry (10):** `register_building`, `register_room`, `register_street_furniture`, `query_room_at`, `query_adjacent_rooms`, `query_rooms_by_filter`, `query_building_exits`, `path_between_rooms`, `save_block_descriptor`, `load_block_descriptor`
+**SP6 Spatial Registry:** `register_building`, `register_room`, `register_street_furniture`, `query_room_at`, `query_adjacent_rooms`, `query_rooms_by_filter`, `query_building_exits`, `path_between_rooms`, `save_block_descriptor`, `load_block_descriptor`
 
-**SP7 Auto-Volumes (3):** `auto_volumes_for_building`, `auto_volumes_for_block`, `spawn_nav_link`
+**SP7 Auto-Volumes:** `auto_volumes_for_building`, `auto_volumes_for_block`, `spawn_nav_link`
 
-**SP8a Terrain+Foundations (5):** `sample_terrain_grid`, `analyze_building_site`, `create_foundation` (slab/piers/stepped/stilts/basement), `create_retaining_wall`, `place_building_on_terrain`
+**SP8a Terrain+Foundations:** `sample_terrain_grid`, `analyze_building_site`, `create_foundation` (slab/piers/stepped/stilts/basement), `create_retaining_wall`, `place_building_on_terrain`
 
-**SP8b Architectural Features (5):** `create_balcony`, `create_porch`, `create_fire_escape`, `create_ramp_connector` (ADA-compliant), `create_railing` -- all accept `building_context` for auto-orientation, emit `wall_openings`
+**SP8b Architectural Features:** `create_balcony`, `create_porch`, `create_fire_escape`, `create_ramp_connector` (ADA-compliant), `create_railing` -- all accept `building_context` for auto-orientation, emit `wall_openings`
 
-**SP9 Debug Views (6):** `toggle_section_view`, `toggle_ceiling_visibility`, `capture_floor_plan`, `highlight_room`, `save_camera_bookmark`, `load_camera_bookmark`
+**SP9 Debug Views:** `toggle_section_view`, `toggle_ceiling_visibility`, `capture_floor_plan`, `highlight_room`, `save_camera_bookmark`, `load_camera_bookmark`
 
-**SP10 Furnishing (3):** `furnish_room`, `furnish_building`, `list_furniture_presets`
+**SP10 Furnishing:** `furnish_room`, `furnish_building`, `list_furniture_presets`
 
-**Validation (1):** `validate_building` -- capsule sweep, BFS connectivity, stair angles, window raycasts
+**Validation:** `validate_building` -- capsule sweep, BFS connectivity, stair angles, window raycasts
 
-### Genre Presets (8)
+### Genre Presets
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -306,7 +306,7 @@ Layered pipeline: floor plans -> grid geometry -> facades -> roofs -> streets ->
 | `list_genre_presets` | -- | Browse preset packs |
 | `export/import_genre_preset` | `path`, `merge_mode`? | Bundle/load preset packs |
 
-### Encounter Design (8)
+### Encounter Design
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
@@ -319,7 +319,7 @@ Layered pipeline: floor plans -> grid geometry -> facades -> roofs -> streets ->
 | `validate_horror_intensity` | `path_points` | Hospice intensity cap audit |
 | `generate_hospice_report` | `start`, `end`, `profile`? | 5-section accessibility audit, A-F grade |
 
-### Quality & Polish (9)
+### Quality & Polish
 
 | Action | Key Params | Purpose |
 |--------|-----------|---------|
