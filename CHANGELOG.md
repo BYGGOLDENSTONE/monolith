@@ -4,7 +4,36 @@ All notable changes to Monolith will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased] — multi-agent reliability
+## Unreleased
+
+### Phase 0 quick wins
+
+- **1.** Python health probes bypass environment proxies and redirects; timeouts preserve busy state.
+- **2.** Native split-editor views are derived from a raw shared tools cache.
+- **3.** Origin, protocol and body-size rejections preserve explicit pre-execution evidence through both proxies.
+- **4.** Coordination uses dedicated busy/invalid-lease codes -32020/-32021.
+- **5.** Validated workflow leases remain pinned through legacy batch execution.
+- **6.** Renewal retains lease TTL by default; overlong leased work gains bounded release grace.
+- **7.** Oversized bodies are rejected before NUL scanning (ordering only; UE still buffers requests).
+- **8.** Both proxies fetch/cache server onboarding instructions with the exact offline fallback.
+- **9.** Both proxy seeds include the actual core tool set and are checked for parity.
+- **10.** Parameter warnings survive failed actions in error.data.
+- **11.** Namespace discovery defaults to counts and categories, with opt-in action names.
+- **12.** Discovery and action-schema typos return ranked suggestions.
+- **13.** Successful tool calls include structuredContent alongside JSON text.
+- **14.** Five implemented Niagara actions have accurate descriptions and fixed-delta defaults.
+- **15.** Unsupported UI menu and token-binding work returns explicit errors with partial/applied-key evidence.
+- **16.** LogicDriver component scans report not_indexed instead of a sentinel count (dependency-specific build remains unverified).
+- **17.** LogicDriver skill tables match registrations; stale counts are removed and action references are validated.
+- **18.** Dangling references and the obsolete spec redirect are removed; coordination docs match current behavior.
+- **19.** Every push/PR runs CI; repository lint covers templates, versions, skills, logging, ASCII scripts and private files. Generated logging avoids unity collisions.
+- **20.** Contributor examples use the actual action/delegate/schema/error APIs and list required companion updates.
+- **21.** README release history is consolidated under shipped changelog versions; measured index size and the development banner are retained.
+- **22.** Tool sources are trackable while local build outputs remain ignored; the unused funding template is removed.
+
+Validation and known Automation limitations: [Phase 0 report](Docs/PHASE0_REPORT.md).
+
+### Multi-agent reliability
 
 - Both proxies use bounded concurrent workers (8 running + 64 queued by default), preserve independent request IDs, and keep local ping responsive. Removed native argument-based repeat suppression.
 - Added editor-process workflow leases through `monolith_coordination`, with stale-token fencing, nested action context, structured busy errors and game-thread enforcement.
