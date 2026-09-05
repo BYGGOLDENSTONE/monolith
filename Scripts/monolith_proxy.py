@@ -26,6 +26,7 @@ import threading
 import time
 import tempfile
 import math
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 import urllib.error
 import urllib.request
@@ -37,6 +38,14 @@ MONOLITH_URL = os.environ.get("MONOLITH_URL", "http://localhost:9316/mcp")
 MONOLITH_HEALTH = MONOLITH_URL.rsplit("/", 1)[0] + "/health"
 PROXY_NAME = "monolith-proxy"
 PROXY_VERSION = "1.2.0"
+
+
+def _client_identity() -> str:
+    suffix = f"/{os.getpid()}"
+    name = os.environ.get("MONOLITH_CLIENT_NAME") or "proxy"
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:/"
+    safe_name = "".join(char if char in allowed else "_" for char in name)
+    return safe_name[:128 - len(suffix)] + suffix
 
 
 def _env_number(name, default, minimum, maximum):
@@ -219,7 +228,8 @@ def _inspect_response(resp: str | None) -> tuple[bool, int | None, int]:
     return ok, None, result_bytes
 
 
-def _write_call_log_line(msg: dict, resp: str | None, duration_ms: float) -> None:
+def _write_call_log_line(msg: dict, resp: str | None, duration_ms: float,
+                         request_uuid: str | None = None, client: str | None = None) -> None:
     """Append one JSONL line describing an upstream HTTP roundtrip."""
     if not _call_log_enabled or _call_log_handle is None:
         return
@@ -237,6 +247,8 @@ def _write_call_log_line(msg: dict, resp: str | None, duration_ms: float) -> Non
         line = {
             "proxy_pid": os.getpid(),
             "request_id": msg.get("id"),
+            "request_uuid": request_uuid,
+            "client": client,
             "ts": ts,
             "namespace": ns,
             "action": action,
@@ -264,13 +276,19 @@ def _direct_opener():
     return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
 
-def _post_monolith(body: str, timeout: float = TIMEOUT) -> str | None:
+def _post_monolith(body: str, timeout: float = TIMEOUT,
+                   request_uuid: str | None = None, client: str | None = None) -> str | None:
     """POST JSON-RPC to Monolith. Returns response body or None on failure."""
     try:
+        headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
+                   "MCP-Protocol-Version": "2025-03-26"}
+        if request_uuid is not None:
+            headers["X-Monolith-Request-Id"] = request_uuid
+            headers["X-Monolith-Client"] = client
         req = urllib.request.Request(
             MONOLITH_URL,
             data=body.encode("utf-8"),
-            headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-03-26"},
+            headers=headers,
             method="POST",
         )
         try:
@@ -720,10 +738,12 @@ def handle_tools_list(msg: dict) -> str:
 
 def handle_tools_call(msg: dict) -> str:
     """Forward tools/call to Monolith. Graceful error if down."""
+    request_uuid = str(uuid.uuid4())
+    client = _client_identity()
     t0 = time.perf_counter()
-    resp = _post_monolith(json.dumps(msg))
+    resp = _post_monolith(json.dumps(msg), request_uuid=request_uuid, client=client)
     duration_ms = (time.perf_counter() - t0) * 1000.0
-    _write_call_log_line(msg, resp, duration_ms)
+    _write_call_log_line(msg, resp, duration_ms, request_uuid, client)
 
     if resp:
         return resp

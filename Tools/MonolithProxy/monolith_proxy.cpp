@@ -159,6 +159,58 @@ static std::string get_env(const char* name, const char* default_val = "")
     return val ? std::string(val) : std::string(default_val);
 }
 
+// Keep client labels safe for one HTTP header/log token, retaining the PID suffix.
+static std::string client_identity()
+{
+    const std::string suffix = "/" + std::to_string(GetCurrentProcessId());
+    std::wstring name;
+    const DWORD needed = GetEnvironmentVariableW(L"MONOLITH_CLIENT_NAME", nullptr, 0);
+    if (needed > 0)
+    {
+        name.resize(needed);
+        const DWORD length = GetEnvironmentVariableW(L"MONOLITH_CLIENT_NAME", &name[0], needed);
+        if (length < needed) name.resize(length);
+        else name.clear();
+    }
+    if (name.empty()) name = L"proxy";
+    std::string safe_name;
+    const size_t limit = 128 - suffix.size();
+    for (size_t index = 0; index < name.size() && safe_name.size() < limit; ++index)
+    {
+        const wchar_t character = name[index];
+        const bool allowed = (character >= L'a' && character <= L'z')
+            || (character >= L'A' && character <= L'Z')
+            || (character >= L'0' && character <= L'9')
+            || character == L'-' || character == L'_' || character == L'.'
+            || character == L':' || character == L'/';
+        safe_name.push_back(allowed ? static_cast<char>(character) : '_');
+        // Python iterates Unicode code points; consume a UTF-16 surrogate pair once.
+        if (character >= 0xd800 && character <= 0xdbff && index + 1 < name.size()
+            && name[index + 1] >= 0xdc00 && name[index + 1] <= 0xdfff) ++index;
+    }
+    return safe_name + suffix;
+}
+
+// Generate a UUID v4 independently of the caller's reusable JSON-RPC id.
+static std::string new_request_uuid()
+{
+    unsigned char bytes[16];
+    if (BCryptGenRandom(nullptr, bytes, sizeof(bytes), BCRYPT_USE_SYSTEM_PREFERRED_RNG) < 0)
+        throw std::runtime_error("Could not generate request UUID");
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string value;
+    value.reserve(36);
+    for (size_t index = 0; index < sizeof(bytes); ++index)
+    {
+        if (index == 4 || index == 6 || index == 8 || index == 10) value.push_back('-');
+        value.push_back(hex[bytes[index] >> 4]);
+        value.push_back(hex[bytes[index] & 0x0f]);
+    }
+    return value;
+}
+
 static std::set<std::string> parse_csv_env(const char* name)
 {
     std::set<std::string> result;
@@ -494,7 +546,8 @@ static void inspect_response(const std::string& resp, bool& ok,
     }
 }
 
-static void write_call_log_line(const json& msg, const std::string& resp, double duration_ms)
+static void write_call_log_line(const json& msg, const std::string& resp, double duration_ms,
+    const std::string& request_uuid = {}, const std::string& client = {})
 {
     if (!g_call_log_enabled || g_call_log_handle == INVALID_HANDLE_VALUE)
         return;
@@ -517,6 +570,8 @@ static void write_call_log_line(const json& msg, const std::string& resp, double
         json line;
         line["proxy_pid"] = GetCurrentProcessId();
         line["request_id"] = msg.value("id", json());
+        line["request_uuid"] = request_uuid.empty() ? json(nullptr) : json(request_uuid);
+        line["client"] = client.empty() ? json(nullptr) : json(client);
         line["ts"]           = iso8601_utc_now();
         line["namespace"]    = ns;
         line["action"]       = action;
@@ -568,7 +623,8 @@ static std::wstring to_wide(const std::string& s)
 }
 
 // POST JSON to Monolith. Returns response body or empty string on failure.
-static std::string post_monolith(const std::string& body, double timeout_sec = TIMEOUT)
+static std::string post_monolith(const std::string& body, double timeout_sec = TIMEOUT,
+    const std::string& request_uuid = {}, const std::string& client = {})
 {
     HINTERNET hSession = WinHttpOpen(
         L"MonolithProxy/1.0",
@@ -596,9 +652,14 @@ static std::string post_monolith(const std::string& body, double timeout_sec = T
     WinHttpSetOption(hRequest, WINHTTP_OPTION_DISABLE_FEATURE, &disableFeatures, sizeof(disableFeatures));
 
     // Send
-    const wchar_t* hdrs = L"Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2025-03-26";
+    std::wstring hdrs = L"Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2025-03-26";
+    if (!request_uuid.empty())
+    {
+        hdrs += L"\r\nX-Monolith-Request-Id: " + to_wide(request_uuid);
+        hdrs += L"\r\nX-Monolith-Client: " + to_wide(client);
+    }
     BOOL ok = WinHttpSendRequest(
-        hRequest, hdrs, (DWORD)-1,
+        hRequest, hdrs.c_str(), (DWORD)-1,
         (LPVOID)body.c_str(), (DWORD)body.size(),
         (DWORD)body.size(), 0);
 
@@ -1356,12 +1417,12 @@ static std::string handle_tools_call(const json& msg)
     }
 
     // --- Record and forward ---
-
-
+    const std::string request_uuid = new_request_uuid();
+    const std::string client = client_identity();
     double t0 = now_seconds();
-    std::string resp = post_monolith(forwarded_msg.dump());
+    std::string resp = post_monolith(forwarded_msg.dump(), TIMEOUT, request_uuid, client);
     double duration_ms = (now_seconds() - t0) * 1000.0;
-    write_call_log_line(forwarded_msg, resp, duration_ms);
+    write_call_log_line(forwarded_msg, resp, duration_ms, request_uuid, client);
 
     if (!resp.empty())
         return resp;

@@ -17,6 +17,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import uuid
 from unittest import mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -83,6 +84,9 @@ class EditorFixture:
     def __init__(self):
         self.condition = threading.Condition()
         self.received = []
+        self.received_headers = []
+        self.received_client_headers = []
+        self.evidence_payloads = {}
         self.gates = {}
         self.offline = False
         self.tools = TOOLS
@@ -116,6 +120,8 @@ class EditorFixture:
                 msg = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 with owner.condition:
                     owner.received.append(msg)
+                    owner.received_headers.append({name.lower(): value for name, value in self.headers.items()})
+                    owner.received_client_headers.append(self.headers.get_all("X-Monolith-Client", []))
                     owner.condition.notify_all()
                 identifier = msg["id"]
                 gate = owner.gates.get(identifier)
@@ -125,6 +131,30 @@ class EditorFixture:
                     self.reply({"offline": True}, 503)
                     return
                 mode = msg.get("params", {}).get("arguments", {}).get("fixture_mode")
+                if mode in ("evidence_success", "evidence_tool_error", "evidence_protocol_error"):
+                    request_uuid = self.headers.get("X-Monolith-Request-Id")
+                    server_instance = "6936d5a3-5c49-42ab-b882-e2c9941d81a5"
+                    evidence = {"request_id": request_uuid, "server_instance": server_instance}
+                    if mode == "evidence_success":
+                        result = {"content": [{"type": "text", "text": "fixture success"}],
+                                  "structuredContent": {"value": 42},
+                                  "_meta": {"monolith": dict(evidence, lease_owner="fixture-owner")}}
+                        payload = {"jsonrpc": "2.0", "id": identifier, "result": result}
+                    else:
+                        error = {"code": -32003, "message": "Fixture precondition failed",
+                                 "data": dict(evidence, executed=False, retryable=False,
+                                              **{"class": "precondition_failed"})}
+                        if mode == "evidence_tool_error":
+                            structured = {"error": error}
+                            payload = {"jsonrpc": "2.0", "id": identifier,
+                                       "result": {"isError": True, "structuredContent": structured,
+                                                  "content": [{"type": "text", "text": json.dumps(structured)}]}}
+                        else:
+                            payload = {"jsonrpc": "2.0", "id": identifier, "error": error}
+                    with owner.condition:
+                        owner.evidence_payloads[identifier] = payload
+                    self.reply(payload)
+                    return
                 if mode and mode.startswith("rejection_"):
                     error = {"code": -32600, "message": "Request rejected before execution",
                              "data": {"executed": False}}
@@ -219,7 +249,11 @@ class ProxyProcess:
                     "MONOLITH_MAX_IN_FLIGHT": "8", "MONOLITH_MAX_QUEUED": "64",
                     "MONOLITH_TIMEOUT_SECONDS": "5", "LOCALAPPDATA": directory,
                     "TMPDIR": directory, "TEMP": directory, "TMP": directory})
-        env.update({k: str(v) for k, v in settings.items()})
+        for key, value in settings.items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = str(value)
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE, text=True, encoding="utf-8",
                                         env=env, cwd=directory)
@@ -308,6 +342,70 @@ class TransportContract:
         self.assertEqual(response["id"], identifier)
         self.assertTrue(response.get("result", {}).get("isError"), response)
         self.assertIn("unknown", json.dumps(response).lower())
+
+    def assert_request_evidence(self, headers, proxy, client_name):
+        request_uuid = headers.get("x-monolith-request-id")
+        self.assertIsInstance(request_uuid, str)
+        self.assertEqual(str(uuid.UUID(request_uuid)), request_uuid)
+        self.assertEqual(headers.get("x-monolith-client"), "%s/%d" % (client_name, proxy.process.pid))
+        return request_uuid
+
+    def test_request_uuid_headers_and_log_keep_original_rpc_ids(self):
+        proxy = self.proxy(MONOLITH_CALL_LOG=1, MONOLITH_CLIENT_NAME="fixture-agent",
+                           MONOLITH_PROJECT_ROOT=self.directory.name)
+        identifiers = [27, "27", "unicode-ö-雪", 27]
+        sent = []
+        for identifier in identifiers:
+            msg = request(identifier, fixture_mode="evidence_success", request_id="caller-owned-argument")
+            sent.append(msg)
+            proxy.send(msg)
+            response = proxy.receive()
+            self.assertEqual(response, self.editor.evidence_payloads[identifier])
+            self.assertEqual(type(response["id"]), type(identifier))
+        self.assertEqual(self.editor.received, sent)
+        uuids = [self.assert_request_evidence(headers, proxy, "fixture-agent")
+                 for headers in self.editor.received_headers]
+        self.assertEqual(len(set(uuids)), len(identifiers))
+        log_path = Path(self.directory.name) / "Saved" / "Logs" / ("MonolithCalls-%d.jsonl" % proxy.process.pid)
+        self.assertTrue(log_path.is_file(), "Enabled call log must exist for both proxy flavors")
+        records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(records), len(identifiers))
+        self.assertEqual([record["request_id"] for record in records], identifiers)
+        self.assertEqual([record["request_uuid"] for record in records], uuids)
+        self.assertTrue(all(record["client"] == "fixture-agent/%d" % proxy.process.pid for record in records))
+        self.assertTrue(all(record["proxy_pid"] == proxy.process.pid for record in records))
+
+    def test_client_header_sanitizes_controls_and_preserves_pid_in_log(self):
+        cases = [("agent\r\nX-Injected: yes [bad]\t雪", "agent__X-Injected:_yes__bad___"),
+                 ("A" * 200, None), ("", "proxy")]
+        for index, (client_name, expected_name) in enumerate(cases):
+            with self.subTest(client=client_name):
+                proxy = self.proxy(MONOLITH_CALL_LOG=1, MONOLITH_CLIENT_NAME=client_name,
+                                   MONOLITH_PROJECT_ROOT=self.directory.name)
+                suffix = "/%d" % proxy.process.pid
+                if expected_name is None:
+                    expected_name = "A" * (128 - len(suffix))
+                expected = expected_name + suffix
+                proxy.send(request("sanitized-%d" % index))
+                self.assertEqual(proxy.receive()["id"], "sanitized-%d" % index)
+                headers = self.editor.received_headers[-1]
+                request_uuid = self.assert_request_evidence(headers, proxy, expected_name)
+                self.assertEqual(self.editor.received_client_headers[-1], [expected])
+                self.assertLessEqual(len(expected), 128)
+                self.assertNotIn("x-injected", headers)
+                log_path = Path(self.directory.name) / "Saved" / "Logs" / ("MonolithCalls-%d.jsonl" % proxy.process.pid)
+                records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+                self.assertEqual(len(records), 1)
+                self.assertEqual(records[0]["client"], expected)
+                self.assertEqual(records[0]["request_uuid"], request_uuid)
+
+    def test_default_client_and_upstream_error_evidence_are_preserved(self):
+        proxy = self.proxy(MONOLITH_CLIENT_NAME=None)
+        for identifier, mode in (("tool-error", "evidence_tool_error"), (41, "evidence_protocol_error")):
+            proxy.send(request(identifier, fixture_mode=mode))
+            response = proxy.receive()
+            self.assertEqual(response, self.editor.evidence_payloads[identifier])
+            self.assert_request_evidence(self.editor.received_headers[-1], proxy, "proxy")
 
     def test_identical_calls_keep_every_request_and_id(self):
         proxy = self.proxy()

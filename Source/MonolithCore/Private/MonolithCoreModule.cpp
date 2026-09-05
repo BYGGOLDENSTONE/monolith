@@ -20,6 +20,7 @@ static FAutoConsoleCommand GMonolithRestartCmd(
 
 void FMonolithCoreModule::StartupModule()
 {
+	ServerInstance = FGuid::NewGuid();
 	UE_LOG(LogMonolith, Log, TEXT("Monolith %s — Core module initializing"), MONOLITH_VERSION);
 
 	// Self-heal future-dated mtimes from cross-TZ ZIP extraction.

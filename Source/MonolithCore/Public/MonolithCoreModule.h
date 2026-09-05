@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Modules/ModuleManager.h"
+#include "Misc/Guid.h"
 
 #define MONOLITH_VERSION TEXT("0.22.0")
 
@@ -25,11 +26,15 @@ public:
 	/** Get the running HTTP server instance */
 	FMonolithHttpServer* GetHttpServer() const { return HttpServer.Get(); }
 
+	/** Identity of this module startup; HTTP listener restarts preserve it. */
+	FGuid GetServerInstance() const { return ServerInstance; }
+
 	/** Console-command target: stop and restart the HTTP server on its configured port. */
 	static void RestartHttpServer();
 
 private:
 	TUniquePtr<FMonolithHttpServer> HttpServer;
+	FGuid ServerInstance;
 
 	void RegisterCoreTools();
 	void WriteSentinelFile(int32 Port);

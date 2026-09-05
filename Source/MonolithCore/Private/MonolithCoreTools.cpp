@@ -615,6 +615,7 @@ FMonolithActionResult FMonolithCoreTools::HandleStatus(const TSharedPtr<FJsonObj
 	Result->SetStringField(TEXT("version"), MONOLITH_VERSION);
 
 	// Server status
+	Result->SetStringField(TEXT("server_instance"), FMonolithCoreModule::Get().GetServerInstance().ToString(EGuidFormats::DigitsWithHyphens));
 	FMonolithHttpServer* Server = FMonolithCoreModule::Get().GetHttpServer();
 	Result->SetBoolField(TEXT("server_running"), Server != nullptr && Server->IsRunning());
 	Result->SetNumberField(TEXT("server_port"), Server ? Server->GetPort() : 0);

@@ -13,6 +13,125 @@
 #include "Sockets.h"
 #include "IPAddress.h"
 
+namespace MonolithRequestEvidence
+{
+	static bool IsTokenChar(TCHAR Char)
+	{
+		return (Char >= 'a' && Char <= 'z') || (Char >= 'A' && Char <= 'Z')
+			|| (Char >= '0' && Char <= '9') || Char == '-' || Char == '_' || Char == '.' || Char == ':' || Char == '/';
+	}
+
+	static FString LogToken(const FString& Value)
+	{
+		FString Result = Value.Left(128);
+		for (TCHAR& Char : Result) if (!IsTokenChar(Char)) Char = '_';
+		return Result.IsEmpty() ? FString(TEXT("-")) : Result;
+	}
+
+	static FMonolithRequestContext Normalize(FMonolithRequestContext Context)
+	{
+		bool bValid = !Context.RequestId.IsEmpty() && Context.RequestId.Len() <= 128;
+		if (bValid) for (TCHAR Char : Context.RequestId) bValid &= IsTokenChar(Char);
+		if (!bValid) Context.RequestId = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens);
+		Context.Client = Context.Client.TrimStartAndEnd().IsEmpty() ? TEXT("direct") : LogToken(Context.Client.TrimStartAndEnd());
+		return Context;
+	}
+
+	static FMonolithRequestContext ReadHeaders(const FHttpServerRequest& Request)
+	{
+		FMonolithRequestContext Context;
+		auto SingleValue = [&Request](const TCHAR* Name)
+		{
+			FString Value;
+			int32 Count = 0;
+			for (const auto& Header : Request.Headers)
+			{
+				if (!Header.Key.Equals(Name, ESearchCase::IgnoreCase)) continue;
+				// Empty and repeated header entries are ambiguous too.
+				Count += FMath::Max(1, Header.Value.Num());
+				if (Header.Value.Num() == 1) Value = Header.Value[0];
+			}
+			return Count == 1 ? Value : FString();
+		};
+		Context.RequestId = SingleValue(TEXT("X-Monolith-Request-Id"));
+		Context.Client = SingleValue(TEXT("X-Monolith-Client"));
+		return Context; // Missing IDs become fresh per-call IDs, including legacy batch items.
+	}
+
+	static FString InstanceId()
+	{
+		return FMonolithCoreModule::Get().GetServerInstance().ToString(EGuidFormats::DigitsWithHyphens);
+	}
+
+	static FString LeaseOwner()
+	{
+		const FMonolithActionResult Status = FMonolithCoordination::Get().Handle(nullptr);
+		FString Owner;
+		if (Status.Result.IsValid()) Status.Result->TryGetStringField(TEXT("owner"), Owner);
+		return Owner;
+	}
+
+	static TSharedPtr<FJsonObject> CopyObject(const TSharedPtr<FJsonObject>& Object, const TCHAR* Field)
+	{
+		auto Copy = MakeShared<FJsonObject>();
+		const TSharedPtr<FJsonObject>* Existing = nullptr;
+		if (Object->TryGetObjectField(Field, Existing)) Copy->Values = (*Existing)->Values;
+		return Copy;
+	}
+
+	static void AddErrorData(const TSharedPtr<FJsonObject>& Error, const FMonolithRequestContext& Context)
+	{
+		const auto Data = FMonolithActionResult::NormalizeErrorData(Error->GetIntegerField(TEXT("code")), Error->TryGetField(TEXT("data")));
+		Data->SetStringField(TEXT("request_id"), Context.RequestId);
+		Data->SetStringField(TEXT("server_instance"), InstanceId());
+		Error->SetObjectField(TEXT("data"), Data);
+	}
+
+	static TSharedPtr<FJsonObject> ProtocolError(const TSharedPtr<FJsonObject>& Response, const FMonolithRequestContext& Context)
+	{
+		const TSharedPtr<FJsonObject>* Error = nullptr;
+		if (Response.IsValid() && Response->TryGetObjectField(TEXT("error"), Error)) AddErrorData(*Error, Normalize(Context));
+		return Response;
+	}
+
+	static TSharedPtr<FJsonObject> Finish(const TSharedPtr<FJsonObject>& Response, const FMonolithRequestContext& RawContext,
+		const FString& Namespace, const FString& Action, FString Owner, double Started)
+	{
+		const FMonolithRequestContext Context = Normalize(RawContext);
+		// Retain the entry owner for releases; successful acquires identify the newly acquired lease.
+		if (Owner.IsEmpty()) Owner = LeaseOwner();
+		bool bOk = false;
+		const TSharedPtr<FJsonObject>* Result = nullptr;
+		if (Response->TryGetObjectField(TEXT("result"), Result))
+		{
+			bool bIsError = false;
+			(*Result)->TryGetBoolField(TEXT("isError"), bIsError);
+			bOk = !bIsError;
+			if (bOk)
+			{
+				const auto Meta = CopyObject(*Result, TEXT("_meta"));
+				const auto Monolith = CopyObject(Meta, TEXT("monolith"));
+				Monolith->SetStringField(TEXT("request_id"), Context.RequestId);
+				Monolith->SetStringField(TEXT("server_instance"), InstanceId());
+				Monolith->SetStringField(TEXT("lease_owner"), Owner);
+				Meta->SetObjectField(TEXT("monolith"), Monolith);
+				(*Result)->SetObjectField(TEXT("_meta"), Meta);
+			}
+			else
+			{
+				const auto Error = (*Result)->GetObjectField(TEXT("structuredContent"));
+				AddErrorData(Error, Context);
+				(*Result)->GetArrayField(TEXT("content"))[0]->AsObject()->SetStringField(TEXT("text"), FMonolithJsonUtils::Serialize(Error));
+			}
+		}
+		else ProtocolError(Response, Context);
+		UE_LOG(LogMonolith, Log, TEXT("[req=%s client=%s lease_owner=%s] %s.%s ok=%s ms=%.2f"),
+			*Context.RequestId, *Context.Client, *LogToken(Owner), *LogToken(Namespace), *LogToken(Action),
+			bOk ? TEXT("true") : TEXT("false"), (FPlatformTime::Seconds() - Started) * 1000.0);
+		return Response;
+	}
+}
+
 FMonolithHttpServer::FMonolithHttpServer()
 {
 }
@@ -213,13 +332,14 @@ bool FMonolithHttpServer::Restart(int32 Port)
 
 bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
+	const FMonolithRequestContext Context = MonolithRequestEvidence::ReadHeaders(Request);
 	if (RejectOrigin(Request, OnComplete)) return true;
 	const UMonolithSettings* Settings = UMonolithSettings::Get();
 	const int32 BodyLimit = FMath::Clamp(Settings ? Settings->MaxRequestBodyMB : 32, 1, 256) * 1024 * 1024;
 	if (Request.Body.Num() > BodyLimit)
 	{
 		auto Response = MakeRejectedResponse(TEXT("MCP request body exceeds configured limit"),
-			static_cast<EHttpServerResponseCodes>(413));
+			static_cast<EHttpServerResponseCodes>(413), Context);
 		AddCorsHeaders(*Response, Request);
 		OnComplete(MoveTemp(Response));
 		return true;
@@ -228,7 +348,7 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 	{
 		auto Error = FMonolithJsonUtils::ErrorResponse(nullptr, FMonolithJsonUtils::ErrParseError,
 			TEXT("NUL bytes are not valid JSON; no actions executed."));
-		auto Response = MakeJsonResponse(FMonolithJsonUtils::Serialize(Error), EHttpServerResponseCodes::BadRequest);
+		auto Response = MakeJsonResponse(FMonolithJsonUtils::Serialize(MonolithRequestEvidence::ProtocolError(Error, Context)), EHttpServerResponseCodes::BadRequest);
 		AddCorsHeaders(*Response, Request);
 		OnComplete(MoveTemp(Response));
 		return true;
@@ -241,7 +361,7 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 			if (Values.Num() != 1 || (Values[0] != TEXT("2024-11-05") && Values[0] != TEXT("2025-03-26")
 				&& Values[0] != TEXT("2025-06-18") && Values[0] != TEXT("2025-11-25")))
 			{
-				auto Response = MakeRejectedResponse(TEXT("Unsupported MCP-Protocol-Version"), EHttpServerResponseCodes::BadRequest);
+				auto Response = MakeRejectedResponse(TEXT("Unsupported MCP-Protocol-Version"), EHttpServerResponseCodes::BadRequest, Context);
 				AddCorsHeaders(*Response, Request);
 				OnComplete(MoveTemp(Response));
 				return true;
@@ -256,7 +376,7 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 	{
 		TSharedPtr<FJsonObject> Err = FMonolithJsonUtils::ErrorResponse(
 			nullptr, FMonolithJsonUtils::ErrParseError, TEXT("Empty request body — send a JSON-RPC 2.0 request, e.g. {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}."));
-		auto Response = MakeJsonResponse(FMonolithJsonUtils::Serialize(Err), EHttpServerResponseCodes::BadRequest);
+		auto Response = MakeJsonResponse(FMonolithJsonUtils::Serialize(MonolithRequestEvidence::ProtocolError(Err, Context)), EHttpServerResponseCodes::BadRequest);
 		AddCorsHeaders(*Response, Request);
 		OnComplete(MoveTemp(Response));
 		return true;
@@ -287,7 +407,7 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 			{
 				auto Err = FMonolithJsonUtils::ErrorResponse(nullptr, FMonolithJsonUtils::ErrInvalidRequest,
 					TEXT("Batch exceeds configured request limit; no actions executed."));
-				auto Response = MakeJsonResponse(FMonolithJsonUtils::Serialize(Err), EHttpServerResponseCodes::BadRequest);
+				auto Response = MakeJsonResponse(FMonolithJsonUtils::Serialize(MonolithRequestEvidence::ProtocolError(Err, Context)), EHttpServerResponseCodes::BadRequest);
 				AddCorsHeaders(*Response, Request);
 				OnComplete(MoveTemp(Response));
 				return true;
@@ -311,7 +431,7 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 			TSharedPtr<FJsonObject> Err = FMonolithJsonUtils::ErrorResponse(
 				nullptr, bValidJson ? FMonolithJsonUtils::ErrInvalidRequest : FMonolithJsonUtils::ErrParseError,
 				TEXT("Invalid JSON-RPC body; expected a request object or nonempty legacy batch."));
-			auto Response = MakeJsonResponse(FMonolithJsonUtils::Serialize(Err), EHttpServerResponseCodes::BadRequest);
+			auto Response = MakeJsonResponse(FMonolithJsonUtils::Serialize(MonolithRequestEvidence::ProtocolError(Err, Context)), EHttpServerResponseCodes::BadRequest);
 			AddCorsHeaders(*Response, Request);
 			OnComplete(MoveTemp(Response));
 			return true;
@@ -323,7 +443,7 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 	if (bBatch) { BatchScope = MakeUnique<FMonolithCoordination::FBatchScope>(FMonolithCoordination::Get()); }
 	for (const TSharedPtr<FJsonObject>& Req : Requests)
 	{
-		TSharedPtr<FJsonObject> Resp = ProcessJsonRpcRequest(Req);
+		TSharedPtr<FJsonObject> Resp = ProcessJsonRpcRequest(Req, Context);
 		if (Resp.IsValid())
 		{
 			// Only add response if it's not a notification (notifications have no id)
@@ -401,6 +521,7 @@ bool FMonolithHttpServer::HandleHealthCheck(const FHttpServerRequest& Request, c
 	Health->SetNumberField(TEXT("port"), BoundPort);
 	Health->SetNumberField(TEXT("pid"), FPlatformProcess::GetCurrentProcessId());
 	Health->SetStringField(TEXT("version"), MONOLITH_VERSION);
+	Health->SetStringField(TEXT("server_instance"), MonolithRequestEvidence::InstanceId());
 
 	const FTimespan Uptime = FDateTime::UtcNow() - StartTime;
 	Health->SetNumberField(TEXT("uptime_seconds"), static_cast<double>(Uptime.GetTotalSeconds()));
@@ -422,25 +543,37 @@ bool FMonolithHttpServer::HandleHealthCheck(const FHttpServerRequest& Request, c
 // JSON-RPC 2.0 Processing
 // ============================================================================
 
-TSharedPtr<FJsonObject> FMonolithHttpServer::ProcessJsonRpcRequest(const TSharedPtr<FJsonObject>& Request)
+TSharedPtr<FJsonObject> FMonolithHttpServer::ProcessJsonRpcRequest(const TSharedPtr<FJsonObject>& Request, const FMonolithRequestContext& Context)
 {
+	// Envelope failures for an identifiable tools/call share the same one-line finalizer.
+	const double Started = FPlatformTime::Seconds();
+	auto ReplyError = [&](const TSharedPtr<FJsonValue>& Id, int32 Code, const FString& Message)
+	{
+		const auto Error = FMonolithJsonUtils::ErrorResponse(Id, Code, Message);
+		FString Method;
+		if (Request.IsValid() && Request->HasField(TEXT("id"))
+			&& Request->TryGetStringField(TEXT("method"), Method) && Method == TEXT("tools/call"))
+			return MonolithRequestEvidence::Finish(Error, Context, FString(), FString(), MonolithRequestEvidence::LeaseOwner(), Started);
+		return MonolithRequestEvidence::ProtocolError(Error, Context);
+	};
+
 	if (!Request.IsValid())
 	{
-		return FMonolithJsonUtils::ErrorResponse(nullptr, FMonolithJsonUtils::ErrInvalidRequest, TEXT("Invalid request object — must be a JSON object with jsonrpc, method, and id fields."));
+		return ReplyError(nullptr, FMonolithJsonUtils::ErrInvalidRequest, TEXT("Invalid request object — must be a JSON object with jsonrpc, method, and id fields."));
 	}
 
 	// Validate jsonrpc version
 	FString Version;
 	if (!Request->TryGetStringField(TEXT("jsonrpc"), Version) || Version != TEXT("2.0"))
 	{
-		return FMonolithJsonUtils::ErrorResponse(nullptr, FMonolithJsonUtils::ErrInvalidRequest, TEXT("Missing or invalid jsonrpc version — set \"jsonrpc\" to the string \"2.0\"."));
+		return ReplyError(nullptr, FMonolithJsonUtils::ErrInvalidRequest, TEXT("Missing or invalid jsonrpc version — set \"jsonrpc\" to the string \"2.0\"."));
 	}
 
 	// Get method
 	FString Method;
 	if (!Request->TryGetStringField(TEXT("method"), Method))
 	{
-		return FMonolithJsonUtils::ErrorResponse(nullptr, FMonolithJsonUtils::ErrInvalidRequest, TEXT("Missing method field — set \"method\" to one of: initialize, tools/list, tools/call, ping."));
+		return ReplyError(nullptr, FMonolithJsonUtils::ErrInvalidRequest, TEXT("Missing method field — set \"method\" to one of: initialize, tools/list, tools/call, ping."));
 	}
 
 	// Get id (null for notifications)
@@ -448,9 +581,9 @@ TSharedPtr<FJsonObject> FMonolithHttpServer::ProcessJsonRpcRequest(const TShared
 	bool bIsNotification = !Id.IsValid();
 	if (bIsNotification) return nullptr; // Never execute a tools/call notification.
 	if (Id->Type != EJson::String && Id->Type != EJson::Number && Id->Type != EJson::Null)
-		return FMonolithJsonUtils::ErrorResponse(nullptr, FMonolithJsonUtils::ErrInvalidRequest, TEXT("Invalid request id"));
+		return ReplyError(nullptr, FMonolithJsonUtils::ErrInvalidRequest, TEXT("Invalid request id"));
 	if (Request->HasField(TEXT("params")) && !Request->HasTypedField<EJson::Object>(TEXT("params")))
-		return FMonolithJsonUtils::ErrorResponse(Id, FMonolithJsonUtils::ErrInvalidParams, TEXT("params must be an object"));
+		return ReplyError(Id, FMonolithJsonUtils::ErrInvalidParams, TEXT("params must be an object"));
 
 	// Get params
 	TSharedPtr<FJsonObject> Params;
@@ -484,7 +617,7 @@ TSharedPtr<FJsonObject> FMonolithHttpServer::ProcessJsonRpcRequest(const TShared
 	}
 	else if (Method == TEXT("tools/call"))
 	{
-		Response = HandleToolsCall(Id, Params);
+		Response = HandleToolsCall(Id, Params, Context);
 	}
 	else if (Method == TEXT("ping"))
 	{
@@ -492,7 +625,7 @@ TSharedPtr<FJsonObject> FMonolithHttpServer::ProcessJsonRpcRequest(const TShared
 	}
 	else
 	{
-		Response = FMonolithJsonUtils::ErrorResponse(Id, FMonolithJsonUtils::ErrMethodNotFound,
+		Response = ReplyError(Id, FMonolithJsonUtils::ErrMethodNotFound,
 			FString::Printf(TEXT("Unknown method: %s — use tools/list to enumerate available tools, then tools/call."), *Method));
 	}
 
@@ -707,7 +840,18 @@ TSharedPtr<FJsonObject> FMonolithHttpServer::HandleToolsList(const TSharedPtr<FJ
 	return FMonolithJsonUtils::SuccessResponse(Id, MakeShared<FJsonValueObject>(Result));
 }
 
-TSharedPtr<FJsonObject> FMonolithHttpServer::HandleToolsCall(const TSharedPtr<FJsonValue>& Id, const TSharedPtr<FJsonObject>& Params)
+TSharedPtr<FJsonObject> FMonolithHttpServer::HandleToolsCall(const TSharedPtr<FJsonValue>& Id, const TSharedPtr<FJsonObject>& Params, const FMonolithRequestContext& Context)
+{
+	const FMonolithRequestContext RequestContext = MonolithRequestEvidence::Normalize(Context);
+	const double Started = FPlatformTime::Seconds();
+	const FString Owner = MonolithRequestEvidence::LeaseOwner();
+	FString Namespace;
+	FString Action;
+	const auto Response = HandleToolsCallInternal(Id, Params, Namespace, Action);
+	return MonolithRequestEvidence::Finish(Response, RequestContext, Namespace, Action, Owner, Started);
+}
+
+TSharedPtr<FJsonObject> FMonolithHttpServer::HandleToolsCallInternal(const TSharedPtr<FJsonValue>& Id, const TSharedPtr<FJsonObject>& Params, FString& Namespace, FString& Action)
 {
 	if (!Params.IsValid())
 	{
@@ -733,9 +877,6 @@ TSharedPtr<FJsonObject> FMonolithHttpServer::HandleToolsCall(const TSharedPtr<FJ
 	{
 		Arguments = MakeShared<FJsonObject>();
 	}
-
-	FString Namespace;
-	FString Action;
 
 	// Determine dispatch pattern
 	if (ToolName.StartsWith(TEXT("monolith_")))
@@ -895,15 +1036,8 @@ TSharedPtr<FJsonObject> FMonolithHttpServer::HandleToolsCall(const TSharedPtr<FJ
 			FString::Printf(TEXT("Unknown tool: %s — tool must start with monolith_ or end with _query; call tools/list to enumerate."), *ToolName));
 	}
 
-	// Record start time for duration measurement without shadowing the server start timestamp member.
-	double ActionStartTimeSeconds = FPlatformTime::Seconds();
-
 	// Execute via registry
 	FMonolithActionResult ActionResult = FMonolithToolRegistry::Get().ExecuteAction(Namespace, Action, Arguments, /*bInheritLeaseContext=*/false);
-
-	// Calculate duration
-	double DurationMs = (FPlatformTime::Seconds() - ActionStartTimeSeconds) * 1000.0;
-	UE_LOG(LogMonolith, Verbose, TEXT("Monolith action %s.%s completed in %.2f ms"), *Namespace, *Action, DurationMs);
 
 	// Build MCP tool result
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -977,14 +1111,14 @@ TUniquePtr<FHttpServerResponse> FMonolithHttpServer::MakeSseResponse(const TArra
 	return Response;
 }
 
-TUniquePtr<FHttpServerResponse> FMonolithHttpServer::MakeRejectedResponse(const FString& Message, EHttpServerResponseCodes Code)
+TUniquePtr<FHttpServerResponse> FMonolithHttpServer::MakeRejectedResponse(const FString& Message, EHttpServerResponseCodes Code, const FMonolithRequestContext& Context)
 {
 	auto Data = MakeShared<FJsonObject>();
 	Data->SetBoolField(TEXT("executed"), false);
 	// The body has not been parsed, so the request ID is deliberately unknown.
 	auto Error = FMonolithJsonUtils::ErrorResponse(nullptr, FMonolithJsonUtils::ErrInvalidRequest,
 		Message, MakeShared<FJsonValueObject>(Data));
-	return MakeJsonResponse(FMonolithJsonUtils::Serialize(Error), Code);
+	return MakeJsonResponse(FMonolithJsonUtils::Serialize(MonolithRequestEvidence::ProtocolError(Error, Context)), Code);
 }
 
 namespace
@@ -1018,7 +1152,7 @@ void FMonolithHttpServer::AddCorsHeaders(FHttpServerResponse& Response, const FH
 	// Always advertise the methods/headers we support — these are not
 	// origin-sensitive. The allow-origin echo is the gated piece.
 	Response.Headers.Add(TEXT("Access-Control-Allow-Methods"), {TEXT("GET, POST, DELETE, OPTIONS")});
-	Response.Headers.Add(TEXT("Access-Control-Allow-Headers"), {TEXT("Content-Type, Accept, MCP-Protocol-Version, MCP-Session-Id")});
+	Response.Headers.Add(TEXT("Access-Control-Allow-Headers"), {TEXT("Content-Type, Accept, MCP-Protocol-Version, MCP-Session-Id, X-Monolith-Request-Id, X-Monolith-Client")});
 	Response.Headers.Add(TEXT("Vary"), {TEXT("Origin")});
 
 	FString Origin;
@@ -1049,7 +1183,7 @@ bool FMonolithHttpServer::RejectOrigin(const FHttpServerRequest& Request, const 
 		}
 	}
 	if (!bInvalid && OriginCount <= 1) return false;
-	auto Response = MakeRejectedResponse(TEXT("Origin not allowed"), static_cast<EHttpServerResponseCodes>(403));
+	auto Response = MakeRejectedResponse(TEXT("Origin not allowed"), static_cast<EHttpServerResponseCodes>(403), MonolithRequestEvidence::ReadHeaders(Request));
 	OnComplete(MoveTemp(Response));
 	return true;
 }

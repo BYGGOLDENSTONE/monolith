@@ -11,6 +11,13 @@ class FJsonObject;
 class FJsonValue;
 class FMonolithToolRegistry;
 
+/** Owned request values; never retain references into the HTTP request or global mutable context. */
+struct FMonolithRequestContext
+{
+	FString RequestId;
+	FString Client;
+};
+
 /**
  * Embedded MCP HTTP server.
  * Implements Streamable HTTP transport with JSON-RPC 2.0 dispatch.
@@ -51,15 +58,16 @@ private:
 	bool HandleHealthCheck(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete);
 
 	// --- JSON-RPC Processing ---
-	TSharedPtr<FJsonObject> ProcessJsonRpcRequest(const TSharedPtr<FJsonObject>& Request);
+	TSharedPtr<FJsonObject> ProcessJsonRpcRequest(const TSharedPtr<FJsonObject>& Request, const FMonolithRequestContext& Context = FMonolithRequestContext());
 	TSharedPtr<FJsonObject> HandleInitialize(const TSharedPtr<FJsonValue>& Id, const TSharedPtr<FJsonObject>& Params);
 	TSharedPtr<FJsonObject> HandleToolsList(const TSharedPtr<FJsonValue>& Id, const TSharedPtr<FJsonObject>& Params);
-	TSharedPtr<FJsonObject> HandleToolsCall(const TSharedPtr<FJsonValue>& Id, const TSharedPtr<FJsonObject>& Params);
+	TSharedPtr<FJsonObject> HandleToolsCall(const TSharedPtr<FJsonValue>& Id, const TSharedPtr<FJsonObject>& Params, const FMonolithRequestContext& Context = FMonolithRequestContext());
+	TSharedPtr<FJsonObject> HandleToolsCallInternal(const TSharedPtr<FJsonValue>& Id, const TSharedPtr<FJsonObject>& Params, FString& Namespace, FString& Action);
 	TSharedPtr<FJsonObject> HandlePing(const TSharedPtr<FJsonValue>& Id);
 
 	// --- Helpers ---
 	TUniquePtr<FHttpServerResponse> MakeJsonResponse(const FString& JsonBody, EHttpServerResponseCodes Code = EHttpServerResponseCodes::Ok);
-	TUniquePtr<FHttpServerResponse> MakeRejectedResponse(const FString& Message, EHttpServerResponseCodes Code);
+	TUniquePtr<FHttpServerResponse> MakeRejectedResponse(const FString& Message, EHttpServerResponseCodes Code, const FMonolithRequestContext& Context = FMonolithRequestContext());
 	TUniquePtr<FHttpServerResponse> MakeSseResponse(const TArray<TSharedPtr<FJsonObject>>& Messages);
 	// Echo Origin only when it matches the localhost allowlist. Browsers block
 	// cross-origin reads when ACAO is missing, so omitting the header for

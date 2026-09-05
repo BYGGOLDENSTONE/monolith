@@ -23,8 +23,25 @@ The portable Python proxy accepts stdio MCP and forwards to a loopback HTTP endp
 | `MONOLITH_MAX_QUEUED` | 64 | 0–1024 | Additional pending requests per proxy process |
 | `MONOLITH_TIMEOUT_SECONDS` | 120 | 1–3600 | HTTP request timeout in seconds |
 | `MONOLITH_URL` | `http://localhost:9316/mcp` | URL | Editor endpoint; select the intended project |
+| `MONOLITH_CLIENT_NAME` | `proxy` | Diagnostic name | Prefix for the HTTP client identity `<name>/<pid>` |
 
 These variables apply to both the Python and rebuilt native proxies. Limits are per process, not a cluster scheduler. Extra workers do not make game-thread actions execute simultaneously. A native proxy build must be rebuilt to include its source changes; a downloaded older executable does not acquire new behavior by updating Python files. Use `Scripts/build_proxy.ps1` to build the native version. Call logs use `MonolithCalls-<pid>.jsonl` so multiple proxies do not append to one file; cached tool catalogs are scoped to endpoint and project.
+
+Each forwarded `tools/call` gets a UUID in `X-Monolith-Request-Id`. The same value
+appears as `request_uuid` in the proxy call log and `request_id` in the server's
+response metadata and per-call log line. The proxy log's existing `request_id`
+still holds the original JSON-RPC ID, which a client may reuse after completion.
+Client names retain ASCII letters, digits, `-_.:/`; other characters become `_`,
+and long names are bounded so the `/pid` suffix fits within 128 characters.
+
+Successful MCP results include
+`_meta.monolith.{request_id,server_instance,lease_owner}`. Tool failures preserve
+the existing `structuredContent` error object and add `request_id` and
+`server_instance` to its `data`, also mirrored in the JSON text content. Protocol
+errors carry these fields in `error.data`. `server_instance` identifies the
+module/editor session and is also available through `monolith_status` and
+`/health`; restarting only the HTTP listener keeps it stable. Request UUIDs
+provide correlation, without adding request deduplication or replay behavior.
 
 ## Ownership and leases
 

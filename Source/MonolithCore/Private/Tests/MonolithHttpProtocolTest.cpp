@@ -1,5 +1,11 @@
 #include "Misc/AutomationTest.h"
 #include "MonolithHttpServer.h"
+#include "MonolithCoreModule.h"
+#include "MonolithCoreTools.h"
+#include "Misc/OutputDevice.h"
+#include "Misc/OutputDeviceRedirector.h"
+#include "Misc/ScopeExit.h"
+#include "Misc/ScopeLock.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithSettings.h"
@@ -16,6 +22,9 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
 {
     FMonolithHttpServer Server;
     int32 Executed = 0;
+    const FString Instance = FMonolithCoreModule::Get().GetServerInstance().ToString(EGuidFormats::DigitsWithHyphens);
+    FGuid InstanceGuid;
+    TestTrue(TEXT("Module startup identity is a valid GUID"), FGuid::Parse(Instance, InstanceGuid) && InstanceGuid.IsValid());
     auto& Registry = FMonolithToolRegistry::Get();
 
     // Core tools need an explicit transport-token argument even when their
@@ -74,6 +83,11 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
         const auto SuccessReply = Server.HandleToolsCall(MakeShared<FJsonValueNumber>(100), Call);
         const auto ToolResult = SuccessReply->GetObjectField(TEXT("result"));
         TestFalse(TEXT("Successful tool remains non-error"), ToolResult->GetBoolField(TEXT("isError")));
+        const auto Evidence = ToolResult->GetObjectField(TEXT("_meta"))->GetObjectField(TEXT("monolith"));
+        FGuid RequestGuid;
+        TestTrue(TEXT("Headerless direct call receives a request UUID"), FGuid::Parse(Evidence->GetStringField(TEXT("request_id")), RequestGuid) && RequestGuid.IsValid());
+        TestEqual(TEXT("Success identifies this module startup"), Evidence->GetStringField(TEXT("server_instance")), Instance);
+        TestTrue(TEXT("Success reports public lease owner"), Evidence->HasTypedField<EJson::String>(TEXT("lease_owner")));
         const TSharedPtr<FJsonObject>* Structured = nullptr;
         if (TestTrue(TEXT("Success includes structuredContent object"), ToolResult->TryGetObjectField(TEXT("structuredContent"), Structured)))
         {
@@ -102,6 +116,91 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
         if (bIncludeOrigin) Request.Headers.Add(TEXT("oRiGiN"), {Origin});
         Server.HandlePostMcp(Request, Complete);
     };
+    // Exercise the actual HTTP header path without changing the mutation counter.
+    const FString CorrelationId = TEXT("a9c5de1b-358d-4f32-a33e-8bd817210203");
+    auto CorrelatedPost = [&](const FString& Json, const FString& RequestId, const FString& Client, bool bDuplicateId = false)
+    {
+        FHttpServerRequest Request;
+        FTCHARToUTF8 Utf8(*Json);
+        Request.Body.Append(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
+        Request.Headers.Add(TEXT("x-mOnOlItH-rEqUeSt-Id"), { RequestId });
+        Request.Headers.Add(TEXT("X-Monolith-Client"), { Client });
+        if (bDuplicateId) Request.Headers.Add(TEXT("X-Monolith-Request-Id"), { RequestId, RequestId });
+        Server.HandlePostMcp(Request, Complete);
+    };
+    const FString SuccessCall = TEXT("{\"jsonrpc\":\"2.0\",\"id\":321,\"method\":\"tools/call\",\"params\":{\"name\":\"http_fixture_query\",\"arguments\":{\"action\":\"success\"}}}");
+    struct FRequestLogCapture : FOutputDevice
+    {
+        FCriticalSection Mutex;
+        TArray<FString> Lines;
+        // Unbuffered delivery makes assertions independent of the logging thread's flush timing.
+        virtual bool CanBeUsedOnMultipleThreads() const override { return true; }
+        virtual void Serialize(const TCHAR* Message, ELogVerbosity::Type Verbosity, const FName& Category) override
+        {
+            if (Category == FName(TEXT("LogMonolith")) && Verbosity == ELogVerbosity::Log && FString(Message).Contains(TEXT("[req=")))
+            {
+                FScopeLock Lock(&Mutex);
+                Lines.Add(Message);
+            }
+        }
+        TArray<FString> Snapshot()
+        {
+            FScopeLock Lock(&Mutex);
+            return Lines;
+        }
+    };
+    {
+        FRequestLogCapture Capture;
+        GLog->AddOutputDevice(&Capture);
+        ON_SCOPE_EXIT { GLog->RemoveOutputDevice(&Capture); };
+        CorrelatedPost(SuccessCall, CorrelationId, TEXT("fixture\r\n[forged]/123"));
+        const TArray<FString> Lines = Capture.Snapshot();
+        TestEqual(TEXT("One Log line per HTTP tools call"), Lines.Num(), 1);
+        if (Lines.Num() == 1)
+        {
+            TestTrue(TEXT("Log retains exact correlation UUID"), Lines[0].Contains(TEXT("req=") + CorrelationId));
+            TestTrue(TEXT("Log includes sanitized client"), Lines[0].Contains(TEXT("client=fixture___forged_/123")));
+            TestTrue(TEXT("Log includes action and outcome"), Lines[0].Contains(TEXT("http_fixture.success ok=true ms=")));
+            TestFalse(TEXT("Client cannot inject newline into log"), Lines[0].Contains(TEXT("\n")) || Lines[0].Contains(TEXT("\r")));
+        }
+    }
+    auto HeaderEvidence = FMonolithJsonUtils::Parse(Body)->GetObjectField(TEXT("result"))->GetObjectField(TEXT("_meta"))->GetObjectField(TEXT("monolith"));
+    TestEqual(TEXT("HTTP header UUID is echoed exactly"), HeaderEvidence->GetStringField(TEXT("request_id")), CorrelationId);
+    TestEqual(TEXT("HTTP metadata startup identity"), HeaderEvidence->GetStringField(TEXT("server_instance")), Instance);
+    TestEqual(TEXT("Status exposes the same startup identity"), FMonolithCoreTools::HandleStatus(MakeShared<FJsonObject>()).Result->GetStringField(TEXT("server_instance")), Instance);
+    FHttpServerRequest HealthRequest;
+    Server.HandleHealthCheck(HealthRequest, Complete);
+    TestEqual(TEXT("Health exposes the same startup identity"), FMonolithJsonUtils::Parse(Body)->GetStringField(TEXT("server_instance")), Instance);
+    for (const FString& BadId : { FString(TEXT("unsafe\r\nvalue")), FString::ChrN(129, 'x') })
+    {
+        CorrelatedPost(SuccessCall, BadId, TEXT("fixture/123"));
+        const FString Replacement = FMonolithJsonUtils::Parse(Body)->GetObjectField(TEXT("result"))->GetObjectField(TEXT("_meta"))->GetObjectField(TEXT("monolith"))->GetStringField(TEXT("request_id"));
+        FGuid Parsed;
+        TestTrue(TEXT("Unsafe/overlong request ids become fresh UUIDs"), FGuid::Parse(Replacement, Parsed) && Parsed.IsValid());
+    }
+    CorrelatedPost(SuccessCall, CorrelationId, TEXT("fixture/123"), true);
+    TestNotEqual(TEXT("Ambiguous duplicate request ids are replaced"), FMonolithJsonUtils::Parse(Body)->GetObjectField(TEXT("result"))->GetObjectField(TEXT("_meta"))->GetObjectField(TEXT("monolith"))->GetStringField(TEXT("request_id")), CorrelationId);
+    for (const FString& InvalidCall : {
+        FString(TEXT("{\"jsonrpc\":\"2.0\",\"id\":322,\"method\":\"tools/call\",\"params\":{}}")),
+        FString(TEXT("{\"jsonrpc\":\"2.0\",\"id\":323,\"method\":\"tools/call\",\"params\":[]}")) })
+    {
+        FRequestLogCapture Capture;
+        GLog->AddOutputDevice(&Capture);
+        ON_SCOPE_EXIT { GLog->RemoveOutputDevice(&Capture); };
+        CorrelatedPost(InvalidCall, CorrelationId, TEXT("fixture/123"));
+        const auto Data = FMonolithJsonUtils::Parse(Body)->GetObjectField(TEXT("error"))->GetObjectField(TEXT("data"));
+        TestEqual(TEXT("Protocol tool failure retains request correlation"), Data->GetStringField(TEXT("request_id")), CorrelationId);
+        TestEqual(TEXT("Protocol tool failure retains startup identity"), Data->GetStringField(TEXT("server_instance")), Instance);
+        TestEqual(TEXT("Protocol rejection writes exactly one call log"), Capture.Snapshot().Num(), 1);
+    }
+
+    CorrelatedPost(SuccessCall.Replace(TEXT("success"), TEXT("fail")), CorrelationId, TEXT("fixture/123"));
+    const auto CorrelatedFailure = FMonolithJsonUtils::Parse(Body)->GetObjectField(TEXT("result"));
+    const auto FailureData = CorrelatedFailure->GetObjectField(TEXT("structuredContent"))->GetObjectField(TEXT("data"));
+    TestEqual(TEXT("HTTP action failure retains request UUID"), FailureData->GetStringField(TEXT("request_id")), CorrelationId);
+    TestEqual(TEXT("HTTP action failure retains startup identity"), FailureData->GetStringField(TEXT("server_instance")), Instance);
+    TestFalse(TEXT("HTTP correlation preserves execution evidence"), FailureData->GetBoolField(TEXT("executed")));
+
     const FString Write = TEXT("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"http_fixture_query\",\"arguments\":{\"action\":\"write\"}}}");
 
     auto CheckRejection = [this, &Body](const TCHAR* Context)
@@ -233,6 +332,11 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("Legacy failure remains a tool error"), ToolResult->GetBoolField(TEXT("isError")));
         const auto Structured = ToolResult->GetObjectField(TEXT("structuredContent"));
         const auto Data = Structured->GetObjectField(TEXT("data"));
+        TestEqual(TEXT("Legacy error carries startup correlation"), Data->GetStringField(TEXT("server_instance")), Instance);
+        FGuid ErrorRequestGuid;
+        TestTrue(TEXT("Legacy error carries request correlation"), FGuid::Parse(Data->GetStringField(TEXT("request_id")), ErrorRequestGuid));
+        if (OriginalData.IsValid() && OriginalData->Type == EJson::Object)
+            TestFalse(TEXT("Correlation never changes handler-owned data"), OriginalData->AsObject()->HasField(TEXT("request_id")));
         const auto Text = FMonolithJsonUtils::Parse(ToolResult->GetArrayField(TEXT("content"))[0]->AsObject()->GetStringField(TEXT("text")));
         if (TestTrue(TEXT("Legacy error text is JSON"), Text.IsValid()))
             TestEqual(TEXT("Legacy error text matches structured content"), FMonolithJsonUtils::Serialize(Text), FMonolithJsonUtils::Serialize(Structured));
@@ -277,6 +381,10 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
     if (TestTrue(TEXT("Batch fixture acquires lease"), Acquired.bSuccess))
     {
         const FString Token = Acquired.Result->GetStringField(TEXT("_lease_token"));
+        const auto StatusCall = FMonolithJsonUtils::Parse(TEXT("{\"name\":\"monolith_status\",\"arguments\":{}}"));
+        const auto StatusReply = Server.HandleToolsCall(MakeShared<FJsonValueNumber>(324), StatusCall, { CorrelationId, TEXT("different-client/456") });
+        TestEqual(TEXT("Success metadata reports coordinator owner, not client identity"),
+            StatusReply->GetObjectField(TEXT("result"))->GetObjectField(TEXT("_meta"))->GetObjectField(TEXT("monolith"))->GetStringField(TEXT("lease_owner")), FString(TEXT("http-batch-automation")));
         auto MakeOwnedWrite = [&Write](const FString& ItemToken, bool bStringParams)
         {
             auto Item = FMonolithJsonUtils::Parse(Write);
