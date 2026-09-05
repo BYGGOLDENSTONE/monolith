@@ -83,53 +83,76 @@ Actions are the atomic units of functionality. Each domain module registers acti
 
 ### 1. Declare the handler
 
-In your module's `Actions.h`, add a static method:
+In `MonolithFooActions.h`, declare the handler inside its action class:
 
 ```cpp
-static TSharedPtr<FJsonObject> HandleMyAction(const TSharedPtr<FJsonObject>& Params);
+#pragma once
+#include "MonolithToolRegistry.h"
+
+class FMonolithFooActions
+{
+public:
+    static FMonolithActionResult HandleMyAction(const TSharedPtr<FJsonObject>& Params);
+};
 ```
 
 ### 2. Implement the handler
 
-In your module's `Actions.cpp`:
+In `MonolithFooActions.cpp`, validate input and return an action result. This small example echoes a label; real handlers perform their editor work after validation.
 
 ```cpp
-TSharedPtr<FJsonObject> FMonolithFooActions::HandleMyAction(const TSharedPtr<FJsonObject>& Params)
+#include "MonolithFooActions.h"
+#include "MonolithJsonUtils.h"
+
+FMonolithActionResult FMonolithFooActions::HandleMyAction(const TSharedPtr<FJsonObject>& Params)
 {
-    // Extract params
-    FString AssetPath = Params->GetStringField(TEXT("asset_path"));
+    FString Label;
+    if (!Params.IsValid() || !Params->TryGetStringField(TEXT("label"), Label) || Label.IsEmpty())
+    {
+        return FMonolithActionResult::Error(
+            TEXT("label must be a nonempty string"), FMonolithJsonUtils::ErrInvalidParams);
+    }
 
-    // Do work (on game thread — handlers run on game thread via AsyncTask)
-
-    // Return result
+    // Registry handlers execute on the game thread.
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-    Result->SetStringField(TEXT("status"), TEXT("success"));
-    return Result;
+    Result->SetStringField(TEXT("label"), Label);
+    return FMonolithActionResult::Success(Result);
 }
 ```
 
 ### 3. Register in StartupModule
 
-In your module's `Module.cpp`:
+In your existing `MonolithFooModule.cpp`, whose module class declares `void StartupModule() override` in `MonolithFooModule.h`:
 
 ```cpp
+#include "MonolithFooModule.h"
+#include "MonolithFooActions.h"
+#include "MonolithParamSchema.h"
+
 void FMonolithFooModule::StartupModule()
 {
     FMonolithToolRegistry& Registry = FMonolithToolRegistry::Get();
 
     Registry.RegisterAction(
-        TEXT("foo"),                    // namespace
+        TEXT("foo"),                   // namespace
         TEXT("my_action"),             // action name
-        TEXT("Description of what it does"),
-        TEXT("{\"asset_path\": \"string (required)\"}"),  // param schema
-        &FMonolithFooActions::HandleMyAction
+        TEXT("Validate and echo a label"),
+        FMonolithActionHandler::CreateStatic(&FMonolithFooActions::HandleMyAction),
+        FParamSchemaBuilder()
+            .Required(TEXT("label"), TEXT("string"), TEXT("Nonempty label to echo"))
+            .Build(),                  // TSharedPtr<FJsonObject> schema
+        TEXT("Examples")               // optional category
     );
 }
 ```
 
-### 4. Update the skill
+The argument order and `CreateStatic` delegate follow the existing `editor.get_crash_context` registration in `MonolithEditorActions.cpp`. Add `MonolithCore` to your module's Build.cs dependencies if it is not already present. Unregister the namespace during shutdown when your module owns the whole namespace.
 
-If your domain has a skill in `Skills/`, add the new action to its action table.
+### 4. Update the related files
+
+For every new action, update its handler declaration and implementation, registration, relevant `Docs/specs/SPEC_<Module>.md` action table, `Docs/API_REFERENCE.md`, domain skill action table, and `CHANGELOG.md`. Add appropriate verification for the behavior.
+
+For a new namespace, also update both proxy seed catalogs (`Scripts/monolith_proxy.py` and `Tools/MonolithProxy/monolith_proxy.cpp`) and the `Monolith.uplugin` description, alongside its module registration and Build.cs dependencies. Run `python Scripts/check_skill_actions.py` and the Python suite to catch catalog drift.
 
 ---
 
@@ -211,14 +234,25 @@ Never use string formatting to build SQL queries.
 
 ### Error Handling
 
-Return errors as JSON with a clear message:
+Return `FMonolithActionResult::Error(message, code)` with a clear message. Include `MonolithJsonUtils.h` and use its named constants:
 
 ```cpp
-TSharedPtr<FJsonObject> Error = MakeShared<FJsonObject>();
-Error->SetStringField(TEXT("error"), TEXT("Asset not found"));
-Error->SetStringField(TEXT("asset_path"), AssetPath);
-return Error;
+return FMonolithActionResult::Error(
+    TEXT("label must be a nonempty string"), FMonolithJsonUtils::ErrInvalidParams);
 ```
+
+| Constant | Code | Use |
+|----------|------|-----|
+| `ErrInvalidParams` | -32602 | Missing or invalid action parameters |
+| `ErrInternalError` | -32603 | Internal execution failure; the default if no code is supplied |
+| `ErrOptionalDepUnavailable` | -32010 | Registered action requires an unavailable optional dependency |
+| `ErrParseError` | -32700 | Malformed JSON; transport layer |
+| `ErrInvalidRequest` | -32600 | Invalid JSON-RPC envelope; transport layer |
+| `ErrMethodNotFound` | -32601 | Unknown method, namespace, or dispatched action |
+| `ErrCoordinationBusy` | -32020 | Editor lease or execution busy; coordination layer |
+| `ErrInvalidLease` | -32021 | Invalid or stale lease; coordination layer |
+
+Use `.WithErrorData(Data)` to attach a `TSharedPtr<FJsonObject>` containing structured context. The HTTP server serializes the action result into the MCP response; handlers should not construct JSON-RPC envelopes themselves.
 
 ### Asset Loading
 
