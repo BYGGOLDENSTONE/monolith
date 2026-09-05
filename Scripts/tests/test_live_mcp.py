@@ -141,7 +141,7 @@ class LiveMcpTests(unittest.TestCase):
         with self.lease() as token:
             for contender in (self.owner, self.owner + "-competitor"):
                 result = self.coordination("acquire", owner=contender, ttl_seconds=30)
-                self.assert_lease_error(result, -32010, "lease_busy")
+                self.assert_lease_error(result, -32020, "lease_busy")
                 self.assertTrue(result["structuredContent"]["data"]["retryable"])
             public = self.data(self.coordination())
             self.assertTrue(public["active"])
@@ -152,12 +152,12 @@ class LiveMcpTests(unittest.TestCase):
     def test_domain_requires_current_lease_and_stale_token_fails_after_release(self):
         with self.lease() as token:
             denied = self.call("project_query", action="get_stats", params={})
-            self.assert_lease_error(denied, -32010, "lease_busy")
+            self.assert_lease_error(denied, -32020, "lease_busy")
             stats = self.data(self.call("project_query", action="get_stats",
                                         params={"_lease_token": token}))
             self.assertIsInstance(stats, dict)
         stale = self.call("project_query", action="get_stats", params={"_lease_token": token})
-        self.assert_lease_error(stale, -32011, "invalid_lease")
+        self.assert_lease_error(stale, -32021, "invalid_lease")
         self.assertFalse(self.data(self.coordination())["active"])
 
     def test_notification_does_not_acquire_a_lease_or_emit_response(self):

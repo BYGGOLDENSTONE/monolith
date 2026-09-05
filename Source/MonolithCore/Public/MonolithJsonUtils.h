@@ -89,6 +89,10 @@ public:
 	// codes (e.g., `ErrFeatureGated` if we later distinguish "missing
 	// plugin" from "feature flag off").
 	static constexpr int32 ErrOptionalDepUnavailable = -32010;
+
+	// Cooperative editor coordination; separate from optional-dependency errors.
+	static constexpr int32 ErrCoordinationBusy = -32020;
+	static constexpr int32 ErrInvalidLease = -32021;
 };
 
 /**

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "MonolithCoordination.h"
+#include "MonolithJsonUtils.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
 #include "Async/Async.h"
@@ -46,11 +47,11 @@ bool FMonolithLeaseLifecycleTest::RunTest(const FString& Parameters)
 	const FString Token = TokenOf(Acquired);
 	TestFalse(TEXT("Token returned"), Token.IsEmpty());
 	TestFalse(TEXT("Status never leaks token"), Coordinator.Handle(Request(TEXT("status"))).Result->HasField(TEXT("_lease_token")));
-	TestEqual(TEXT("Status rejects explicit wrong token"), Coordinator.Handle(Request(TEXT("status"), TEXT("wrong"))).ErrorCode, -32011);
-	TestEqual(TEXT("Competing owner refused"), Coordinator.Handle(Acquire(TEXT("agent-b"))).ErrorCode, -32010);
-	TestEqual(TEXT("Same label is not authorization"), Coordinator.Handle(Acquire()).ErrorCode, -32010);
-	TestEqual(TEXT("Foreign release refused"), Coordinator.Handle(Request(TEXT("release"), TEXT("wrong"))).ErrorCode, -32011);
-	TestEqual(TEXT("Missing renewal token refused"), Coordinator.Handle(Request(TEXT("renew"))).ErrorCode, -32011);
+	TestEqual(TEXT("Status rejects explicit wrong token"), Coordinator.Handle(Request(TEXT("status"), TEXT("wrong"))).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
+	TestEqual(TEXT("Competing owner refused"), Coordinator.Handle(Acquire(TEXT("agent-b"))).ErrorCode, FMonolithJsonUtils::ErrCoordinationBusy);
+	TestEqual(TEXT("Same label is not authorization"), Coordinator.Handle(Acquire()).ErrorCode, FMonolithJsonUtils::ErrCoordinationBusy);
+	TestEqual(TEXT("Foreign release refused"), Coordinator.Handle(Request(TEXT("release"), TEXT("wrong"))).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
+	TestEqual(TEXT("Missing renewal token refused"), Coordinator.Handle(Request(TEXT("renew"))).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
 	Now = 109;
 	auto Renewal = Request(TEXT("renew"), Token);
 	Renewal->SetNumberField(TEXT("ttl_seconds"), 10);
@@ -59,13 +60,13 @@ bool FMonolithLeaseLifecycleTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Renewal extended expiration"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("active")));
 	Now = 119;
 	TestFalse(TEXT("Expiry at exact deadline"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("active")));
-	TestEqual(TEXT("Expired renewal refused"), Coordinator.Handle(Renewal).ErrorCode, -32011);
+	TestEqual(TEXT("Expired renewal refused"), Coordinator.Handle(Renewal).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
 	FString ExecutionToken;
-	TestEqual(TEXT("Stale token cannot execute when idle"), Coordinator.CheckAccess(TEXT("editor"), TEXT("test"), Request(TEXT("unused"), Token), ExecutionToken).ErrorCode, -32011);
+	TestEqual(TEXT("Stale token cannot execute when idle"), Coordinator.CheckAccess(TEXT("editor"), TEXT("test"), Request(TEXT("unused"), Token), ExecutionToken).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
 	const FString NewToken = TokenOf(Coordinator.Handle(Acquire(TEXT("agent-b"))));
 	TestTrue(TEXT("Reacquire rotates token"), !NewToken.IsEmpty() && NewToken != Token);
 	TestTrue(TEXT("Owner can release"), Coordinator.Handle(Request(TEXT("release"), NewToken)).bSuccess);
-	TestEqual(TEXT("Released token remains stale"), Coordinator.Handle(Request(TEXT("release"), NewToken)).ErrorCode, -32011);
+	TestEqual(TEXT("Released token remains stale"), Coordinator.Handle(Request(TEXT("release"), NewToken)).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
 	TestFalse(TEXT("Released state idle"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("active")));
 	return true;
 }
@@ -82,12 +83,16 @@ bool FMonolithLeaseGuardTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Legacy unleased call allowed when idle"), Coordinator.CheckAccess(TEXT("editor"), TEXT("mutate"), Empty, ExecutionToken).bSuccess);
 	const FString Token = TokenOf(Coordinator.Handle(Acquire()));
 	auto Denied = Coordinator.CheckAccess(TEXT("editor"), TEXT("mutate"), Empty, ExecutionToken);
-	TestEqual(TEXT("Untagged call denied"), Denied.ErrorCode, -32010);
+	TestEqual(TEXT("Untagged call denied"), Denied.ErrorCode, FMonolithJsonUtils::ErrCoordinationBusy);
 	TestTrue(TEXT("Structured busy data"), Denied.ErrorData.IsValid());
+	TestTrue(TEXT("Busy is retryable"), Denied.ErrorData->AsObject()->GetBoolField(TEXT("retryable")));
+	const auto Invalid = Coordinator.CheckAccess(TEXT("editor"), TEXT("mutate"), Request(TEXT("unused"), TEXT("wrong")), ExecutionToken);
+	TestFalse(TEXT("Invalid lease is not retryable"), Invalid.ErrorData->AsObject()->GetBoolField(TEXT("retryable")));
+	TestTrue(TEXT("Coordination code differs from optional dependency"), FMonolithJsonUtils::ErrCoordinationBusy != FMonolithJsonUtils::ErrOptionalDepUnavailable);
 	TestTrue(TEXT("Discovery available while reserved"), Coordinator.CheckAccess(TEXT("monolith"), TEXT("discover"), Empty, ExecutionToken).bSuccess);
 	TestTrue(TEXT("Status available while reserved"), Coordinator.CheckAccess(TEXT("monolith"), TEXT("status"), Empty, ExecutionToken).bSuccess);
 	TestTrue(TEXT("Guide available while reserved"), Coordinator.CheckAccess(TEXT("monolith"), TEXT("guide"), Empty, ExecutionToken).bSuccess);
-	TestEqual(TEXT("Exempt discovery rejects explicit bad token"), Coordinator.CheckAccess(TEXT("monolith"), TEXT("discover"), Request(TEXT("unused"), TEXT("wrong")), ExecutionToken).ErrorCode, -32011);
+	TestEqual(TEXT("Exempt discovery rejects explicit bad token"), Coordinator.CheckAccess(TEXT("monolith"), TEXT("discover"), Request(TEXT("unused"), TEXT("wrong")), ExecutionToken).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
 	TestTrue(TEXT("Schema metadata available while reserved"), Coordinator.CheckAccess(TEXT("describe"), TEXT("action_schema"), Empty, ExecutionToken).bSuccess);
 	TestFalse(TEXT("Other describe actions require lease"), Coordinator.CheckAccess(TEXT("describe"), TEXT("class"), Empty, ExecutionToken).bSuccess);
 	TestFalse(TEXT("Core update requires lease"), Coordinator.CheckAccess(TEXT("monolith"), TEXT("update"), Empty, ExecutionToken).bSuccess);
@@ -98,13 +103,13 @@ bool FMonolithLeaseGuardTest::RunTest(const FString& Parameters)
 		Now = 15;
 		TestTrue(TEXT("Nested calls inherit even while current action crosses deadline"), Coordinator.CheckAccess(TEXT("editor"), TEXT("nested"), Empty, ExecutionToken).bSuccess);
 		TestEqual(TEXT("Inherited token"), ExecutionToken, Token);
-		TestEqual(TEXT("External request cannot inherit during modal reentry"), Coordinator.CheckAccess(TEXT("editor"), TEXT("nested"), Empty, ExecutionToken, false).ErrorCode, -32010);
-		TestEqual(TEXT("Even owner's external request cannot reenter running mutation"), Coordinator.CheckAccess(TEXT("editor"), TEXT("nested"), OwnedParams, ExecutionToken, false).ErrorCode, -32010);
+		TestEqual(TEXT("External request cannot inherit during modal reentry"), Coordinator.CheckAccess(TEXT("editor"), TEXT("nested"), Empty, ExecutionToken, false).ErrorCode, FMonolithJsonUtils::ErrCoordinationBusy);
+		TestEqual(TEXT("Even owner's external request cannot reenter running mutation"), Coordinator.CheckAccess(TEXT("editor"), TEXT("nested"), OwnedParams, ExecutionToken, false).ErrorCode, FMonolithJsonUtils::ErrCoordinationBusy);
 		TestFalse(TEXT("Explicit bad child token cannot inherit"), Coordinator.CheckAccess(TEXT("editor"), TEXT("nested"), Request(TEXT("unused"), TEXT("wrong")), ExecutionToken).bSuccess);
-		TestEqual(TEXT("No takeover during running action"), Coordinator.Handle(Acquire(TEXT("agent-b"))).ErrorCode, -32010);
+		TestEqual(TEXT("No takeover during running action"), Coordinator.Handle(Acquire(TEXT("agent-b"))).ErrorCode, FMonolithJsonUtils::ErrCoordinationBusy);
 		TestFalse(TEXT("No release during running action"), Coordinator.Handle(Request(TEXT("release"), Token)).bSuccess);
 	}
-	TestEqual(TEXT("Expired token denied after action returns"), Coordinator.CheckAccess(TEXT("editor"), TEXT("mutate"), OwnedParams, ExecutionToken).ErrorCode, -32011);
+	TestEqual(TEXT("Expired token denied after action returns"), Coordinator.CheckAccess(TEXT("editor"), TEXT("mutate"), OwnedParams, ExecutionToken).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
 	TestTrue(TEXT("No inherited context leaks after scope"), Coordinator.CheckAccess(TEXT("editor"), TEXT("mutate"), Empty, ExecutionToken).bSuccess);
 	TestTrue(TEXT("Context cleared"), ExecutionToken.IsEmpty());
 	return true;
@@ -127,7 +132,7 @@ bool FMonolithLeaseCompetingOwnersTest::RunTest(const FString& Parameters)
 	for (const auto& Result : Results)
 	{
 		Winners += Result.bSuccess ? 1 : 0;
-		Busy += Result.ErrorCode == -32010 ? 1 : 0;
+		Busy += Result.ErrorCode == FMonolithJsonUtils::ErrCoordinationBusy ? 1 : 0;
 	}
 	TestEqual(TEXT("One winner across simultaneous acquisitions"), Winners, 1);
 	TestEqual(TEXT("All competing clients receive busy"), Busy, 7);
@@ -162,7 +167,7 @@ bool FMonolithLeaseRegistryTest::RunTest(const FString& Parameters)
 		{
 			bTokenStripped &= !Params->HasField(TEXT("_lease_token"));
 			const auto Reentrant = Registry.ExecuteAction(Namespace, TEXT("inner"), MakeShared<FJsonObject>(), false);
-			bReentrantRejected = !Reentrant.bSuccess && Reentrant.ErrorCode == -32010;
+			bReentrantRejected = !Reentrant.bSuccess && Reentrant.ErrorCode == FMonolithJsonUtils::ErrCoordinationBusy;
 			return Registry.ExecuteAction(Namespace, TEXT("inner"), MakeShared<FJsonObject>());
 		}));
 	FString Token;
@@ -192,7 +197,7 @@ bool FMonolithLeaseRegistryTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Worker thread execution rejected"), WorkerResult.bSuccess);
 	TestEqual(TEXT("Worker never touched handler"), Executions, 1);
 	TestTrue(TEXT("Release executes through tool"), Registry.ExecuteAction(TEXT("monolith"), TEXT("coordination"), Request(TEXT("release"), Token)).bSuccess);
-	TestEqual(TEXT("Stale request fenced after release"), Registry.ExecuteAction(Namespace, TEXT("inner"), Params).ErrorCode, -32011);
+	TestEqual(TEXT("Stale request fenced after release"), Registry.ExecuteAction(Namespace, TEXT("inner"), Params).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
 	Token.Reset();
 	return true;
 }

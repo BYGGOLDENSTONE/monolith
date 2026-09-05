@@ -21,3 +21,5 @@ Status uses `monolith_coordination({"operation":"status"})`. A busy lease is a s
 The lease is cooperative, global and process-local. It does not lock files against external tools or manual editor input. It does not imply transaction rollback, idempotency, cancellation, or exactly-once execution. A transport timeout or disconnect after submission has an unknown outcome: inspect editor state and logs before deciding whether a mutation may be repeated. Separate asset ownership still matters after lease expiry or editor restart.
 
 The proxy accepts concurrent requests with distinct IDs, but Unreal UObject work stays on the game thread. Parallel planning improves throughput; simultaneous binary asset editing does not. Tool-level success can still contain partial or stub domain results. Verify the changed behavior in the editor and representative gameplay before calling the handoff complete.
+
+Coordination errors use `-32020` for busy/executing (`retryable:true`) and `-32021` for an invalid or stale lease (`retryable:false`). Both include `executed:false`. Optional-dependency errors retain `-32010`.

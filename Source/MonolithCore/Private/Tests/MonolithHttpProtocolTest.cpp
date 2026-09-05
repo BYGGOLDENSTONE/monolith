@@ -52,7 +52,7 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
         {
             auto Data = MakeShared<FJsonObject>();
             Data->SetBoolField(TEXT("executed"), false);
-            return FMonolithActionResult::Error(TEXT("busy"), -32010).WithErrorData(Data);
+            return FMonolithActionResult::Error(TEXT("busy"), FMonolithJsonUtils::ErrCoordinationBusy).WithErrorData(Data);
         }));
 
     FString Body;
@@ -160,7 +160,7 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
         const auto Result = Reply->GetObjectField(TEXT("result"));
         TestTrue(TEXT("Tool error marked"), Result->GetBoolField(TEXT("isError")));
         const auto Structured = Result->GetObjectField(TEXT("structuredContent"));
-        TestEqual(TEXT("Error code retained"), Structured->GetIntegerField(TEXT("code")), -32010);
+        TestEqual(TEXT("Error code retained"), Structured->GetIntegerField(TEXT("code")), FMonolithJsonUtils::ErrCoordinationBusy);
         TestFalse(TEXT("Retry evidence retained"), Structured->GetObjectField(TEXT("data"))->GetBoolField(TEXT("executed")));
     }
 

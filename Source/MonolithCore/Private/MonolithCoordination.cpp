@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "MonolithCoordination.h"
+#include "MonolithJsonUtils.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/Guid.h"
 #include "Misc/ScopeLock.h"
@@ -71,8 +72,8 @@ FMonolithActionResult FMonolithCoordination::ErrorLocked(const TCHAR* Reason, co
 	auto Data = StatusLocked();
 	Data->SetStringField(TEXT("reason"), Reason);
 	Data->SetBoolField(TEXT("executed"), false);
-	Data->SetBoolField(TEXT("retryable"), Code == -32010);
-	if (Code == -32010)
+	Data->SetBoolField(TEXT("retryable"), Code == FMonolithJsonUtils::ErrCoordinationBusy);
+	if (Code == FMonolithJsonUtils::ErrCoordinationBusy)
 	{
 		Data->SetNumberField(TEXT("retry_after_seconds"), FMath::Max(1.0, ExpiresAt - Clock()));
 	}
@@ -97,13 +98,13 @@ FMonolithActionResult FMonolithCoordination::Handle(const TSharedPtr<FJsonObject
 	const bool bTokenProvided = Params.IsValid() && Params->HasField(TEXT("_lease_token"));
 	if (bTokenProvided && (!Params->TryGetStringField(TEXT("_lease_token"), Token) || Token.IsEmpty()))
 	{
-		return ErrorLocked(TEXT("invalid_lease"), TEXT("_lease_token must be a nonempty token returned by acquire."), -32011);
+		return ErrorLocked(TEXT("invalid_lease"), TEXT("_lease_token must be a nonempty token returned by acquire."), FMonolithJsonUtils::ErrInvalidLease);
 	}
 	if ((Operation != TEXT("acquire") && Operation != TEXT("status")) || bTokenProvided)
 	{
 		if (LeaseToken.IsEmpty() || Token != LeaseToken)
 		{
-			return ErrorLocked(TEXT("invalid_lease"), TEXT("Lease token is missing, stale, or belongs to another workflow. Acquire a new lease before continuing."), -32011);
+			return ErrorLocked(TEXT("invalid_lease"), TEXT("Lease token is missing, stale, or belongs to another workflow. Acquire a new lease before continuing."), FMonolithJsonUtils::ErrInvalidLease);
 		}
 	}
 	if (Operation == TEXT("status"))
@@ -114,7 +115,7 @@ FMonolithActionResult FMonolithCoordination::Handle(const TSharedPtr<FJsonObject
 	{
 		if (ActiveExecutions > 0)
 		{
-			return ErrorLocked(TEXT("lease_executing"), TEXT("Cannot release a lease inside a running leased action. Release after that action returns."), -32010);
+			return ErrorLocked(TEXT("lease_executing"), TEXT("Cannot release a lease inside a running leased action. Release after that action returns."), FMonolithJsonUtils::ErrCoordinationBusy);
 		}
 		Owner.Reset();
 		LeaseToken.Reset();
@@ -138,7 +139,7 @@ FMonolithActionResult FMonolithCoordination::Handle(const TSharedPtr<FJsonObject
 		}
 		if (!LeaseToken.IsEmpty())
 		{
-			return ErrorLocked(TEXT("lease_busy"), TEXT("Another workflow holds the editor lease. Wait for release/expiry; an owner label cannot reclaim it. Use renew with its token if you own it."), -32010);
+			return ErrorLocked(TEXT("lease_busy"), TEXT("Another workflow holds the editor lease. Wait for release/expiry; an owner label cannot reclaim it. Use renew with its token if you own it."), FMonolithJsonUtils::ErrCoordinationBusy);
 		}
 		Owner = RequestedOwner.TrimStartAndEnd();
 		LeaseToken = FGuid::NewGuid().ToString(EGuidFormats::Digits);
@@ -165,7 +166,7 @@ FMonolithActionResult FMonolithCoordination::CheckAccess(const FString& Namespac
 	// never a trusted nested pipeline call, even on the same game thread.
 	if (!bInheritLeaseContext && DispatchDepth > 0)
 	{
-		return ErrorLocked(TEXT("editor_executing"), TEXT("An editor action is still executing. This reentrant request did not execute; retry after it completes."), -32010);
+		return ErrorLocked(TEXT("editor_executing"), TEXT("An editor action is still executing. This reentrant request did not execute; retry after it completes."), FMonolithJsonUtils::ErrCoordinationBusy);
 	}
 	// Coordination validates its own token. In particular acquire must remain
 	// callable by a competing client so it receives a useful busy response.
@@ -177,19 +178,19 @@ FMonolithActionResult FMonolithCoordination::CheckAccess(const FString& Namespac
 	FString Token = bInheritLeaseContext ? ExecutionToken : FString();
 	if (bExplicitToken && (!Params->TryGetStringField(TEXT("_lease_token"), Token) || Token.IsEmpty()))
 	{
-		return ErrorLocked(TEXT("invalid_lease"), TEXT("_lease_token must be a nonempty token returned by acquire."), -32011);
+		return ErrorLocked(TEXT("invalid_lease"), TEXT("_lease_token must be a nonempty token returned by acquire."), FMonolithJsonUtils::ErrInvalidLease);
 	}
 	if (!Token.IsEmpty())
 	{
 		if (LeaseToken.IsEmpty() || Token != LeaseToken)
 		{
-			return ErrorLocked(TEXT("invalid_lease"), TEXT("Lease token is stale or invalid; this call did not execute. Acquire a new lease and inspect state before continuing."), -32011);
+			return ErrorLocked(TEXT("invalid_lease"), TEXT("Lease token is stale or invalid; this call did not execute. Acquire a new lease and inspect state before continuing."), FMonolithJsonUtils::ErrInvalidLease);
 		}
 		OutExecutionToken = Token;
 	}
 	else if (!LeaseToken.IsEmpty() && !IsExempt(Namespace, Action))
 	{
-		return ErrorLocked(TEXT("lease_busy"), TEXT("Editor is reserved by another workflow. This call did not execute. Pass the owner's _lease_token in params or wait for release/expiry."), -32010);
+		return ErrorLocked(TEXT("lease_busy"), TEXT("Editor is reserved by another workflow. This call did not execute. Pass the owner's _lease_token in params or wait for release/expiry."), FMonolithJsonUtils::ErrCoordinationBusy);
 	}
 	return FMonolithActionResult::Success(nullptr);
 }

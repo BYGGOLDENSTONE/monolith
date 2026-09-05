@@ -90,3 +90,5 @@ Default destination is `$CODEX_HOME/skills`, or `~/.codex/skills` when unset. `-
 4. Review worker inspects schemas, source, diffs and test evidence.
 
 Grant the editor lease to one tool-enabled worker at a time. Each handoff reports changed asset paths, compile and save results, readback/runtime evidence, outstanding background operations and unresolved failures. Run representative gameplay and packaging checks after integration. A tool success or a generated scaffold does not establish production quality; see [UE 5.7 audit and release gates](AUDIT_UE57.md).
+
+Coordination errors use `-32020` for busy/executing (`retryable:true`) and `-32021` for an invalid or stale lease (`retryable:false`). Both include `executed:false`. Optional-dependency errors retain `-32010`.
