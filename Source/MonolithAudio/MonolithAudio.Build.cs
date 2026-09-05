@@ -60,6 +60,7 @@ public class MonolithAudio : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
+			"DirectoryWatcher",       // Flush fixture additions before Automation cleanup
 			"MonolithCore",            // Registry, FMonolithActionResult
 			"MonolithAudioRuntime",    // UMonolithSoundPerceptionUserData (Phase I3)
 			"AIModule",                // UAISense_Hearing for sense-class resolution (Phase I3)

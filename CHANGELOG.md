@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Phase 1 save contract
+
+- **Breaking:** `material.set_material_property` and `material.batch_set_material_property` now default to `save:false`; pass `save:true` to persist property edits.
+- **Breaking:** `animation.add_compatible_skeleton` and `animation.remove_compatible_skeleton` now default to `save:false` instead of true.
+- **Breaking:** Existing GAS attribute Blueprint additions, GameplayEffect modifier/component/stacking/duration/period/execution edits, gameplay-tag DataTable edits, and widget attribute bindings now default to `save:false`. The `ui` binding aliases, tag scaffold, and bulk attribute `add` operations honor the same option. New-asset saves and INI tag writes retain their existing behavior.
+- **Breaking:** `ui.add_input_action_row`, `audio.bind_sound_to_perception`, and `audio.unbind_sound_from_perception` now default to `save:false` for existing assets.
+- SoundCue node mutations accept explicit `save:true`; their existing dirty-only default remains. Navigation uses canonical `save:false` with `save_after` retained as an alias, and saves map packages with the correct export flags and `.umap` extension. See the API reference save-contract table for the affected actions.
+
 ### Phase 0 quick wins
 
 - **1.** Python health probes bypass environment proxies and redirects; timeouts preserve busy state.

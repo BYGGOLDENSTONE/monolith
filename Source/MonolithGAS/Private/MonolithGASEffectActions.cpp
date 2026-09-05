@@ -88,46 +88,22 @@ int32 GetGEComponentCount(UGameplayEffect* GE)
 	return GetGEComponents(GE).Num();
 }
 
-/**
- * Mark BP as modified after CDO changes AND persist to disk.
- *
- * Prior implementation used MarkBlueprintAsModified only — that flips dirty flags but does
- * not recompile the BPGC nor flush to .uasset. After editor restart the CDO mutations were
- * silently lost (same class of bug that hit add_attribute on GBA AttributeSets, 2026-04-25).
- *
- * Recipe matches HandleCreateAttributeSet's persistence tail:
- *   Modify -> MarkBlueprintAsStructurallyModified -> CompileBlueprint -> SavePackage.
- *
- * GE component edits qualify as structural (subobject collection changes), so the structural
- * variant is required; the non-structural call would skip dependent compile passes.
- */
-void MarkModified_Effect(UBlueprint* BP)
+/** Recompile edited defaults; persist only when explicitly requested (creators pass true). */
+bool MarkModified_Effect(UBlueprint* BP, bool bSave = true)
 {
-	if (!BP)
-	{
-		return;
-	}
-
-	{
-		FString WritableError;
-		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
-		{
-			return;
-		}
-	}
+	if (!BP) return false;
+	FString WritableError;
+	if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError)) return false;
 	BP->Modify();
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 	FKismetEditorUtilities::CompileBlueprint(BP, EBlueprintCompileOptions::SkipGarbageCollection);
-
-	UPackage* OuterPackage = BP->GetOutermost();
-	if (OuterPackage)
-	{
-		const FString PackageFilename = FPackageName::LongPackageNameToFilename(
-			OuterPackage->GetName(), FPackageName::GetAssetPackageExtension());
-		FSavePackageArgs SaveArgs;
-		SaveArgs.TopLevelFlags = RF_Standalone;
-		UPackage::SavePackage(OuterPackage, BP, *PackageFilename, SaveArgs);
-	}
+	UPackage* Package = BP->GetOutermost();
+	Package->MarkPackageDirty();
+	if (!bSave) return true;
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Standalone;
+	return UPackage::SavePackage(Package, BP,
+		*FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension()), SaveArgs);
 }
 
 /** Parse "ClassName.PropertyName" into an FGameplayAttribute. */
@@ -704,6 +680,7 @@ void FMonolithGASEffectActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("attribute"), TEXT("string"), TEXT("Attribute as ClassName.PropertyName"))
 			.Required(TEXT("operation"), TEXT("string"), TEXT("Modifier op: Add, Multiply, MultiplyCompound, Divide, Override, AddFinal"))
 			.Required(TEXT("magnitude"), TEXT("object"), TEXT("Magnitude config: {type, value?, tag?, source_attribute?, calculation_class?}"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	// 5. set_modifier
@@ -716,6 +693,7 @@ void FMonolithGASEffectActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Optional(TEXT("attribute"), TEXT("string"), TEXT("New attribute as ClassName.PropertyName"))
 			.Optional(TEXT("operation"), TEXT("string"), TEXT("New modifier op"))
 			.Optional(TEXT("magnitude"), TEXT("object"), TEXT("New magnitude config"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	// 6. remove_modifier
@@ -726,6 +704,7 @@ void FMonolithGASEffectActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("GameplayEffect Blueprint asset path"))
 			.Optional(TEXT("modifier_index"), TEXT("integer"), TEXT("Index of the modifier to remove"))
 			.Optional(TEXT("attribute"), TEXT("string"), TEXT("Remove first modifier matching this attribute"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	// 7. list_modifiers
@@ -744,6 +723,7 @@ void FMonolithGASEffectActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("GameplayEffect Blueprint asset path"))
 			.Required(TEXT("component_type"), TEXT("string"), TEXT("Component type: asset_tags, target_tags, block_abilities, cancel_abilities, target_tag_requirements, additional_effects, immunity, remove_other, chance_to_apply, custom_can_apply, grant_abilities"))
 			.Required(TEXT("config"), TEXT("object"), TEXT("Type-specific configuration (e.g. {tags: [...]} for tag components)"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	// 9. set_ge_component
@@ -755,6 +735,7 @@ void FMonolithGASEffectActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("component_type"), TEXT("string"), TEXT("Component type to update"))
 			.Required(TEXT("config"), TEXT("object"), TEXT("New configuration"))
 			.Optional(TEXT("index"), TEXT("integer"), TEXT("Index if multiple of same type (default: 0)"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	// 10. set_effect_stacking
@@ -768,6 +749,7 @@ void FMonolithGASEffectActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Optional(TEXT("stack_duration_refresh_policy"), TEXT("string"), TEXT("RefreshOnSuccessfulApplication or NeverRefresh"))
 			.Optional(TEXT("stack_period_reset_policy"), TEXT("string"), TEXT("ResetOnSuccessfulApplication or NeverReset"))
 			.Optional(TEXT("stack_expiration_policy"), TEXT("string"), TEXT("ClearEntireStack, RemoveSingleStackAndRefreshDuration, RefreshDuration"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	// 11. set_duration
@@ -778,6 +760,7 @@ void FMonolithGASEffectActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("GameplayEffect Blueprint asset path"))
 			.Required(TEXT("duration_policy"), TEXT("string"), TEXT("instant, has_duration, infinite"))
 			.Optional(TEXT("duration_magnitude"), TEXT("number"), TEXT("Duration in seconds (for has_duration)"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	// 12. set_period
@@ -788,6 +771,7 @@ void FMonolithGASEffectActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("GameplayEffect Blueprint asset path"))
 			.Required(TEXT("period"), TEXT("number"), TEXT("Period in seconds (0 to disable)"))
 			.Optional(TEXT("execute_on_application"), TEXT("boolean"), TEXT("Execute once immediately on application (default: false)"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	// ---- Phase 2: Productivity ----
@@ -827,6 +811,7 @@ void FMonolithGASEffectActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("GameplayEffect Blueprint asset path"))
 			.Required(TEXT("calculation_class"), TEXT("string"), TEXT("Execution calculation class name or path"))
 			.Optional(TEXT("scoped_modifiers"), TEXT("array"), TEXT("Array of {attribute, operation, magnitude} captured for the execution calc"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	// 17. duplicate_gameplay_effect
@@ -871,6 +856,7 @@ void FMonolithGASEffectActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("GameplayEffect Blueprint asset path"))
 			.Required(TEXT("component_type"), TEXT("string"), TEXT("Component type: asset_tags, target_tags, block_abilities, etc."))
 			.Optional(TEXT("index"), TEXT("integer"), TEXT("Index if multiple of same type exist (default: 0)"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	// ---- Phase 4: Runtime ----
@@ -1338,7 +1324,16 @@ FMonolithActionResult FMonolithGASEffectActions::HandleAddModifier(const TShared
 	NewMod.ModifierMagnitude = Magnitude;
 
 	GE->Modifiers.Add(NewMod);
-	MarkModified_Effect(BP);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (!MarkModified_Effect(BP, bSave))
+	{
+		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("executed"), true);
+		Data->SetBoolField(TEXT("saved"), false);
+		Data->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("GameplayEffect was modified but could not be saved")).WithErrorData(Data);
+	}
 
 	int32 NewIndex = GE->Modifiers.Num() - 1;
 
@@ -1421,7 +1416,16 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetModifier(const TShared
 		Mod.ModifierMagnitude = NewMag;
 	}
 
-	MarkModified_Effect(BP);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (!MarkModified_Effect(BP, bSave))
+	{
+		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("executed"), true);
+		Data->SetBoolField(TEXT("saved"), false);
+		Data->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("GameplayEffect was modified but could not be saved")).WithErrorData(Data);
+	}
 
 	TSharedPtr<FJsonObject> Result = MonolithGAS::MakeAssetResult(AssetPath,
 		FString::Printf(TEXT("Updated modifier at index %d"), Index));
@@ -1496,7 +1500,16 @@ FMonolithActionResult FMonolithGASEffectActions::HandleRemoveModifier(const TSha
 
 	FString RemovedAttr = AttributeToString(GE->Modifiers[RemoveIndex].Attribute);
 	GE->Modifiers.RemoveAt(RemoveIndex);
-	MarkModified_Effect(BP);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (!MarkModified_Effect(BP, bSave))
+	{
+		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("executed"), true);
+		Data->SetBoolField(TEXT("saved"), false);
+		Data->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("GameplayEffect was modified but could not be saved")).WithErrorData(Data);
+	}
 
 	TSharedPtr<FJsonObject> Result = MonolithGAS::MakeAssetResult(AssetPath,
 		FString::Printf(TEXT("Removed modifier at index %d (%s)"), RemoveIndex, *RemovedAttr));
@@ -1673,7 +1686,16 @@ FMonolithActionResult FMonolithGASEffectActions::HandleAddGEComponent(const TSha
 	}
 	// immunity, remove_other, custom_can_apply: skeleton creation is enough, detailed config via BP
 
-	MarkModified_Effect(BP);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (!MarkModified_Effect(BP, bSave))
+	{
+		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("executed"), true);
+		Data->SetBoolField(TEXT("saved"), false);
+		Data->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("GameplayEffect was modified but could not be saved")).WithErrorData(Data);
+	}
 
 	TSharedPtr<FJsonObject> Result = MonolithGAS::MakeAssetResult(AssetPath,
 		FString::Printf(TEXT("Added %s component"), *ComponentType));
@@ -1844,7 +1866,16 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetGEComponent(const TSha
 		}
 	}
 
-	MarkModified_Effect(BP);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (!MarkModified_Effect(BP, bSave))
+	{
+		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("executed"), true);
+		Data->SetBoolField(TEXT("saved"), false);
+		Data->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("GameplayEffect was modified but could not be saved")).WithErrorData(Data);
+	}
 
 	TSharedPtr<FJsonObject> Result = MonolithGAS::MakeAssetResult(AssetPath,
 		FString::Printf(TEXT("Updated %s component at index %d"), *ComponentType, TargetIndex));
@@ -1970,7 +2001,16 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetEffectStacking(const T
 		}
 	}
 
-	MarkModified_Effect(BP);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (!MarkModified_Effect(BP, bSave))
+	{
+		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("executed"), true);
+		Data->SetBoolField(TEXT("saved"), false);
+		Data->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("GameplayEffect was modified but could not be saved")).WithErrorData(Data);
+	}
 
 	TSharedPtr<FJsonObject> Result = MonolithGAS::MakeAssetResult(AssetPath, TEXT("Stacking configuration updated"));
 	Result->SetStringField(TEXT("stacking_type"), StackTypeStr);
@@ -2019,7 +2059,16 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetDuration(const TShared
 		GE->DurationMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(DurationValue));
 	}
 
-	MarkModified_Effect(BP);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (!MarkModified_Effect(BP, bSave))
+	{
+		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("executed"), true);
+		Data->SetBoolField(TEXT("saved"), false);
+		Data->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("GameplayEffect was modified but could not be saved")).WithErrorData(Data);
+	}
 
 	TSharedPtr<FJsonObject> Result = MonolithGAS::MakeAssetResult(AssetPath, TEXT("Duration updated"));
 	Result->SetStringField(TEXT("duration_policy"), DurationPolicyToString(DurationPolicy));
@@ -2062,7 +2111,16 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetPeriod(const TSharedPt
 		GE->bExecutePeriodicEffectOnApplication = Params->GetBoolField(TEXT("execute_on_application"));
 	}
 
-	MarkModified_Effect(BP);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (!MarkModified_Effect(BP, bSave))
+	{
+		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("executed"), true);
+		Data->SetBoolField(TEXT("saved"), false);
+		Data->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("GameplayEffect was modified but could not be saved")).WithErrorData(Data);
+	}
 
 	TSharedPtr<FJsonObject> Result = MonolithGAS::MakeAssetResult(AssetPath, TEXT("Period updated"));
 	Result->SetNumberField(TEXT("period"), PeriodValue);
@@ -2351,6 +2409,9 @@ namespace
 	bool SaveGEPackage(UBlueprint* BP, const FString& SavePath)
 	{
 		UPackage* Package = BP->GetPackage();
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(Package->GetName(), WritableError)
+			|| !MonolithCore::EnsureWritablePackagePath(SavePath, WritableError)) return false;
 		Package->MarkPackageDirty();
 		FAssetRegistryModule::AssetCreated(BP);
 
@@ -3027,7 +3088,16 @@ FMonolithActionResult FMonolithGASEffectActions::HandleAddExecution(const TShare
 	}
 
 	GE->Executions.Add(ExecDef);
-	MarkModified_Effect(BP);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (!MarkModified_Effect(BP, bSave))
+	{
+		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("executed"), true);
+		Data->SetBoolField(TEXT("saved"), false);
+		Data->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("GameplayEffect was modified but could not be saved")).WithErrorData(Data);
+	}
 
 	TSharedPtr<FJsonObject> Result = MonolithGAS::MakeAssetResult(AssetPath,
 		FString::Printf(TEXT("Added execution calculation: %s"), *CalcClass->GetName()));
@@ -3640,7 +3710,16 @@ FMonolithActionResult FMonolithGASEffectActions::HandleRemoveGEComponent(const T
 
 	CompToRemove->MarkAsGarbage();
 
-	MarkModified_Effect(BP);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (!MarkModified_Effect(BP, bSave))
+	{
+		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("executed"), true);
+		Data->SetBoolField(TEXT("saved"), false);
+		Data->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("GameplayEffect was modified but could not be saved")).WithErrorData(Data);
+	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
 	Result->SetStringField(TEXT("asset_path"), AssetPath);

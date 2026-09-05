@@ -539,6 +539,33 @@ void FMonolithAudioSoundCueActions::FinalizeCue(USoundCue* Cue)
 	Cue->GetPackage()->MarkPackageDirty();
 }
 
+static FMonolithActionResult SaveSoundCueMutation(USoundCue* Cue, const TSharedPtr<FJsonObject>& Params)
+{
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	if (bSave)
+	{
+		UPackage* Package = Cue->GetPackage();
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(Package->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(Package->GetName(), WritableError);
+		}
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		if (!UPackage::SavePackage(Package, Cue,
+			*FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension()), SaveArgs))
+		{
+			TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+			Data->SetBoolField(TEXT("executed"), true);
+			Data->SetBoolField(TEXT("saved"), false);
+			Data->SetBoolField(TEXT("partial"), true);
+			return FMonolithActionResult::Error(TEXT("Sound Cue was modified but its package could not be saved")).WithErrorData(Data);
+		}
+	}
+	return FMonolithActionResult::Success(MakeShared<FJsonObject>());
+}
+
 USoundCue* FMonolithAudioSoundCueActions::CreateEmptySoundCue(const FString& AssetPath, FString& OutError)
 {
 	int32 LastSlash;
@@ -656,6 +683,7 @@ void FMonolithAudioSoundCueActions::RegisterActions(FMonolithToolRegistry& Regis
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Asset path of the USoundCue"))
 			.Required(TEXT("node_type"), TEXT("string"), TEXT("Node type name (e.g. WavePlayer, Random, Mixer, Delay, Modulator, etc.)"))
 			.Optional(TEXT("properties"), TEXT("object"), TEXT("Property values to set on the new node"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("audio"), TEXT("remove_sound_cue_node"),
@@ -664,6 +692,7 @@ void FMonolithAudioSoundCueActions::RegisterActions(FMonolithToolRegistry& Regis
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Asset path of the USoundCue"))
 			.Required(TEXT("node_id"), TEXT("string"), TEXT("Node ID to remove"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("audio"), TEXT("connect_sound_cue_nodes"),
@@ -674,6 +703,7 @@ void FMonolithAudioSoundCueActions::RegisterActions(FMonolithToolRegistry& Regis
 			.Required(TEXT("from_node_id"), TEXT("string"), TEXT("Source node (child) ID"))
 			.Required(TEXT("to_node_id"), TEXT("string"), TEXT("Destination node (parent) ID"))
 			.Optional(TEXT("child_index"), TEXT("number"), TEXT("Child slot index on the parent (auto-appends if omitted)"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("audio"), TEXT("set_sound_cue_first_node"),
@@ -682,6 +712,7 @@ void FMonolithAudioSoundCueActions::RegisterActions(FMonolithToolRegistry& Regis
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Asset path of the USoundCue"))
 			.Required(TEXT("node_id"), TEXT("string"), TEXT("Node ID to set as FirstNode"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("audio"), TEXT("set_sound_cue_node_property"),
@@ -692,6 +723,7 @@ void FMonolithAudioSoundCueActions::RegisterActions(FMonolithToolRegistry& Regis
 			.Required(TEXT("node_id"), TEXT("string"), TEXT("Node ID"))
 			.Required(TEXT("property_name"), TEXT("string"), TEXT("Property name"))
 			.Required(TEXT("value"), TEXT("any"), TEXT("Property value"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("audio"), TEXT("list_sound_cue_node_types"),
@@ -969,12 +1001,21 @@ FMonolithActionResult FMonolithAudioSoundCueActions::AddSoundCueNode(const TShar
 	}
 
 	FString Error;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, Error))
+	{
+		return MonolithCore::WritablePathError(AssetPath, Error);
+	}
 	USoundCue* Cue = LoadSoundCue(AssetPath, Error);
 	if (!Cue)
 	{
 		return FMonolithActionResult::Error(Error);
 	}
 
+	FString WritableError;
+	if (!MonolithCore::EnsureWritablePackagePath(Cue->GetPackage()->GetName(), WritableError))
+	{
+		return MonolithCore::WritablePathError(Cue->GetPackage()->GetName(), WritableError);
+	}
 	Cue->Modify();
 
 	USoundNode* NewNode = Cue->ConstructSoundNode<USoundNode>(NodeClass);
@@ -999,6 +1040,8 @@ FMonolithActionResult FMonolithAudioSoundCueActions::AddSoundCueNode(const TShar
 	}
 
 	FinalizeCue(Cue);
+	FMonolithActionResult PersistResult = SaveSoundCueMutation(Cue, Params);
+	if (!PersistResult.bSuccess) return PersistResult;
 
 	auto Result = MakeShared<FJsonObject>();
 	Result->SetStringField(TEXT("node_id"), MakeNodeId(Cue, NewNode));
@@ -1017,6 +1060,10 @@ FMonolithActionResult FMonolithAudioSoundCueActions::RemoveSoundCueNode(const TS
 	}
 
 	FString Error;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, Error))
+	{
+		return MonolithCore::WritablePathError(AssetPath, Error);
+	}
 	USoundCue* Cue = LoadSoundCue(AssetPath, Error);
 	if (!Cue)
 	{
@@ -1029,6 +1076,11 @@ FMonolithActionResult FMonolithAudioSoundCueActions::RemoveSoundCueNode(const TS
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Node '%s' not found in cue"), *NodeId));
 	}
 
+	FString WritableError;
+	if (!MonolithCore::EnsureWritablePackagePath(Cue->GetPackage()->GetName(), WritableError))
+	{
+		return MonolithCore::WritablePathError(Cue->GetPackage()->GetName(), WritableError);
+	}
 	Cue->Modify();
 
 	// Clear FirstNode if it's the one being removed
@@ -1056,6 +1108,8 @@ FMonolithActionResult FMonolithAudioSoundCueActions::RemoveSoundCueNode(const TS
 #endif
 
 	FinalizeCue(Cue);
+	FMonolithActionResult PersistResult = SaveSoundCueMutation(Cue, Params);
+	if (!PersistResult.bSuccess) return PersistResult;
 
 	auto Result = MakeShared<FJsonObject>();
 	Result->SetBoolField(TEXT("success"), true);
@@ -1073,6 +1127,10 @@ FMonolithActionResult FMonolithAudioSoundCueActions::ConnectSoundCueNodes(const 
 	}
 
 	FString Error;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, Error))
+	{
+		return MonolithCore::WritablePathError(AssetPath, Error);
+	}
 	USoundCue* Cue = LoadSoundCue(AssetPath, Error);
 	if (!Cue)
 	{
@@ -1090,6 +1148,11 @@ FMonolithActionResult FMonolithAudioSoundCueActions::ConnectSoundCueNodes(const 
 		return FMonolithActionResult::Error(FString::Printf(TEXT("To node '%s' not found"), *ToNodeId));
 	}
 
+	FString WritableError;
+	if (!MonolithCore::EnsureWritablePackagePath(Cue->GetPackage()->GetName(), WritableError))
+	{
+		return MonolithCore::WritablePathError(Cue->GetPackage()->GetName(), WritableError);
+	}
 	Cue->Modify();
 
 	// Determine child index
@@ -1127,6 +1190,8 @@ FMonolithActionResult FMonolithAudioSoundCueActions::ConnectSoundCueNodes(const 
 	ToNode->ChildNodes[ChildIndex] = FromNode;
 
 	FinalizeCue(Cue);
+	FMonolithActionResult PersistResult = SaveSoundCueMutation(Cue, Params);
+	if (!PersistResult.bSuccess) return PersistResult;
 
 	auto Result = MakeShared<FJsonObject>();
 	Result->SetBoolField(TEXT("success"), true);
@@ -1144,6 +1209,10 @@ FMonolithActionResult FMonolithAudioSoundCueActions::SetSoundCueFirstNode(const 
 	}
 
 	FString Error;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, Error))
+	{
+		return MonolithCore::WritablePathError(AssetPath, Error);
+	}
 	USoundCue* Cue = LoadSoundCue(AssetPath, Error);
 	if (!Cue)
 	{
@@ -1156,9 +1225,16 @@ FMonolithActionResult FMonolithAudioSoundCueActions::SetSoundCueFirstNode(const 
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
 	}
 
+	FString WritableError;
+	if (!MonolithCore::EnsureWritablePackagePath(Cue->GetPackage()->GetName(), WritableError))
+	{
+		return MonolithCore::WritablePathError(Cue->GetPackage()->GetName(), WritableError);
+	}
 	Cue->Modify();
 	Cue->FirstNode = Node;
 	FinalizeCue(Cue);
+	FMonolithActionResult PersistResult = SaveSoundCueMutation(Cue, Params);
+	if (!PersistResult.bSuccess) return PersistResult;
 
 	auto Result = MakeShared<FJsonObject>();
 	Result->SetBoolField(TEXT("success"), true);
@@ -1182,6 +1258,10 @@ FMonolithActionResult FMonolithAudioSoundCueActions::SetSoundCueNodeProperty(con
 	}
 
 	FString Error;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, Error))
+	{
+		return MonolithCore::WritablePathError(AssetPath, Error);
+	}
 	USoundCue* Cue = LoadSoundCue(AssetPath, Error);
 	if (!Cue)
 	{
@@ -1194,6 +1274,11 @@ FMonolithActionResult FMonolithAudioSoundCueActions::SetSoundCueNodeProperty(con
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
 	}
 
+	FString WritableError;
+	if (!MonolithCore::EnsureWritablePackagePath(Cue->GetPackage()->GetName(), WritableError))
+	{
+		return MonolithCore::WritablePathError(Cue->GetPackage()->GetName(), WritableError);
+	}
 	Cue->Modify();
 
 	TSharedPtr<FJsonValue> Value = Params->TryGetField(TEXT("value"));
@@ -1204,6 +1289,8 @@ FMonolithActionResult FMonolithAudioSoundCueActions::SetSoundCueNodeProperty(con
 	}
 
 	FinalizeCue(Cue);
+	FMonolithActionResult PersistResult = SaveSoundCueMutation(Cue, Params);
+	if (!PersistResult.bSuccess) return PersistResult;
 
 	auto Result = MakeShared<FJsonObject>();
 	Result->SetBoolField(TEXT("success"), true);

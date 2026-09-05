@@ -17,6 +17,15 @@ MonolithAudio provides MCP coverage of audio asset creation, inspection, batch m
 
 **No overlap with runtime audio playback plugins** — a runtime audio plugin owns footstep/surface/movement audio playback; MonolithAudio owns editor-time asset creation, management, and inspection.
 
+### Existing-asset save contract
+
+| Actions | `save` contract |
+|---|---|
+| `add_sound_cue_node`, `remove_sound_cue_node`, `connect_sound_cue_nodes`, `set_sound_cue_first_node`, `set_sound_cue_node_property` | Optional boolean, default `false`: graph edits leave the package dirty; `save=true` persists the changed Sound Cue. |
+| `bind_sound_to_perception`, `unbind_sound_from_perception` | Optional boolean, default `false`: UserData edits leave the package dirty; `save=true` persists them. |
+
+A requested save failure returns an error with `executed:true`, `partial:true`, and `saved:false`. Sound Cue creators retain their new-asset save behavior. `Monolith.Audio.SaveContract` verifies dirty state and byte-identical disk contents without `save`, changed contents with `save=true`, and graph readback on a disposable Sound Cue.
+
 ### Action Categories
 
 | Category | Actions | Source file | Description |

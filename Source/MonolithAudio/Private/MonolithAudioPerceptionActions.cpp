@@ -320,10 +320,17 @@ FMonolithActionResult FMonolithAudioPerceptionActions::BindSoundToPerception(con
 	}
 	Sound->PostEditChange();
 
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	Sound->MarkPackageDirty();
 	FString SaveError;
-	if (!SavePackageForAsset(Sound, SaveError))
+	if (bSave && !SavePackageForAsset(Sound, SaveError))
 	{
-		return FMonolithActionResult::Error(SaveError);
+		TSharedPtr<FJsonObject> ErrorData = MakeShared<FJsonObject>();
+		ErrorData->SetBoolField(TEXT("executed"), true);
+		ErrorData->SetBoolField(TEXT("saved"), false);
+		ErrorData->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(SaveError).WithErrorData(ErrorData);
 	}
 
 	auto Result = MakeShared<FJsonObject>();
@@ -376,10 +383,17 @@ FMonolithActionResult FMonolithAudioPerceptionActions::UnbindSoundFromPerception
 	Sound->RemoveUserDataOfClass(UMonolithSoundPerceptionUserData::StaticClass());
 	Sound->PostEditChange();
 
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	Sound->MarkPackageDirty();
 	FString SaveError;
-	if (!SavePackageForAsset(Sound, SaveError))
+	if (bSave && !SavePackageForAsset(Sound, SaveError))
 	{
-		return FMonolithActionResult::Error(SaveError);
+		TSharedPtr<FJsonObject> ErrorData = MakeShared<FJsonObject>();
+		ErrorData->SetBoolField(TEXT("executed"), true);
+		ErrorData->SetBoolField(TEXT("saved"), false);
+		ErrorData->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(SaveError).WithErrorData(ErrorData);
 	}
 
 	auto Result = MakeShared<FJsonObject>();
@@ -493,6 +507,7 @@ void FMonolithAudioPerceptionActions::RegisterActions(FMonolithToolRegistry& Reg
 			.Optional(TEXT("enabled"), TEXT("boolean"), TEXT("Master switch — set false to disable this binding without removing it (default true)"))
 			.Optional(TEXT("fire_on_fade_in"), TEXT("boolean"), TEXT("Also fire on FadingIn state, not just Playing (default true)"))
 			.Optional(TEXT("require_owning_actor"), TEXT("boolean"), TEXT("Skip 2D / no-owner sounds (default true)"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("audio"), TEXT("unbind_sound_from_perception"),
@@ -500,6 +515,7 @@ void FMonolithAudioPerceptionActions::RegisterActions(FMonolithToolRegistry& Reg
 		FMonolithActionHandler::CreateStatic(&FMonolithAudioPerceptionActions::UnbindSoundFromPerception),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Asset path of the USoundBase"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("audio"), TEXT("get_sound_perception_binding"),

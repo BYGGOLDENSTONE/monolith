@@ -8,7 +8,7 @@
 
 ## MonolithMaterial
 
-**Dependencies:** Core, CoreUObject, Engine, MonolithCore, UnrealEd, MaterialEditor, EditorScriptingUtilities, RenderCore, RHI, Slate, SlateCore, Json, JsonUtilities
+**Dependencies:** Core, CoreUObject, Engine, MonolithCore, UnrealEd, MaterialEditor, EditorScriptingUtilities, AssetTools, DirectoryWatcher, RenderCore, RHI, Slate, SlateCore, Json, JsonUtilities
 
 ### Classes
 
@@ -33,12 +33,13 @@
 | `get_material_parameters` | List all parameter types (scalar, vector, texture, static switch) with values. Works on UMaterial and UMaterialInstanceConstant |
 | `get_compilation_stats` | Sampler count, texture estimates, UV scalars, blend mode, expression count, vertex/pixel shader instruction counts (`num_vertex_shader_instructions`, `num_pixel_shader_instructions` via `UMaterialEditingLibrary::GetStatistics`) |
 
-**Write Actions (15)**
+**Write Actions (16)**
 | Action | Description |
 |--------|-------------|
 | `create_material` | Create new UMaterial at path with configurable defaults (blend mode, shading model, material domain) |
 | `create_material_instance` | Create UMaterialInstanceConstant from parent material with optional parameter overrides |
-| `set_material_property` | Set material properties (blend_mode, shading_model, two_sided, etc.) via UMaterialEditingLibrary |
+| `set_material_property` | Set material properties (blend_mode, shading_model, two_sided, etc.). `save` (boolean, default `false`) leaves the package dirty; `save:true` persists changes. Returns `saved`; requested save failures return an error with `executed:true` and `partial:true`. |
+| `batch_set_material_property` | Set properties on multiple materials in one transaction. `save` (boolean, default `false`) leaves packages dirty; `save:true` persists each asset. Per-asset results include `saved`; any failed requested save returns an error carrying all results. |
 | `build_material_graph` | Build entire graph from JSON spec in single undo transaction (4 phases: standard nodes, Custom HLSL, wires, output properties). The spec must be passed as `{ "graph_spec": { "nodes": [...], "connections": [...], ... } }` — not as a bare object |
 | `disconnect_expression` | Disconnect inputs or outputs on a named expression (supports expr→expr and expr→material property; supports targeted single-connection disconnection via optional `input_name`/`output_name` params) |
 | `delete_expression` | Delete expression node by name from material graph |

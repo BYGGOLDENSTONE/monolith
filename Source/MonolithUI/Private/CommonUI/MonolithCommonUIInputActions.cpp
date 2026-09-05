@@ -130,14 +130,23 @@ namespace MonolithCommonUIInput
 		DT->AddRow(FName(*RowName), NewRow);
 		DT->MarkPackageDirty();
 
-		// Save
-		UPackage* Pkg = DT->GetOutermost();
-		FSavePackageArgs SaveArgs;
-		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-		UPackage::SavePackage(
-			Pkg, DT,
-			*FPackageName::LongPackageNameToFilename(Pkg->GetName(), FPackageName::GetAssetPackageExtension()),
-			SaveArgs);
+		bool bSave = false;
+		Params->TryGetBoolField(TEXT("save"), bSave);
+		if (bSave)
+		{
+			UPackage* Pkg = DT->GetOutermost();
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+			if (!UPackage::SavePackage(Pkg, DT,
+				*FPackageName::LongPackageNameToFilename(Pkg->GetName(), FPackageName::GetAssetPackageExtension()), SaveArgs))
+			{
+				TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+				Data->SetBoolField(TEXT("executed"), true);
+				Data->SetBoolField(TEXT("saved"), false);
+				Data->SetBoolField(TEXT("partial"), true);
+				return FMonolithActionResult::Error(TEXT("Input row was added but the DataTable could not be saved")).WithErrorData(Data);
+			}
+		}
 
 		TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
 		Result->SetStringField(TEXT("table_path"), TablePath);
@@ -444,6 +453,7 @@ namespace MonolithCommonUIInput
 				.Optional(TEXT("keyboard_key"), TEXT("string"), TEXT("FCommonInputTypeInfo text, e.g. '(Key=(KeyName=E))'"))
 				.Optional(TEXT("gamepad_key"), TEXT("string"), TEXT("FCommonInputTypeInfo text, e.g. '(Key=(KeyName=Gamepad_FaceButton_Bottom))'"))
 				.Optional(TEXT("touch_key"), TEXT("string"), TEXT("FCommonInputTypeInfo text"))
+				.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 				.Build(),
 			Cat);
 

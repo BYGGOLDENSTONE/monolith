@@ -272,6 +272,7 @@ void FMonolithMaterialActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Optional(TEXT("used_with_morph_targets"), TEXT("bool"), TEXT("Mark as used with morph targets"))
 			.Optional(TEXT("used_with_instanced_static_meshes"), TEXT("bool"), TEXT("Mark as used with instanced static meshes"))
 			.Optional(TEXT("used_with_static_lighting"), TEXT("bool"), TEXT("Mark as used with static lighting"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save changes to disk; otherwise leave the material package dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("material"), TEXT("delete_expression"),
@@ -588,6 +589,7 @@ void FMonolithMaterialActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Optional(TEXT("used_with_static_lighting"), TEXT("bool"), TEXT("Enable StaticLighting usage"))
 			.Optional(TEXT("fully_rough"), TEXT("bool"), TEXT("Enable fully rough"))
 			.Optional(TEXT("cast_shadow_as_masked"), TEXT("bool"), TEXT("Cast shadow as masked"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save changes to disk; otherwise leave the material package dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("material"), TEXT("batch_recompile"),
@@ -2838,6 +2840,8 @@ FMonolithActionResult FMonolithMaterialActions::CreateMaterialInstance(const TSh
 FMonolithActionResult FMonolithMaterialActions::SetMaterialProperty(const TSharedPtr<FJsonObject>& Params)
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
 
 	FString WritablePathError;
 	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritablePathError))
@@ -3027,14 +3031,21 @@ FMonolithActionResult FMonolithMaterialActions::SetMaterialProperty(const TShare
 	Mat->PostEditChange();
 	GEditor->EndTransaction();
 
-	// Bug fix: flush property changes to disk so subsequent LoadAsset calls
-	// (e.g. get_compilation_stats) don't read stale on-disk values after GC
-	UEditorAssetLibrary::SaveAsset(AssetPath, false);
+	Mat->MarkPackageDirty();
+	const bool bSaved = bSave && UEditorAssetLibrary::SaveAsset(AssetPath, false);
 
 	auto ResultJson = MakeShared<FJsonObject>();
 	ResultJson->SetStringField(TEXT("asset_path"), AssetPath);
 	ResultJson->SetNumberField(TEXT("changes"), ChangeCount);
 	ResultJson->SetArrayField(TEXT("changed"), ChangedArray);
+	ResultJson->SetBoolField(TEXT("saved"), bSaved);
+	if (bSave && !bSaved)
+	{
+		ResultJson->SetBoolField(TEXT("executed"), true);
+		ResultJson->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("Material was modified but could not be saved"),
+			FMonolithJsonUtils::ErrInternalError).WithErrorData(ResultJson);
+	}
 
 	return FMonolithActionResult::Success(ResultJson);
 }
@@ -7460,6 +7471,8 @@ static TArray<FString> JsonArrayToStringArray(const TArray<TSharedPtr<FJsonValue
 
 FMonolithActionResult FMonolithMaterialActions::BatchSetMaterialProperty(const TSharedPtr<FJsonObject>& Params)
 {
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
 	// Parse asset_paths array
 	TArray<TSharedPtr<FJsonValue>> PathsJsonArray;
 	FString ParseError;
@@ -7497,6 +7510,7 @@ FMonolithActionResult FMonolithMaterialActions::BatchSetMaterialProperty(const T
 	GEditor->BeginTransaction(FText::FromString(TEXT("BatchSetMaterialProperty")));
 
 	TArray<TSharedPtr<FJsonValue>> ResultsArray;
+	bool bSaveFailed = false;
 
 	for (const FString& AssetPath : AssetPaths)
 	{
@@ -7628,8 +7642,14 @@ FMonolithActionResult FMonolithMaterialActions::BatchSetMaterialProperty(const T
 		Mat->PreEditChange(nullptr);
 		Mat->PostEditChange();
 
-		// Save to disk so subsequent reads get fresh data
-		UEditorAssetLibrary::SaveAsset(AssetPath, false);
+		Mat->MarkPackageDirty();
+		const bool bSaved = bSave && UEditorAssetLibrary::SaveAsset(AssetPath, false);
+		PerAssetResult->SetBoolField(TEXT("saved"), bSaved);
+		if (bSave && !bSaved)
+		{
+			bSaveFailed = true;
+			Errors.Add(TEXT("Material was modified but could not be saved"));
+		}
 
 		PerAssetResult->SetBoolField(TEXT("success"), Errors.Num() == 0);
 		PerAssetResult->SetNumberField(TEXT("changes"), ChangeCount);
@@ -7652,6 +7672,13 @@ FMonolithActionResult FMonolithMaterialActions::BatchSetMaterialProperty(const T
 	auto ResultJson = MakeShared<FJsonObject>();
 	ResultJson->SetNumberField(TEXT("material_count"), AssetPaths.Num());
 	ResultJson->SetArrayField(TEXT("results"), ResultsArray);
+	if (bSaveFailed)
+	{
+		ResultJson->SetBoolField(TEXT("executed"), true);
+		ResultJson->SetBoolField(TEXT("partial"), true);
+		return FMonolithActionResult::Error(TEXT("One or more modified materials could not be saved"),
+			FMonolithJsonUtils::ErrInternalError).WithErrorData(ResultJson);
+	}
 
 	return FMonolithActionResult::Success(ResultJson);
 }

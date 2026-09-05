@@ -30,6 +30,7 @@ void FMonolithGASTagActions::RegisterActions(FMonolithToolRegistry& Registry)
 		FParamSchemaBuilder()
 			.Required(TEXT("tags"), TEXT("array"), TEXT("Array of tag strings (e.g. [\"Ability.Combat.Melee\", \"State.Dead\"])"))
 			.OptionalAssetPath(TEXT("table_path"), TEXT("Path to a GameplayTagTableRow DataTable. If omitted, tags go to DefaultGameplayTags.ini"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("gas"), TEXT("get_tag_hierarchy"),
@@ -56,6 +57,7 @@ void FMonolithGASTagActions::RegisterActions(FMonolithToolRegistry& Registry)
 		FParamSchemaBuilder()
 			.Required(TEXT("preset"), TEXT("string"), TEXT("Preset name: 'survival_horror'"))
 			.OptionalAssetPath(TEXT("save_path"), TEXT("DataTable path to save to. If omitted, tags go to DefaultGameplayTags.ini"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("gas"), TEXT("rename_tag"),
@@ -210,6 +212,8 @@ FMonolithActionResult FMonolithGASTagActions::HandleAddGameplayTags(const TShare
 	}
 
 	FString TablePath = Params->GetStringField(TEXT("table_path"));
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
 
 	// Expand all tags to include parent hierarchy
 	TSet<FString> AllTags;
@@ -274,6 +278,7 @@ FMonolithActionResult FMonolithGASTagActions::HandleAddGameplayTags(const TShare
 		}
 		UObject* Existing = MonolithGAS::LoadAssetFromPath(TablePath, Error);
 		UDataTable* DataTable = Cast<UDataTable>(Existing);
+		const bool bCreated = (DataTable == nullptr);
 
 		if (!DataTable)
 		{
@@ -341,16 +346,19 @@ FMonolithActionResult FMonolithGASTagActions::HandleAddGameplayTags(const TShare
 		{
 			DataTable->MarkPackageDirty();
 
-			// Save the package
-			FString PackageFileName;
-			if (FPackageName::TryConvertLongPackageNameToFilename(
-				DataTable->GetPackage()->GetName(), PackageFileName,
-				FPackageName::GetAssetPackageExtension()))
+			if (bSave || bCreated)
 			{
 				FSavePackageArgs SaveArgs;
 				SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-				UPackage::SavePackage(DataTable->GetPackage(), DataTable,
-					*PackageFileName, SaveArgs);
+				if (!UPackage::SavePackage(DataTable->GetPackage(), DataTable,
+					*FPackageName::LongPackageNameToFilename(DataTable->GetPackage()->GetName(), FPackageName::GetAssetPackageExtension()), SaveArgs))
+				{
+					TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+					Data->SetBoolField(TEXT("executed"), true);
+					Data->SetBoolField(TEXT("saved"), false);
+					Data->SetBoolField(TEXT("partial"), true);
+					return FMonolithActionResult::Error(TEXT("Gameplay tags were added but the DataTable could not be saved")).WithErrorData(Data);
+				}
 			}
 
 			// Refresh tags
@@ -761,6 +769,10 @@ FMonolithActionResult FMonolithGASTagActions::HandleScaffoldTagHierarchy(const T
 	{
 		AddParams->SetStringField(TEXT("table_path"), SavePath);
 	}
+
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
+	AddParams->SetBoolField(TEXT("save"), bSave);
 
 	// Reuse the add_gameplay_tags handler
 	FMonolithActionResult AddResult = HandleAddGameplayTags(AddParams);

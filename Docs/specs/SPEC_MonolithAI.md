@@ -43,7 +43,7 @@ Two navigation actions added for the test/profiling harness workflow (`MonolithA
 
 | Action | Params | Description |
 |--------|--------|-------------|
-| `rebuild_navigation` | `save_after` (bool), `nav_timeout` (seconds) | Rebuild the navigation system with a bounded async-generation wait, optionally saving the level after generation completes. |
+| `rebuild_navigation` | `save` (boolean, default false; legacy alias `save_after`), `timeout_seconds` (seconds, default 30, clamped 1–120) | Rebuild the navigation system with a bounded async-generation wait. Changes stay dirty unless `save=true`; completed generation saves nav-data assets and the existing `.umap` level file. If a requested save fails or generation prevents it, returns an error with `executed:true`, `saved:false`, `partial:true` and the generation/save details. |
 | `validate_nav_points` | `points:[{name, location}]`, `pairs` (index references) | Per-point projection onto the navmesh plus per-pair path existence / length check. `pairs` reference points by index into `points`. |
 
 ### Phase J fixes touching this module

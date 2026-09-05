@@ -16,6 +16,16 @@
 **MCP tool:** `ui_query`
 **Namespace:** `ui`
 
+### Existing-asset save contract
+
+| Actions | `save` contract |
+|---|---|
+| `add_input_action_row` | Optional boolean, default `false`: the DataTable remains dirty; `save=true` persists the added row. |
+| `set_widget_navigation_bulk` | Existing optional `save=false` behavior is preserved. |
+| `bind_widget_to_attribute`, `unbind_widget_attribute`, `clear_widget_attribute_bindings` | GAS-backed aliases: optional boolean `save=false`, compile and leave the Widget Blueprint dirty; `save=true` persists it. |
+
+New-asset CommonUI activatable/button/list scaffolders retain their save behavior. A requested row/binding save failure returns an error with `executed:true`, `partial:true`, and `saved:false`. `Monolith.UI.SaveContract` uses a disposable CommonUI input DataTable to verify dirty state, unchanged disk bytes without `save`, persisted bytes with `save=true`, and both authored rows. It explicitly self-skips when CommonUI is unavailable.
+
 ### Action category roll-up (post Phase A–L)
 
 | Category | Count | Source file(s) | Conditional? |

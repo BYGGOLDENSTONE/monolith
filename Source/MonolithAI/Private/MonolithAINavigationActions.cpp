@@ -1,5 +1,6 @@
 #include "MonolithAINavigationActions.h"
 #include "MonolithPackagePathValidator.h"
+#include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 
@@ -313,7 +314,7 @@ void FMonolithAINavigationActions::RegisterActions(FMonolithToolRegistry& Regist
 		TEXT("Rebuild the current editor world's navigation. Triggers UNavigationSystemV1::Build(), bound-waits for async tile generation to finish, and optionally saves the affected nav-data + level packages to disk"),
 		FMonolithActionHandler::CreateStatic(&HandleRebuildNavigation),
 		FParamSchemaBuilder()
-			.Optional(TEXT("save_after"), TEXT("boolean"), TEXT("Save nav-data / level packages to disk once generation completes (default: false)"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save nav-data / level packages to disk once generation completes; otherwise leave them dirty"), TEXT("false"), { TEXT("save_after") })
 			.Optional(TEXT("timeout_seconds"), TEXT("number"), TEXT("Max seconds to wait for tile generation before returning (default: 30, clamped 1-120)"))
 			.Build());
 
@@ -2039,7 +2040,11 @@ FMonolithActionResult FMonolithAINavigationActions::HandleRebuildNavigation(cons
 		return FMonolithActionResult::Error(TEXT("NavigationSystemV1 not found"));
 	}
 
-	const bool bSaveAfter = Params->HasField(TEXT("save_after")) && Params->GetBoolField(TEXT("save_after"));
+	bool bSaveAfter = false;
+	if (!Params->TryGetBoolField(TEXT("save"), bSaveAfter))
+	{
+		Params->TryGetBoolField(TEXT("save_after"), bSaveAfter); // Legacy direct callers; registry rewrites the alias.
+	}
 	double TimeoutSeconds = Params->HasField(TEXT("timeout_seconds")) ? Params->GetNumberField(TEXT("timeout_seconds")) : 30.0;
 	TimeoutSeconds = FMath::Clamp(TimeoutSeconds, 1.0, 120.0);
 
@@ -2153,10 +2158,11 @@ FMonolithActionResult FMonolithAINavigationActions::HandleRebuildNavigation(cons
 				}
 
 				const FString PackageFilename = FPackageName::LongPackageNameToFilename(
-					PackageName, FPackageName::GetAssetPackageExtension());
+					PackageName, Pkg->ContainsMap() ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
 
 				FSavePackageArgs SaveArgs;
-				SaveArgs.TopLevelFlags = RF_NoFlags;
+				// No explicit asset is passed, so enumerate public/standalone package roots.
+				SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 				SaveArgs.SaveFlags = SAVE_NoError;
 				const bool bSaved = UPackage::SavePackage(Pkg, nullptr, *PackageFilename, SaveArgs);
 
@@ -2167,13 +2173,23 @@ FMonolithActionResult FMonolithAINavigationActions::HandleRebuildNavigation(cons
 
 				if (bSaved) { SavedCount++; } else { FailedCount++; }
 			}
-
-			SaveStatus->SetNumberField(TEXT("saved_count"), SavedCount);
-			SaveStatus->SetNumberField(TEXT("failed_count"), FailedCount);
-			SaveStatus->SetArrayField(TEXT("packages"), SavedPackages);
 		}
 
+		SaveStatus->SetNumberField(TEXT("saved_count"), SavedCount);
+		SaveStatus->SetNumberField(TEXT("failed_count"), FailedCount);
+		SaveStatus->SetArrayField(TEXT("packages"), SavedPackages);
 		Result->SetObjectField(TEXT("save_status"), SaveStatus);
+		if (!bGenerationComplete || FailedCount > 0)
+		{
+			Result->SetBoolField(TEXT("executed"), true);
+			Result->SetBoolField(TEXT("saved"), false);
+			Result->SetBoolField(TEXT("partial"), true);
+			Result->SetStringField(TEXT("reason"), bGenerationComplete ? TEXT("save_failed") : TEXT("generation_incomplete"));
+			return FMonolithActionResult::Error(
+				bGenerationComplete ? TEXT("Navigation rebuilt, but one or more requested package saves failed")
+					: TEXT("Navigation generation did not complete; the requested save was not attempted"),
+				FMonolithJsonUtils::ErrInternalError).WithErrorData(Result);
+		}
 	}
 
 	return FMonolithActionResult::Success(Result);

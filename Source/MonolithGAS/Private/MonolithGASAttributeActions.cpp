@@ -51,6 +51,7 @@ void FMonolithGASAttributeActions::RegisterActions(FMonolithToolRegistry& Regist
 			.Required(TEXT("name"), TEXT("string"), TEXT("Attribute name (e.g. Health, MaxHealth)"))
 			.Optional(TEXT("default_value"), TEXT("number"), TEXT("Default value (default: 0)"))
 			.Optional(TEXT("replicated"), TEXT("boolean"), TEXT("Whether the attribute should replicate (default: false)"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed asset to disk; otherwise leave it dirty"), TEXT("false"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("gas"), TEXT("get_attribute_set"),
@@ -143,6 +144,7 @@ void FMonolithGASAttributeActions::RegisterActions(FMonolithToolRegistry& Regist
 		FMonolithActionHandler::CreateStatic(&HandleBulkEditAttributes),
 		FParamSchemaBuilder()
 			.Required(TEXT("operations"), TEXT("array"), TEXT("Array of {attribute_set, action, ...} where action is 'add'/'remove'/'set_default'/'set_replication'"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save Blueprint add operations to disk; other operation types retain their existing behavior"), TEXT("false"))
 			.Build());
 
 	// ---- Phase 3: Validation & Analysis ----
@@ -866,17 +868,23 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleAddAttribute(const TSh
 			}
 		}
 
-		// Save the package to disk (UPackage::SavePackage, not just MarkPackageDirty).
-		// MarkPackageDirty by itself does not survive editor restart and was the root cause
-		// of the 2026-04-25 GAS smoke-test regression.
+		bool bSave = false;
+		Params->TryGetBoolField(TEXT("save"), bSave);
 		UPackage* OuterPackage = BP->GetOutermost();
-		if (OuterPackage)
+		OuterPackage->MarkPackageDirty();
+		if (bSave)
 		{
-			FString PackageFilename = FPackageName::LongPackageNameToFilename(
-				OuterPackage->GetName(), FPackageName::GetAssetPackageExtension());
 			FSavePackageArgs SaveArgs;
 			SaveArgs.TopLevelFlags = RF_Standalone;
-			UPackage::SavePackage(OuterPackage, BP, *PackageFilename, SaveArgs);
+			if (!UPackage::SavePackage(OuterPackage, BP,
+				*FPackageName::LongPackageNameToFilename(OuterPackage->GetName(), FPackageName::GetAssetPackageExtension()), SaveArgs))
+			{
+				TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+				Data->SetBoolField(TEXT("executed"), true);
+				Data->SetBoolField(TEXT("saved"), false);
+				Data->SetBoolField(TEXT("partial"), true);
+				return FMonolithActionResult::Error(TEXT("Attribute was added but the Blueprint could not be saved")).WithErrorData(Data);
+			}
 		}
 
 		TSharedPtr<FJsonObject> Result = MonolithGAS::MakeAssetResult(AttrSet,
@@ -2875,6 +2883,9 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleBulkEditAttributes(con
 			bool bRep = false;
 			OpObj->TryGetBoolField(TEXT("replicated"), bRep);
 			AddParams->SetBoolField(TEXT("replicated"), bRep);
+			bool bSave = false;
+			Params->TryGetBoolField(TEXT("save"), bSave);
+			AddParams->SetBoolField(TEXT("save"), bSave);
 			OpResult = HandleAddAttribute(AddParams);
 		}
 		else if (Action == TEXT("set_default"))

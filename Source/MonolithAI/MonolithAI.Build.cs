@@ -64,6 +64,7 @@ public class MonolithAI : ModuleRules
 		{
 			"MonolithCore", "MonolithBlueprint", "MonolithIndex",
 			"UnrealEd", "BlueprintGraph", "AIGraph",
+			"DirectoryWatcher", // Flush fixture file events before Automation cleanup.
 			"BehaviorTreeEditor", "EnvironmentQueryEditor",
 			"Projects",  // IPluginManager (Phase D2)
 			"Json", "JsonUtilities",

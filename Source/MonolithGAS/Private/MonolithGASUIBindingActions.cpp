@@ -447,36 +447,38 @@ namespace
         return UWidgetBlueprintExtension::RequestExtension<UMonolithGASUIBindingBlueprintExtension>(WBP);
     }
 
-    void CompileAndSaveWBP(UWidgetBlueprint* WBP, const FString& AssetPath, bool& bOutCompiled, bool& bOutSaved)
+    FMonolithActionResult CompileAndSaveWBP(UWidgetBlueprint* WBP, const FString& AssetPath,
+        bool bSave, bool& bOutCompiled, bool& bOutSaved)
     {
         bOutCompiled = false;
         bOutSaved = false;
-        if (!WBP) return;
-        {
-            FString WritableError;
-            if (!MonolithCore::EnsureWritablePackagePath(WBP->GetPackage()->GetName(), WritableError))
-            {
-                return;
-            }
-        }
-        {
-            FString WritableError;
-            if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
-            {
-                return;
-            }
-        }
+        if (!WBP) return FMonolithActionResult::Error(TEXT("Widget Blueprint is null"));
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(WBP->GetPackage()->GetName(), WritableError))
+            return MonolithCore::WritablePathError(WBP->GetPackage()->GetName(), WritableError);
+        if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+            return MonolithCore::WritablePathError(AssetPath, WritableError);
 
         FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
         FKismetEditorUtilities::CompileBlueprint(WBP);
         bOutCompiled = true;
-
         WBP->GetPackage()->MarkPackageDirty();
-        FSavePackageArgs SaveArgs;
-        SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-        const FString FileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
-        UPackage::SavePackage(WBP->GetPackage(), WBP, *FileName, SaveArgs);
-        bOutSaved = true;
+        if (bSave)
+        {
+            FSavePackageArgs SaveArgs;
+            SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+            const FString FileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+            bOutSaved = UPackage::SavePackage(WBP->GetPackage(), WBP, *FileName, SaveArgs);
+            if (!bOutSaved)
+            {
+                TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+                Data->SetBoolField(TEXT("executed"), true);
+                Data->SetBoolField(TEXT("saved"), false);
+                Data->SetBoolField(TEXT("partial"), true);
+                return FMonolithActionResult::Error(TEXT("Widget bindings were modified but the Blueprint could not be saved")).WithErrorData(Data);
+            }
+        }
+        return FMonolithActionResult::Success(MakeShared<FJsonObject>());
     }
 
     TSharedPtr<FJsonObject> SerializeBindingRow(const FMonolithGASAttributeBindingSpec& Spec, int32 Index, UWidgetBlueprint* WBP)
@@ -542,6 +544,7 @@ void FMonolithGASUIBindingActions::RegisterActions(FMonolithToolRegistry& Regist
             .Optional(TEXT("format"),           TEXT("string"),  TEXT("auto | percent_0_1 | int_text | float_text:<decimals> | format_string:<tpl> | gradient:<lo>|<hi> | threshold:<T>"), TEXT("auto"))
             .Optional(TEXT("update_policy"),    TEXT("string"),  TEXT("on_change (default) | tick | on_change_smoothed:<lerp_speed>"), TEXT("on_change"))
             .Optional(TEXT("replace_existing"), TEXT("boolean"), TEXT("If a binding already exists for (widget_name, target_property), overwrite. Default: true"), TEXT("true"))
+            .Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed Blueprint to disk; otherwise leave it dirty"), TEXT("false"))
             .Build();
     };
 
@@ -551,6 +554,7 @@ void FMonolithGASUIBindingActions::RegisterActions(FMonolithToolRegistry& Regist
             .RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint asset path"), { TEXT("asset_path") })
             .Required(TEXT("widget_name"),     TEXT("string"), TEXT("Widget tree variable name"))
             .Required(TEXT("target_property"), TEXT("string"), TEXT("Property on the widget"))
+            .Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed Blueprint to disk; otherwise leave it dirty"), TEXT("false"))
             .Build();
     };
 
@@ -565,13 +569,14 @@ void FMonolithGASUIBindingActions::RegisterActions(FMonolithToolRegistry& Regist
     {
         return FParamSchemaBuilder()
             .RequiredAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint asset path"), { TEXT("asset_path") })
+            .Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed Blueprint to disk; otherwise leave it dirty"), TEXT("false"))
             .Build();
     };
 
-    const FString BindDesc = TEXT("Bind a UMG widget property to a GAS attribute. Installs a runtime class extension on the WBP that subscribes to UAbilitySystemComponent::GetGameplayAttributeValueChangeDelegate at NativeConstruct and pushes typed values to the target widget property. Compiles + saves the WBP. NOTE: complementary to ui::get_widget_bindings, which reads the orthogonal UMG property-binding system.");
-    const FString UnbindDesc = TEXT("Remove one GAS attribute binding from a WBP, keyed by (widget_name, target_property). Recompiles + saves.");
+    const FString BindDesc = TEXT("Bind a UMG widget property to a GAS attribute. Installs a runtime class extension on the WBP that subscribes to UAbilitySystemComponent::GetGameplayAttributeValueChangeDelegate at NativeConstruct and pushes typed values to the target widget property. Compiles the WBP; saves only with save=true. NOTE: complementary to ui::get_widget_bindings, which reads the orthogonal UMG property-binding system.");
+    const FString UnbindDesc = TEXT("Remove one GAS attribute binding from a WBP, keyed by (widget_name, target_property). Recompiles; saves only with save=true.");
     const FString ListDesc = TEXT("List all GAS attribute bindings on a WBP installed by gas::bind_widget_to_attribute. Distinct from ui::get_widget_bindings which reads UMG's FDelegateRuntimeBinding array.");
-    const FString ClearDesc = TEXT("Remove ALL GAS attribute bindings from a WBP. Recompiles + saves. Returns count removed.");
+    const FString ClearDesc = TEXT("Remove ALL GAS attribute bindings from a WBP. Recompiles; saves only with save=true. Returns count removed.");
 
     // ---- gas namespace (canonical) ----
     Registry.RegisterAction(TEXT("gas"), TEXT("bind_widget_to_attribute"),    BindDesc,
@@ -742,7 +747,10 @@ FMonolithActionResult FMonolithGASUIBindingActions::HandleBindWidgetToAttribute(
 
     // Compile + save.
     bool bCompiled = false, bSaved = false;
-    CompileAndSaveWBP(WBP, WbpPath, bCompiled, bSaved);
+    bool bSave = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    FMonolithActionResult PersistResult = CompileAndSaveWBP(WBP, WbpPath, bSave, bCompiled, bSaved);
+    if (!PersistResult.bSuccess) return PersistResult;
 
     // Result.
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -828,7 +836,10 @@ FMonolithActionResult FMonolithGASUIBindingActions::HandleUnbindWidgetAttribute(
     }
 
     bool bCompiled = false, bSaved = false;
-    CompileAndSaveWBP(WBP, WbpPath, bCompiled, bSaved);
+    bool bSave = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    FMonolithActionResult PersistResult = CompileAndSaveWBP(WBP, WbpPath, bSave, bCompiled, bSaved);
+    if (!PersistResult.bSuccess) return PersistResult;
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("ok"), true);
@@ -930,7 +941,10 @@ FMonolithActionResult FMonolithGASUIBindingActions::HandleClearWidgetAttributeBi
     bool bCompiled = false, bSaved = false;
     if (Removed > 0)
     {
-        CompileAndSaveWBP(WBP, WbpPath, bCompiled, bSaved);
+        bool bSave = false;
+        Params->TryGetBoolField(TEXT("save"), bSave);
+        FMonolithActionResult PersistResult = CompileAndSaveWBP(WBP, WbpPath, bSave, bCompiled, bSaved);
+        if (!PersistResult.bSuccess) return PersistResult;
     }
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();

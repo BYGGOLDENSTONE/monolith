@@ -15,6 +15,20 @@
 
 MonolithGAS provides full MCP coverage of the Gameplay Ability System. It covers ability CRUD, attribute set management, gameplay effect authoring, ASC (Ability System Component) inspection and manipulation, gameplay tag operations, gameplay cue management, target data, input binding, runtime inspection, scaffolding of common GAS patterns, and Widget→Attribute binding via class-extension authoring.
 
+### Existing-asset save contract
+
+The actions below accept `save` (boolean, default `false`). Asset mutations compile as before and leave their package dirty unless `save=true`. A requested save failure returns an error with `executed:true`, `partial:true`, and `saved:false`.
+
+| Actions | Persistence scope |
+|---|---|
+| `add_attribute` | Blueprint AttributeSets only; C++ source generation is unchanged. |
+| `add_modifier`, `set_modifier`, `remove_modifier`, `add_ge_component`, `set_ge_component`, `remove_ge_component`, `set_effect_stacking`, `set_duration`, `set_period`, `add_execution` | Existing GameplayEffect Blueprint. |
+| `add_gameplay_tags`, `scaffold_tag_hierarchy` | Existing tag DataTable. Newly created tables are still saved; INI tag writes are unchanged. |
+| `bulk_edit_attributes` | Forwards `save` to Blueprint `action:"add"` operations only. Other operation types retain their existing behavior. |
+| `bind_widget_to_attribute`, `unbind_widget_attribute`, `clear_widget_attribute_bindings` | Existing Widget Blueprint; the same contract applies to their `ui` aliases. The result's `saved` flag reflects actual persistence. |
+
+Creation actions (`create_attribute_set`, effect templates/specs, and duplicates) retain their new-asset save behavior. `Monolith.GAS.SaveContract` verifies omitted-save dirty state and unchanged disk bytes, explicit persistence, and period readback using a disposable GameplayEffect.
+
 ### Action Categories
 
 | Category | Actions | Description |

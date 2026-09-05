@@ -987,7 +987,7 @@ void FMonolithAnimationActions::RegisterActions(FMonolithToolRegistry& Registry)
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Skeleton asset path (the one being declared compatible)"))
 			.Required(TEXT("compatible_with"), TEXT("string"), TEXT("Skeleton asset path to add to the compatibility list"))
-			.Optional(TEXT("save"), TEXT("bool"), TEXT("Save the modified skeleton asset (default true)"), TEXT("true"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the modified skeleton asset; otherwise leave its package dirty"), TEXT("false"))
 			.Build());
 	Registry.RegisterAction(TEXT("animation"), TEXT("remove_compatible_skeleton"),
 		TEXT("Remove a skeleton from another's CompatibleSkeletons array"),
@@ -995,7 +995,7 @@ void FMonolithAnimationActions::RegisterActions(FMonolithToolRegistry& Registry)
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Skeleton asset path"))
 			.Required(TEXT("compatible_with"), TEXT("string"), TEXT("Skeleton asset path to remove from the compatibility list"))
-			.Optional(TEXT("save"), TEXT("bool"), TEXT("Save the modified skeleton asset (default true)"), TEXT("true"))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the modified skeleton asset; otherwise leave its package dirty"), TEXT("false"))
 			.Build());
 
 	// Wave 11 — Asset Creation + Setup
@@ -5088,7 +5088,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddCompatibleSkeleton(con
 {
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	const FString CompatPath = Params->GetStringField(TEXT("compatible_with"));
-	bool bSave = true;
+	bool bSave = false;
 	Params->TryGetBoolField(TEXT("save"), bSave);
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
@@ -5144,7 +5144,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveCompatibleSkeleton(
 {
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	const FString CompatPath = Params->GetStringField(TEXT("compatible_with"));
-	bool bSave = true;
+	bool bSave = false;
 	Params->TryGetBoolField(TEXT("save"), bSave);
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);

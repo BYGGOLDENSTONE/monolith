@@ -1,6 +1,6 @@
 # Monolith API Reference
 
-**Version:** v0.22.0 · **Last updated:** 2026-08-01
+**Version:** v0.22.0 · **Last updated:** 2026-09-05
 
 **In-tree action total is approximate: ~1,400+ actions across 25+ in-tree namespaces** (public, in-tree only; all active by default, plus 45 experimental town-gen actions that register only when `bEnableProceduralTownGen=true`). The surface is too large to track to the unit — **query `monolith_discover()` (its `total_actions` field) for the exact live figure.** The `ui` namespace re-exports 4 GAS UI binding actions as aliases. v0.19.0 adds an LLM C++ authoring ergonomics pack (`source`, 8 actions + `editor.get_build_errors` fix hints), live-PIE introspection + driving and stat-group readout (`editor`), anim-node binding read/write and time-series PIE sampling (`animation`), a Blueprint variable census + contract reconciliation (`blueprint`), and T3D asset-text export (`project`); plus two first-launch fixes (issue #70) and a ~40% smaller `tools/list` manifest. The `monolith_*` meta-tools (`discover`, `status`, `update`, `reindex`, `guide`) plus the `bulk_fill_query` and `describe_query` framework dispatchers round out the MCP tool count. This total EXCLUDES sibling-plugin actions — they ship in their own repos and are never in the public release zip.
 
@@ -47,6 +47,28 @@ The per-namespace numbers in the Table of Contents and body sections below are k
 | [Sibling plugins](#sibling-plugins) | varies | Separate plugins, separate distribution |
 
 ---
+
+## Save contract (Unreleased)
+
+The following existing-asset mutations accept `save` (boolean, default `false`).
+Omitting it leaves the changed package dirty in the editor; use `save:true` to
+persist the change to disk. Creating a new asset may still save immediately.
+Writable package-root checks apply to both creation and persistence.
+
+| Namespace | Actions with `save:false` by default | Details |
+|---|---|---|
+| `material` | `set_material_property`, `batch_set_material_property` | Property edits no longer save automatically; batches apply the same option to each asset. |
+| `animation` | `add_compatible_skeleton`, `remove_compatible_skeleton` | Default changed from true to false. |
+| `gas` | `add_attribute` | Applies to the existing Blueprint attribute-set branch. |
+| `gas` | `add_modifier`, `set_modifier`, `remove_modifier`, `add_ge_component`, `set_ge_component`, `set_effect_stacking`, `set_duration`, `set_period`, `add_execution`, `remove_ge_component` | Existing GameplayEffect edits compile and remain dirty unless save is requested. |
+| `gas` | `add_gameplay_tags`, `scaffold_tag_hierarchy` | Applies to existing DataTables; creation and INI tag configuration keep their existing persistence behavior. |
+| `gas` / `ui` aliases | `bind_widget_to_attribute`, `unbind_widget_attribute`, `clear_widget_attribute_bindings` | Existing widget binding changes no longer save automatically. |
+| `gas` | `bulk_edit_attributes` | Forwards save for `action:"add"`; other edit modes retain their existing dirty-only behavior. |
+| `ui` | `add_input_action_row` | Existing CommonUI input DataTable changes no longer save automatically. |
+| `ui` | `set_widget_navigation_bulk` | Already defaults to false. CommonUI asset constructors continue saving new assets. |
+| `audio` | `bind_sound_to_perception`, `unbind_sound_from_perception` | Existing sound metadata changes no longer save automatically. |
+| `audio` | `add_sound_cue_node`, `remove_sound_cue_node`, `connect_sound_cue_nodes`, `set_sound_cue_first_node`, `set_sound_cue_node_property` | Existing dirty-only node edits now also support explicit saving. |
+| `ai` | `rebuild_navigation` | Canonical option is `save:false`; legacy `save_after` remains an alias. Saving still requires completed generation. |
 
 ## Recent API Changes (v0.14.0 → v0.14.7)
 

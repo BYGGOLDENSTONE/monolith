@@ -20,6 +20,7 @@ public class MonolithMaterial : ModuleRules
 			"MaterialEditor",
 			"EditorScriptingUtilities",
 			"AssetTools",
+			"DirectoryWatcher",
 			"RenderCore",
 			"RHI",
 			"Slate",

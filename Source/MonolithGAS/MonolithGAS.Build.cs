@@ -19,6 +19,7 @@ public class MonolithGAS : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
+			"DirectoryWatcher",       // Flush fixture additions before Automation cleanup
 			"MonolithCore", "MonolithBlueprint",
 			"UnrealEd", "BlueprintGraph",
 			"GameplayAbilitiesEditor", "GameplayTasksEditor",

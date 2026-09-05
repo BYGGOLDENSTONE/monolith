@@ -130,8 +130,8 @@ Wraps `USkeleton::CompatibleSkeletons` — the canonical UE5 mechanism that lets
 | Action | Description |
 |--------|-------------|
 | `get_compatible_skeletons` | Returns `{ asset_path, compatible_skeletons: [..], count }`. Lists the soft-pointer paths currently registered in `USkeleton::CompatibleSkeletons`. |
-| `add_compatible_skeleton` | Marks a target skeleton compatible with the source. Idempotent: returns disjoint `added` / `already_compatible` booleans + resulting `count`. Self-compat rejected with `"Cannot mark a skeleton compatible with itself"`. |
-| `remove_compatible_skeleton` | Removes a previously-registered compatible skeleton. Idempotent: returns disjoint `removed` / `was_compatible` booleans + resulting `count`. |
+| `add_compatible_skeleton` | Optional `save` (boolean, default false): changes stay dirty in memory unless `save=true`. Marks a target skeleton compatible with the source. Idempotent: returns disjoint `added` / `already_compatible` booleans + resulting `count`. Self-compat rejected with `"Cannot mark a skeleton compatible with itself"`. |
+| `remove_compatible_skeleton` | Optional `save` (boolean, default false): changes stay dirty in memory unless `save=true`. Removes a previously-registered compatible skeleton. Idempotent: returns disjoint `removed` / `was_compatible` booleans + resulting `count`. |
 
 **Root Motion (1)**
 | Action | Description |
