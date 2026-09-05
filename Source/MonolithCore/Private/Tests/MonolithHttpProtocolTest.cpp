@@ -56,6 +56,34 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
             return FMonolithActionResult::Error(TEXT("busy"), FMonolithJsonUtils::ErrCoordinationBusy).WithErrorData(Data);
         }));
 
+    for (bool bEmpty : {false, true})
+    {
+        const FString Action = bEmpty ? TEXT("empty_success") : TEXT("success");
+        Registry.RegisterAction(TEXT("http_fixture"), Action, TEXT("Test-only structured success"),
+            FMonolithActionHandler::CreateLambda([bEmpty](const TSharedPtr<FJsonObject>&)
+            {
+                if (bEmpty) return FMonolithActionResult::Success(nullptr);
+                auto Data = MakeShared<FJsonObject>();
+                Data->SetStringField(TEXT("answer"), TEXT("ready"));
+                Data->SetNumberField(TEXT("count"), 42);
+                return FMonolithActionResult::Success(Data);
+            }));
+        auto Call = FMonolithJsonUtils::Parse(TEXT("{\"name\":\"http_fixture_query\",\"arguments\":{\"action\":\"success\"}}"));
+        Call->GetObjectField(TEXT("arguments"))->SetStringField(TEXT("action"), Action);
+        const auto SuccessReply = Server.HandleToolsCall(MakeShared<FJsonValueNumber>(100), Call);
+        const auto ToolResult = SuccessReply->GetObjectField(TEXT("result"));
+        TestFalse(TEXT("Successful tool remains non-error"), ToolResult->GetBoolField(TEXT("isError")));
+        const TSharedPtr<FJsonObject>* Structured = nullptr;
+        if (TestTrue(TEXT("Success includes structuredContent object"), ToolResult->TryGetObjectField(TEXT("structuredContent"), Structured)))
+        {
+            const auto Text = FMonolithJsonUtils::Parse(ToolResult->GetArrayField(TEXT("content"))[0]->AsObject()->GetStringField(TEXT("text")));
+            TestTrue(TEXT("Success text remains JSON"), Text.IsValid());
+            if (Text.IsValid()) TestEqual(TEXT("Structured and text results agree"), FMonolithJsonUtils::Serialize(*Structured), FMonolithJsonUtils::Serialize(Text));
+            TestEqual(TEXT("Empty success is an empty object"), (*Structured)->Values.Num(), bEmpty ? 0 : 2);
+            if (!bEmpty) TestEqual(TEXT("Success fields retained"), (*Structured)->GetStringField(TEXT("answer")), FString(TEXT("ready")));
+        }
+    }
+
     FString Body;
     int32 Status = 0;
     auto Complete = [&Body, &Status](TUniquePtr<FHttpServerResponse>&& Response)

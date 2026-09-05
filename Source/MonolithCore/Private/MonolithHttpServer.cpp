@@ -911,6 +911,8 @@ TSharedPtr<FJsonObject> FMonolithHttpServer::HandleToolsCall(const TSharedPtr<FJ
 
 	if (ActionResult.bSuccess)
 	{
+		Result->SetObjectField(TEXT("structuredContent"), ActionResult.Result.IsValid()
+			? ActionResult.Result : MakeShared<FJsonObject>());
 		TSharedPtr<FJsonObject> TextContent = MakeShared<FJsonObject>();
 		TextContent->SetStringField(TEXT("type"), TEXT("text"));
 		if (ActionResult.Result.IsValid())
