@@ -65,6 +65,9 @@ private:
 	FString LeaseToken;
 	double ExpiresAt = 0;
 	double LeaseTTLSeconds = 120;
+	// One release grace per deadline; renew/acquire re-arm it. Without this an
+	// owner that keeps overrunning its deadline never has to renew.
+	bool bGraceGranted = false;
 	int32 ActiveExecutions = 0;
 	int32 DispatchDepth = 0;
 	// Accessed only on the game thread, never by transport worker threads.

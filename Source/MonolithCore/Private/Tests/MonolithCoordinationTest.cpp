@@ -305,6 +305,42 @@ bool FMonolithLeaseReleaseGraceTest::RunTest(const FString& Parameters)
 		Now += Grace;
 		TestFalse(TEXT("Grace expires at exact boundary"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("active")));
 	}
+	// Grace is granted once per deadline: a second overrun inside the grace
+	// window does not extend the lease again, but an explicit renew re-arms it.
+	{
+		double Now = 0;
+		FMonolithCoordination Coordinator([&Now] { return Now; });
+		const FString Token = TokenOf(Coordinator.Handle(Acquire(TEXT("owner"), 100)));
+		FString ExecutionToken;
+		Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), Request(TEXT("unused"), Token), ExecutionToken);
+		{
+			FMonolithCoordination::FExecutionScope Scope(Coordinator, ExecutionToken);
+			Now = 101;
+		}
+		TestEqual(TEXT("First overrun grants grace"), Coordinator.Handle(Request(TEXT("status"))).Result->GetNumberField(TEXT("remaining_seconds")), 25.0);
+		Now = 110;
+		TestTrue(TEXT("Owner may still call inside grace"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), Request(TEXT("unused"), Token), ExecutionToken).bSuccess);
+		{
+			FMonolithCoordination::FExecutionScope Scope(Coordinator, ExecutionToken);
+			Now = 130;
+		}
+		TestFalse(TEXT("Second overrun does not extend again"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("active")));
+
+		const FString Renewed = TokenOf(Coordinator.Handle(Acquire(TEXT("owner"), 100)));
+		Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), Request(TEXT("unused"), Renewed), ExecutionToken);
+		{
+			FMonolithCoordination::FExecutionScope Scope(Coordinator, ExecutionToken);
+			Now = 231;
+		}
+		TestTrue(TEXT("Renew re-arms grace"), Coordinator.Handle(Request(TEXT("renew"), Renewed)).bSuccess);
+		Now = 330;
+		Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), Request(TEXT("unused"), Renewed), ExecutionToken);
+		{
+			FMonolithCoordination::FExecutionScope Scope(Coordinator, ExecutionToken);
+			Now = 332;
+		}
+		TestEqual(TEXT("Grace available again after renew"), Coordinator.Handle(Request(TEXT("status"))).Result->GetNumberField(TEXT("remaining_seconds")), 25.0);
+	}
 	return true;
 }
 #endif

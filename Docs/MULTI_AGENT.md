@@ -95,4 +95,4 @@ Grant the editor lease to one tool-enabled worker at a time. Each handoff report
 
 Coordination errors use `-32020` for busy/executing (`retryable:true`) and `-32021` for an invalid or stale lease (`retryable:false`). Both include `executed:false`. Optional-dependency errors retain `-32010`.
 
-Omitting `ttl_seconds` on renewal retains the last acquired or explicitly renewed duration. When a leased action or batch finishes past its deadline, the owner gets `min(30, TTL/4)` seconds to release or renew cleanly. Idle leases still expire at their deadline.
+Omitting `ttl_seconds` on renewal retains the last acquired or explicitly renewed duration. When a leased action or batch finishes past its deadline, the owner gets `min(30, TTL/4)` seconds to release or renew cleanly. That grace is granted once per deadline: a second overrun inside the grace window does not extend the lease again, so keep renewing on a timer instead of relying on it. Idle leases still expire at their deadline.

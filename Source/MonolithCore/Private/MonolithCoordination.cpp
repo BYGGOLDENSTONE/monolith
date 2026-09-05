@@ -145,6 +145,7 @@ FMonolithActionResult FMonolithCoordination::Handle(const TSharedPtr<FJsonObject
 	}
 	LeaseTTLSeconds = TTL;
 	ExpiresAt = Clock() + TTL;
+	bGraceGranted = false;
 	auto Result = StatusLocked();
 	Result->SetStringField(TEXT("_lease_token"), LeaseToken);
 	return FMonolithActionResult::Success(Result);
@@ -199,9 +200,10 @@ void FMonolithCoordination::EndLeasedExecutionLocked()
 {
 	--ActiveExecutions;
 	const double Now = Clock();
-	if (ActiveExecutions == 0 && !LeaseToken.IsEmpty() && Now >= ExpiresAt)
+	if (ActiveExecutions == 0 && !LeaseToken.IsEmpty() && Now >= ExpiresAt && !bGraceGranted)
 	{
 		ExpiresAt = Now + FMath::Min(30.0, LeaseTTLSeconds / 4.0);
+		bGraceGranted = true;
 	}
 }
 
