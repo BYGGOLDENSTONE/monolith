@@ -47,6 +47,7 @@
 #include <atomic>
 #include <cmath>
 #include <stdexcept>
+#include <regex>
 
 #include <nlohmann/json.hpp>
 
@@ -121,6 +122,9 @@ static bool g_stopping = false;
 static bool      g_call_log_enabled = false;     // resolved once at startup
 static HANDLE    g_call_log_handle  = INVALID_HANDLE_VALUE;
 static std::mutex g_call_log_lock;
+static std::string g_call_log_path;
+static uint64_t g_call_log_max_bytes = 16ULL * 1024 * 1024;
+static uint64_t g_call_log_rotation = 0;
 
 static const std::vector<std::string> CORE_QUERY_TOOLS = {
     "blueprint_query",
@@ -349,14 +353,12 @@ static std::string sha1_hex(const std::string& data)
 
 static std::string iso8601_utc_now()
 {
-    // Second-precision ISO-8601 UTC, e.g. "2026-05-27T18:14:56Z".
-    std::time_t t = std::time(nullptr);
-    std::tm tm_buf;
-    gmtime_s(&tm_buf, &t);
+    SYSTEMTIME now;
+    GetSystemTime(&now);
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
-        tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
-        tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
+    std::snprintf(buf, sizeof(buf), "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
+        now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute,
+        now.wSecond, now.wMilliseconds);
     return std::string(buf);
 }
 
@@ -391,6 +393,102 @@ static std::string resolve_call_log_path()
     return logsdir + "\\MonolithCalls-" + std::to_string(GetCurrentProcessId()) + ".jsonl";
 }
 
+static uint64_t call_log_limit_bytes()
+{
+    std::string raw = get_env("MONOLITH_CALL_LOG_MAX_MB", "16");
+    const char* whitespace = " \t\r\n\v\f";
+    const size_t start = raw.find_first_not_of(whitespace);
+    if (start != std::string::npos)
+        raw = raw.substr(start, raw.find_last_not_of(whitespace) - start + 1);
+    else
+        raw.clear();
+    // Share Python's ASCII decimal grammar; strtod alone also accepts hex numbers.
+    static const std::regex decimal(R"([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)");
+    try
+    {
+        if (std::regex_match(raw, decimal))
+        {
+            // Preserve positive subnormal values like Python float; stod can
+            // throw on underflow even when the parsed value remains positive.
+            const double megabytes = std::strtod(raw.c_str(), nullptr);
+            if (std::isfinite(megabytes) && megabytes > 0.0 && megabytes <= 1024.0)
+                return std::max<uint64_t>(1, static_cast<uint64_t>(megabytes * 1024 * 1024));
+        }
+    }
+    catch (const std::exception&) {}
+    return 16ULL * 1024 * 1024;
+}
+
+static HANDLE open_call_log()
+{
+    return CreateFileA(g_call_log_path.c_str(),
+        FILE_APPEND_DATA | FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+}
+
+static void cleanup_old_call_logs()
+{
+    const std::string directory = g_call_log_path.substr(0, g_call_log_path.find_last_of("\\/"));
+    FILETIME now;
+    GetSystemTimeAsFileTime(&now);
+    ULARGE_INTEGER now_ticks;
+    now_ticks.LowPart = now.dwLowDateTime;
+    now_ticks.HighPart = now.dwHighDateTime;
+    constexpr uint64_t retention_ticks = 14ULL * 24 * 60 * 60 * 10000000;
+    const uint64_t cutoff = now_ticks.QuadPart - retention_ticks;
+    WIN32_FIND_DATAA entry;
+    HANDLE search = FindFirstFileA((directory + "\\MonolithCalls-*.jsonl").c_str(), &entry);
+    if (search == INVALID_HANDLE_VALUE) return;
+    do
+    {
+        const std::string name = entry.cFileName;
+        if (name.rfind("MonolithCalls-", 0) != 0 || name.size() < 6 ||
+            name.compare(name.size() - 6, 6, ".jsonl") != 0 ||
+            (entry.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)))
+            continue;
+        ULARGE_INTEGER modified;
+        modified.LowPart = entry.ftLastWriteTime.dwLowDateTime;
+        modified.HighPart = entry.ftLastWriteTime.dwHighDateTime;
+        if (modified.QuadPart >= cutoff) continue;
+        const std::string path = directory + "\\" + name;
+        const DWORD attributes = GetFileAttributesA(path.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES ||
+            (attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))) continue;
+        if (!DeleteFileA(path.c_str()))
+            log_msg("Could not remove expired call log: " + path);
+    }
+    while (FindNextFileA(search, &entry));
+    FindClose(search);
+}
+
+// Called only under g_call_log_lock. Rename never replaces an existing archive;
+// failures reopen the active file for append, preserving its previous records.
+static void rotate_call_log(size_t incoming_bytes)
+{
+    LARGE_INTEGER size;
+    if (!GetFileSizeEx(g_call_log_handle, &size) || size.QuadPart <= 0 ||
+        static_cast<uint64_t>(size.QuadPart) + incoming_bytes <= g_call_log_max_bytes)
+        return;
+    CloseHandle(g_call_log_handle);
+    g_call_log_handle = INVALID_HANDLE_VALUE;
+    std::string stamp = iso8601_utc_now();
+    stamp.erase(std::remove_if(stamp.begin(), stamp.end(), [](char ch) {
+        return ch == '-' || ch == ':' || ch == '.';
+    }), stamp.end());
+    for (;;)
+    {
+        const std::string archive = g_call_log_path.substr(0, g_call_log_path.size() - 6)
+            + "-" + stamp + "-" + std::to_string(++g_call_log_rotation) + ".jsonl";
+        if (MoveFileExA(g_call_log_path.c_str(), archive.c_str(), 0)) break;
+        const DWORD error = GetLastError();
+        if (error == ERROR_ALREADY_EXISTS || error == ERROR_FILE_EXISTS) continue;
+        log_msg("Call-log rotation failed; retaining active file (error " + std::to_string(error) + ")");
+        break;
+    }
+    g_call_log_handle = open_call_log();
+}
+
 static void init_call_log()
 {
     // Default-enabled; only "0" disables. Read once at startup, cache the bool.
@@ -401,24 +499,19 @@ static void init_call_log()
         return;
     }
 
-    std::string path = resolve_call_log_path();
-    g_call_log_handle = CreateFileA(
-        path.c_str(),
-        FILE_APPEND_DATA | FILE_WRITE_ATTRIBUTES,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        nullptr,
-        OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
+    g_call_log_path = resolve_call_log_path();
+    g_call_log_max_bytes = call_log_limit_bytes();
+    cleanup_old_call_logs();
+    g_call_log_handle = open_call_log();
 
     if (g_call_log_handle == INVALID_HANDLE_VALUE)
     {
-        log_msg("Failed to open call log at " + path + " -- logging disabled");
+        log_msg("Failed to open call log at " + g_call_log_path + " -- logging disabled");
         g_call_log_enabled = false;
         return;
     }
 
-    log_msg("Call log: " + path);
+    log_msg("Call log: " + g_call_log_path);
 }
 
 // Canonicalised JSON over a params-style object: sorted keys, no whitespace.
@@ -502,16 +595,26 @@ static json extract_params_for_hash(const json& msg)
     return *params_it;
 }
 
-// Inspect a forwarded HTTP response to extract (ok, error_code, result_bytes).
-//   - ok = true iff response is valid JSON-RPC AND has no top-level "error"
-//   - error_code = response.error.code if present, else null
-//   - result_bytes = length of serialised result payload (or full response if no result)
+static void error_log_details(const json& value, std::optional<int>& code,
+    std::optional<std::string>& error_class)
+{
+    if (!value.is_object()) return;
+    const json& error = value.contains("error") && value["error"].is_object() ? value["error"] : value;
+    if (error.contains("code") && error["code"].is_number_integer())
+        code = error["code"].get<int>();
+    if (error.contains("data") && error["data"].is_object() &&
+        error["data"].contains("class") && error["data"]["class"].is_string())
+        error_class = error["data"]["class"].get<std::string>();
+}
+
+// Describe response evidence without inferring cancellation from notifications.
 static void inspect_response(const std::string& resp, bool& ok,
-    std::optional<int>& error_code, size_t& result_bytes)
+    std::optional<int>& error_code, size_t& result_bytes, std::string& outcome)
 {
     ok = false;
     error_code.reset();
     result_bytes = 0;
+    outcome = "unknown";
 
     if (resp.empty())
         return;
@@ -519,30 +622,59 @@ static void inspect_response(const std::string& resp, bool& ok,
     try
     {
         json parsed = json::parse(resp);
+        result_bytes = resp.size();
+        if (!parsed.is_object() || parsed.value("jsonrpc", "") != "2.0") return;
+        auto result_it = parsed.find("result");
+        if (result_it != parsed.end() && !result_it->is_null())
+            result_bytes = result_it->dump(-1).size();
+        std::optional<std::string> error_class;
         auto err_it = parsed.find("error");
         if (err_it != parsed.end() && err_it->is_object())
         {
-            ok = false;
-            auto code_it = err_it->find("code");
-            if (code_it != err_it->end() && code_it->is_number_integer())
-                error_code = code_it->get<int>();
+            error_log_details(*err_it, error_code, error_class);
         }
-        else
+        else if (result_it != parsed.end())
         {
-            ok = parsed.is_object() && parsed.value("jsonrpc", "") == "2.0" && parsed.contains("result")
-                && !(parsed["result"].is_object() && parsed["result"].value("isError", false));
+            if (!(result_it->is_object() && result_it->value("isError", false)))
+            {
+                ok = true;
+                outcome = "ok";
+                return;
+            }
+            auto structured = result_it->find("structuredContent");
+            if (structured != result_it->end()) error_log_details(*structured, error_code, error_class);
+            // Older servers expose the same error only in a JSON text block.
+            if (!error_code.has_value() && !error_class.has_value())
+            {
+                auto content = result_it->find("content");
+                if (content != result_it->end() && content->is_array())
+                {
+                    for (const auto& block : *content)
+                    {
+                        if (!block.is_object() || !block.contains("type") || block["type"] != "text" ||
+                            !block.contains("text") || !block["text"].is_string()) continue;
+                        try
+                        {
+                            error_log_details(json::parse(block["text"].get<std::string>()), error_code, error_class);
+                        }
+                        catch (const json::exception&) { continue; }
+                        if (error_code.has_value() || error_class.has_value()) break;
+                    }
+                }
+            }
         }
-
-        auto result_it = parsed.find("result");
-        if (result_it != parsed.end())
-            result_bytes = result_it->dump(-1).size();
         else
-            result_bytes = resp.size();
+            return;
+        if (error_class == "not_sent") outcome = "not_sent";
+        else if (error_class == "unknown_outcome") outcome = "unknown";
+        else if (error_class == "cancelled" || error_code == -32800) outcome = "cancelled";
+        else outcome = "error";
     }
     catch (...)
     {
         // Unparseable -- treat as failure with no error_code; record full body size
         ok = false;
+        outcome = "unknown";
         result_bytes = resp.size();
     }
 }
@@ -550,7 +682,7 @@ static void inspect_response(const std::string& resp, bool& ok,
 static void write_call_log_line(const json& msg, const std::string& resp, double duration_ms,
     const std::string& request_uuid = {}, const std::string& client = {})
 {
-    if (!g_call_log_enabled || g_call_log_handle == INVALID_HANDLE_VALUE)
+    if (!g_call_log_enabled)
         return;
 
     try
@@ -566,19 +698,21 @@ static void write_call_log_line(const json& msg, const std::string& resp, double
         bool ok = false;
         std::optional<int> error_code;
         size_t result_bytes = 0;
-        inspect_response(resp, ok, error_code, result_bytes);
+        std::string outcome;
+        inspect_response(resp, ok, error_code, result_bytes, outcome);
 
         json line;
         line["proxy_pid"] = GetCurrentProcessId();
         line["request_id"] = msg.value("id", json());
         line["request_uuid"] = request_uuid.empty() ? json(nullptr) : json(request_uuid);
-        line["client"] = client.empty() ? json(nullptr) : json(client);
+        line["client"] = client.empty() ? client_identity() : client;
         line["ts"]           = iso8601_utc_now();
         line["namespace"]    = ns;
         line["action"]       = action;
         line["params_hash"]  = params_hash;
         line["duration_ms"]  = duration_ms;
         line["ok"]           = ok;
+        line["outcome"]      = outcome;
         if (error_code.has_value())
             line["error_code"] = error_code.value();
         else
@@ -588,17 +722,23 @@ static void write_call_log_line(const json& msg, const std::string& resp, double
         std::string serialised = line.dump(-1);
         serialised.push_back('\n');
 
-        // FILE_APPEND_DATA guarantees the kernel positions writes at EOF
-        // atomically; single WriteFile call keeps the line indivisible up to
-        // PIPE_BUF / 4KB. Mutex guards our handle from cross-thread races
-        // (defence in depth -- only the dispatcher main thread writes today).
+        // The mutex covers both rotation and each complete record append. Handle
+        // validity must be checked here: another worker can be rotating it.
         std::lock_guard<std::mutex> lock(g_call_log_lock);
+        if (g_call_log_handle == INVALID_HANDLE_VALUE) return;
+        rotate_call_log(serialised.size());
+        if (g_call_log_handle == INVALID_HANDLE_VALUE)
+        {
+            log_msg("Call-log reopen failed");
+            return;
+        }
         DWORD written = 0;
-        WriteFile(g_call_log_handle,
+        if (!WriteFile(g_call_log_handle,
             serialised.data(),
             static_cast<DWORD>(serialised.size()),
             &written,
-            nullptr);
+            nullptr) || written != serialised.size())
+            log_msg("Call-log record write failed");
     }
     catch (const std::exception& e)
     {

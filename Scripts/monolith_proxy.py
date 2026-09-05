@@ -22,9 +22,11 @@ import http.client
 import selectors
 import socket
 import ssl
+import stat
 import errno
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -84,6 +86,9 @@ _stop_poll = threading.Event()
 _call_log_enabled = False           # resolved once at startup
 _call_log_handle = None             # binary append-mode file handle
 _call_log_lock = threading.Lock()
+_call_log_path = None
+_call_log_max_bytes = 16 * 1024 * 1024
+_call_log_rotation = 0
 
 _owned_leases = {}  # Tokens observed in successful acquire responses only.
 _owned_leases_lock = threading.Lock()
@@ -144,9 +149,72 @@ def _resolve_call_log_path() -> Path:
     return logs_dir / f"MonolithCalls-{os.getpid()}.jsonl"
 
 
+def _call_log_limit_bytes():
+    try:
+        value = os.environ.get("MONOLITH_CALL_LOG_MAX_MB", "16").strip(" \t\r\n\v\f")
+        if not re.fullmatch(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", value):
+            return 16 * 1024 * 1024
+        megabytes = float(value)
+        if math.isfinite(megabytes) and 0 < megabytes <= 1024:
+            return max(1, int(megabytes * 1024 * 1024))
+    except ValueError:
+        pass
+    return 16 * 1024 * 1024
+
+
+def _cleanup_call_logs(directory):
+    cutoff = time.time() - 14 * 24 * 60 * 60
+    for path in directory.glob("MonolithCalls-*.jsonl"):
+        try:
+            info = path.lstat()  # Never follow a symlink into another location.
+            if stat.S_ISREG(info.st_mode) and info.st_mtime < cutoff:
+                path.unlink()
+        except OSError as exc:
+            _log(f"Call-log cleanup skipped {path.name}: {exc}")
+
+
+def _archive_call_log(source, destination):
+    if os.name == "nt":
+        os.rename(source, destination)  # Windows refuses an existing destination.
+    else:
+        # POSIX rename would replace an existing archive. Publish exclusively.
+        os.link(source, destination)
+        try:
+            os.unlink(source)
+        except OSError:
+            os.unlink(destination)  # Roll back only the link this call created.
+            raise
+
+
+def _rotate_call_log(incoming_size):
+    """Called only with the log lock held; preserve a single oversized row."""
+    global _call_log_handle, _call_log_rotation
+    size = os.fstat(_call_log_handle.fileno()).st_size
+    if size == 0 or size + incoming_size <= _call_log_max_bytes:
+        return
+    _call_log_handle.close()
+    _call_log_handle = None
+    try:
+        while True:
+            _call_log_rotation += 1
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")[:-3] + "Z"
+            archive = _call_log_path.with_name(
+                f"{_call_log_path.stem}-{stamp}-{_call_log_rotation}.jsonl")
+            try:
+                _archive_call_log(_call_log_path, archive)
+                break
+            except FileExistsError:
+                continue  # A previous process with this PID may have left it.
+    except OSError as exc:
+        _log(f"Call-log rotation failed; continuing in the active file: {exc}")
+    finally:
+        # Never truncate, even when renaming the old active file failed.
+        _call_log_handle = open(_call_log_path, "ab")
+
+
 def _init_call_log() -> None:
     """Open the call-log file handle once at startup. Default-enabled."""
-    global _call_log_enabled, _call_log_handle
+    global _call_log_enabled, _call_log_handle, _call_log_path, _call_log_max_bytes
 
     _call_log_enabled = os.environ.get("MONOLITH_CALL_LOG", "1") != "0"
     if not _call_log_enabled:
@@ -155,6 +223,9 @@ def _init_call_log() -> None:
 
     try:
         path = _resolve_call_log_path()
+        _call_log_path = path
+        _call_log_max_bytes = _call_log_limit_bytes()
+        _cleanup_call_logs(path.parent)
         # Append-binary mode; OS handles end-of-file positioning. We flush after
         # each write so a crash leaves complete lines on disk.
         _call_log_handle = open(path, "ab")
@@ -206,40 +277,59 @@ def _extract_params_for_hash(msg: dict):
     return params
 
 
-def _inspect_response(resp: str | None) -> tuple[bool, int | None, int]:
-    """Returns (ok, error_code, result_bytes)."""
+def _error_log_details(value):
+    if not isinstance(value, dict):
+        return None, None
+    if isinstance(value.get("error"), dict):
+        value = value["error"]
+    code = value.get("code")
+    code = code if isinstance(code, int) and not isinstance(code, bool) else None
+    data = value.get("data")
+    error_class = data.get("class") if isinstance(data, dict) else None
+    return code, error_class if isinstance(error_class, str) else None
+
+
+def _inspect_response(resp: str | None) -> tuple[bool, int | None, int, str]:
+    """Returns (ok, error_code, result_bytes, outcome) from actual evidence."""
     if not resp:
-        return False, None, 0
+        return False, None, 0, "unknown"
+    response_bytes = len(resp.encode("utf-8"))
     try:
         parsed = json.loads(resp)
-    except (json.JSONDecodeError, ValueError):
-        return False, None, len(resp.encode("utf-8")) if resp else 0
-
-    error = parsed.get("error") if isinstance(parsed, dict) else None
+    except (ValueError, TypeError):
+        return False, None, response_bytes, "unknown"
+    if not isinstance(parsed, dict) or parsed.get("jsonrpc") != "2.0":
+        return False, None, response_bytes, "unknown"
+    result = parsed.get("result")
+    result_bytes = len(_canonical_json(result).encode("utf-8")) if result is not None else response_bytes
+    error = parsed.get("error")
     if isinstance(error, dict):
-        code = error.get("code")
-        error_code = int(code) if isinstance(code, int) else None
-        result = parsed.get("result")
-        if result is not None:
-            result_bytes = len(_canonical_json(result).encode("utf-8"))
-        else:
-            result_bytes = len(resp.encode("utf-8"))
-        return False, error_code, result_bytes
-
-    result = parsed.get("result") if isinstance(parsed, dict) else None
-    if result is not None:
-        result_bytes = len(_canonical_json(result).encode("utf-8"))
+        error_code, error_class = _error_log_details(error)
+    elif "result" in parsed:
+        if not (isinstance(result, dict) and result.get("isError")):
+            return True, None, result_bytes, "ok"
+        error_code, error_class = _error_log_details(result.get("structuredContent"))
+        if error_code is None and error_class is None:
+            content_items = result.get("content", [])
+            for content in content_items if isinstance(content_items, list) else []:
+                if isinstance(content, dict) and content.get("type") == "text":
+                    try:
+                        error_code, error_class = _error_log_details(json.loads(content.get("text", "")))
+                    except (ValueError, TypeError):
+                        continue
+                    if error_code is not None or error_class is not None:
+                        break
     else:
-        result_bytes = len(resp.encode("utf-8"))
-    ok = (isinstance(parsed, dict) and parsed.get("jsonrpc") == "2.0"
-          and "result" in parsed and not (isinstance(result, dict) and result.get("isError")))
-    return ok, None, result_bytes
+        return False, None, result_bytes, "unknown"
+    outcome = {"not_sent": "not_sent", "unknown_outcome": "unknown", "cancelled": "cancelled"}.get(
+        error_class, "cancelled" if error_code == -32800 else "error")
+    return False, error_code, result_bytes, outcome
 
 
 def _write_call_log_line(msg: dict, resp: str | None, duration_ms: float,
                          request_uuid: str | None = None, client: str | None = None) -> None:
     """Append one JSONL line describing an upstream HTTP roundtrip."""
-    if not _call_log_enabled or _call_log_handle is None:
+    if not _call_log_enabled:
         return
     try:
         ns, action = _extract_namespace_action(msg)
@@ -247,27 +337,30 @@ def _write_call_log_line(msg: dict, resp: str | None, duration_ms: float,
         canonical = _canonical_json(params_for_hash)
         params_hash = hashlib.sha1(canonical.encode("utf-8")).hexdigest()
 
-        ok, error_code, result_bytes = _inspect_response(resp)
-
-        # Second-precision ISO-8601 UTC (matches cpp proxy)
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        ok, error_code, result_bytes, outcome = _inspect_response(resp)
+        ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
         line = {
             "proxy_pid": os.getpid(),
             "request_id": msg.get("id"),
             "request_uuid": request_uuid,
-            "client": client,
+            "client": client if client is not None else _client_identity(),
             "ts": ts,
             "namespace": ns,
             "action": action,
             "params_hash": params_hash,
             "duration_ms": round(duration_ms, 3),
             "ok": ok,
+            "outcome": outcome,
             "error_code": error_code,
             "result_bytes": result_bytes,
         }
         payload = (json.dumps(line, separators=(",", ":")) + "\n").encode("utf-8")
         with _call_log_lock:
+            # Rotation temporarily closes the handle; inspect it only under the lock.
+            if _call_log_handle is None:
+                return
+            _rotate_call_log(len(payload))
             _call_log_handle.write(payload)
             _call_log_handle.flush()
     except Exception as e:

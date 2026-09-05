@@ -24,6 +24,9 @@ The portable Python proxy accepts stdio MCP and forwards to a loopback HTTP endp
 | `MONOLITH_TIMEOUT_SECONDS` | 120 | 1–3600 | HTTP request timeout in seconds |
 | `MONOLITH_URL` | `http://localhost:9316/mcp` | URL | Editor endpoint; select the intended project |
 | `MONOLITH_CLIENT_NAME` | `proxy` | Diagnostic name | Prefix for the HTTP client identity `<name>/<pid>` |
+| `MONOLITH_CALL_LOG` | 1 | `0` disables | Enable call logs and startup retention cleanup |
+| `MONOLITH_CALL_LOG_MAX_MB` | 16 | Greater than 0, at most 1024 | Log rotation threshold in MiB; finite fractional values are accepted |
+| `MONOLITH_PROJECT_ROOT` | Working directory | Directory | Root containing the proxy's `Saved/Logs` directory |
 
 These variables apply to both the Python and rebuilt native proxies. Limits are per process, not a cluster scheduler. Extra workers do not make game-thread actions execute simultaneously. A native proxy build must be rebuilt to include its source changes; a downloaded older executable does not acquire new behavior by updating Python files. Use `Scripts/build_proxy.ps1` to build the native version. Call logs use `MonolithCalls-<pid>.jsonl` so multiple proxies do not append to one file; cached tool catalogs are scoped to endpoint and project.
 
@@ -52,6 +55,23 @@ automatically retries. The native proxy caps connection attempts at five seconds
 (or the configured timeout when shorter); normal send/receive operations use
 the configured timeout. When the transport cannot prove whether a write began,
 it conservatively reports `unknown_outcome`.
+
+Both proxies log UTC timestamps with millisecond precision, elapsed
+`duration_ms`, `client`, `request_uuid`, and an `outcome`: `ok` for success,
+`error` for a returned error, `not_sent` for proven pre-send failure, or `unknown`
+when execution cannot be established. `error_code` includes MCP tool errors as
+well as protocol errors. `cancelled` is reserved for confirmed cancellation;
+the current proxies ignore cancellation notifications and never infer it from
+EOF or a timeout. Logs contain an argument hash, without raw arguments or lease
+tokens.
+
+Before an append would cross the configured threshold, the nonempty active log
+is closed and archived as `MonolithCalls-<pid>-<UTC timestamp>-<counter>.jsonl`.
+A single oversized entry stays intact. Archive failures preserve the existing
+file, and logging failures do not alter tool responses. At startup, each proxy
+deletes regular `MonolithCalls-*.jsonl` files older than 14 days in its log
+directory. Directories, symlinks and unrelated files are preserved. Disabling
+logging also disables this cleanup. Invalid size settings fall back to 16 MiB.
 
 ## Ownership and leases
 

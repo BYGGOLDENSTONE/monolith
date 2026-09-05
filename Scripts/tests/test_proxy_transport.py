@@ -19,6 +19,7 @@ import threading
 import time
 import unittest
 import uuid
+from datetime import datetime, timezone
 from unittest import mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -179,7 +180,8 @@ class EditorFixture:
                     self.reply(payload)
                     return
                 mode = msg.get("params", {}).get("arguments", {}).get("fixture_mode")
-                if mode in ("evidence_success", "evidence_tool_error", "evidence_protocol_error"):
+                if mode in ("evidence_success", "evidence_tool_error", "evidence_tool_error_flat",
+                            "evidence_protocol_error"):
                     request_uuid = self.headers.get("X-Monolith-Request-Id")
                     server_instance = "6936d5a3-5c49-42ab-b882-e2c9941d81a5"
                     evidence = {"request_id": request_uuid, "server_instance": server_instance}
@@ -192,8 +194,9 @@ class EditorFixture:
                         error = {"code": -32003, "message": "Fixture precondition failed",
                                  "data": dict(evidence, executed=False, retryable=False,
                                               **{"class": "precondition_failed"})}
-                        if mode == "evidence_tool_error":
-                            structured = {"error": error}
+                        if mode in ("evidence_tool_error", "evidence_tool_error_flat"):
+                            structured = ({"error": error} if mode == "evidence_tool_error" else
+                                          {"error": error["message"], "code": error["code"], "data": error["data"]})
                             payload = {"jsonrpc": "2.0", "id": identifier,
                                        "result": {"isError": True, "structuredContent": structured,
                                                   "content": [{"type": "text", "text": json.dumps(structured)}]}}
@@ -463,6 +466,212 @@ class TransportContract:
             response = proxy.receive()
             self.assertEqual(response, self.editor.evidence_payloads[identifier])
             self.assert_request_evidence(self.editor.received_headers[-1], proxy, "proxy")
+
+    def call_log_files(self, proxy, root=None):
+        directory = Path(root or self.directory.name) / "Saved" / "Logs"
+        active = directory / ("MonolithCalls-%d.jsonl" % proxy.process.pid)
+        paths = [active] if active.is_file() else []
+        return sorted(paths + list(directory.glob("MonolithCalls-%d-*.jsonl" % proxy.process.pid)))
+
+    def read_call_logs(self, proxy, root=None):
+        records = []
+        for path in self.call_log_files(proxy, root):
+            content = path.read_bytes()
+            self.assertTrue(not content or content.endswith(b"\n"), str(path))
+            for line in content.splitlines():
+                self.assertTrue(line, "Empty JSONL record in " + str(path))
+                records.append(json.loads(line))
+        return records
+
+    def finish_call_log(self, proxy):
+        proxy.eof()
+        self.assertEqual(proxy.process.wait(WAIT), 0)
+
+    def test_call_log_rotation_keeps_every_uuid_and_oversized_record(self):
+        proxy = self.proxy(MONOLITH_CALL_LOG=1, MONOLITH_CALL_LOG_MAX_MB="0.001",
+                           MONOLITH_PROJECT_ROOT=self.directory.name)
+        identifiers = ["rotation-%d" % index for index in range(20)]
+        for identifier in identifiers:
+            proxy.send(request(identifier, action="read"))
+        self.assertCountEqual([proxy.receive()["id"] for _ in identifiers], identifiers)
+        for identifier in ("oversized-" + "x" * 10240, "after-oversized"):
+            identifiers.append(identifier)
+            proxy.send(request(identifier, action="read"))
+            self.assertEqual(proxy.receive()["id"], identifier)
+        self.finish_call_log(proxy)
+        paths = self.call_log_files(proxy)
+        self.assertGreater(len(paths), 1, "Small log budget must rotate")
+        self.assertIn("MonolithCalls-%d.jsonl" % proxy.process.pid, [path.name for path in paths])
+        records = self.read_call_logs(proxy)
+        self.assertCountEqual([record["request_id"] for record in records], identifiers)
+        observed_uuids = [headers["x-monolith-request-id"] for headers in self.editor.received_headers]
+        self.assertCountEqual([record["request_uuid"] for record in records], observed_uuids)
+        self.assertEqual(len({record["request_uuid"] for record in records}), len(identifiers))
+        for path in paths:
+            content = path.read_bytes()
+            if len(content) > int(0.001 * 1024 * 1024):
+                lines = content.splitlines()
+                self.assertEqual(len(lines), 1, "Oversized record must remain intact and alone: " + str(path))
+                self.assertTrue(json.loads(lines[0])["request_id"].startswith("oversized-"))
+
+    def test_call_log_retention_only_removes_old_matching_regular_files(self):
+        directory = Path(self.directory.name) / "Saved" / "Logs"
+        directory.mkdir(parents=True)
+        old = time.time() - 15 * 86400
+        recent = time.time() - 13 * 86400
+        paths = {name: directory / name for name in (
+            "MonolithCalls-111.jsonl", "MonolithCalls-111-archive.jsonl",
+            "MonolithCalls-222.jsonl", "Unrelated.jsonl")}
+        for name, path in paths.items():
+            path.write_text(name, encoding="utf-8")
+            os.utime(path, (old, old))
+        os.utime(paths["MonolithCalls-222.jsonl"], (recent, recent))
+        matching_directory = directory / "MonolithCalls-directory.jsonl"
+        matching_directory.mkdir()
+        nested = matching_directory / "MonolithCalls-nested.jsonl"
+        nested.write_text("nested", encoding="utf-8")
+        os.utime(nested, (old, old))
+        os.utime(matching_directory, (old, old))
+        proxy = self.proxy(MONOLITH_CALL_LOG=1, MONOLITH_PROJECT_ROOT=self.directory.name)
+        proxy.send(request("retention"))
+        self.assertEqual(proxy.receive()["id"], "retention")
+        self.finish_call_log(proxy)
+        self.assertFalse(paths["MonolithCalls-111.jsonl"].exists())
+        self.assertFalse(paths["MonolithCalls-111-archive.jsonl"].exists())
+        for name in ("MonolithCalls-222.jsonl", "Unrelated.jsonl"):
+            self.assertEqual(paths[name].read_text(encoding="utf-8"), name)
+        self.assertEqual(nested.read_text(encoding="utf-8"), "nested")
+
+    def test_call_log_retention_preserves_symlink_and_target(self):
+        directory = Path(self.directory.name) / "Saved" / "Logs"
+        directory.mkdir(parents=True)
+        target = directory / "unrelated-target.txt"
+        target.write_text("target must survive", encoding="utf-8")
+        old = time.time() - 15 * 86400
+        os.utime(target, (old, old))
+        link = directory / "MonolithCalls-link.jsonl"
+        try:
+            link.symlink_to(target)
+        except OSError as exc:
+            self.skipTest("Symlink creation unavailable: " + str(exc))
+        proxy = self.proxy(MONOLITH_CALL_LOG=1, MONOLITH_PROJECT_ROOT=self.directory.name)
+        proxy.send(request("symlink-retention"))
+        self.assertEqual(proxy.receive()["id"], "symlink-retention")
+        self.finish_call_log(proxy)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(target.read_text(encoding="utf-8"), "target must survive")
+
+    def test_call_log_optout_skips_creation_and_retention(self):
+        for existing in (False, True):
+            with self.subTest(existing=existing):
+                root = Path(self.directory.name) / ("existing" if existing else "empty")
+                root.mkdir()
+                directory = root / "Saved" / "Logs"
+                old_path = directory / "MonolithCalls-111.jsonl"
+                if existing:
+                    directory.mkdir(parents=True)
+                    old_path.write_text("preserve disabled log", encoding="utf-8")
+                    old = time.time() - 15 * 86400
+                    os.utime(old_path, (old, old))
+                proxy = self.proxy(MONOLITH_CALL_LOG=0, MONOLITH_PROJECT_ROOT=root)
+                proxy.send(request("disabled"))
+                self.assertEqual(proxy.receive()["id"], "disabled")
+                self.finish_call_log(proxy)
+                self.assertEqual(self.call_log_files(proxy, root), [])
+                if existing:
+                    self.assertEqual(old_path.read_text(encoding="utf-8"), "preserve disabled log")
+                else:
+                    self.assertFalse(directory.exists())
+
+    def test_call_log_invalid_rotation_settings_keep_logging(self):
+        for index, setting in enumerate((None, "", "0", "-1", "NaN", "inf", "1025", "garbage",
+                                         "0.0_001", "0x1p-20")):
+            with self.subTest(setting=setting):
+                proxy = self.proxy(MONOLITH_CALL_LOG=1, MONOLITH_CALL_LOG_MAX_MB=setting,
+                                   MONOLITH_PROJECT_ROOT=self.directory.name)
+                identifiers = ["invalid-budget-%d-%d" % (index, item) for item in range(3)]
+                for identifier in identifiers:
+                    proxy.send(request(identifier))
+                    self.assertEqual(proxy.receive()["id"], identifier)
+                self.finish_call_log(proxy)
+                self.assertEqual(len(self.call_log_files(proxy)), 1)
+                self.assertEqual([record["request_id"] for record in self.read_call_logs(proxy)], identifiers)
+
+    def test_call_log_utc_milliseconds_and_response_outcomes(self):
+        started = time.time()
+        proxy = self.proxy(MONOLITH_CALL_LOG=1, MONOLITH_PROJECT_ROOT=self.directory.name)
+        cases = [("success", "evidence_success", "ok", None),
+                 ("flat-error", "evidence_tool_error_flat", "error", -32003),
+                 ("nested-error", "evidence_tool_error", "error", -32003),
+                 ("protocol-error", "evidence_protocol_error", "error", -32003),
+                 ("reset", "drop", "unknown", -32603),
+                 ("malformed", "invalid", "unknown", -32603)]
+        for identifier, mode, outcome, _code in cases:
+            proxy.send(request(identifier, fixture_mode=mode))
+            response = proxy.receive()
+            self.assertEqual(response["id"], identifier)
+            if outcome == "unknown":
+                self.assert_tool_unknown(response, identifier)
+            else:
+                self.assertEqual(response, self.editor.evidence_payloads[identifier])
+        self.finish_call_log(proxy)
+        ended = time.time()
+        records = {record["request_id"]: record for record in self.read_call_logs(proxy)}
+        self.assertEqual(len(records), len(cases))
+        for index, (identifier, _mode, outcome, code) in enumerate(cases):
+            record = records[identifier]
+            self.assertEqual(record["outcome"], outcome)
+            self.assertIs(record["ok"], outcome == "ok")
+            self.assertEqual(record["error_code"], code)
+            self.assertRegex(record["ts"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+            timestamp = datetime.strptime(record["ts"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc).timestamp()
+            self.assertGreaterEqual(timestamp, started - 0.001)
+            self.assertLessEqual(timestamp, ended)
+            self.assertGreaterEqual(record["duration_ms"], 0)
+            self.assertEqual(record["request_uuid"], self.editor.received_headers[index]["x-monolith-request-id"])
+            self.assertTrue({"proxy_pid", "client", "namespace", "action", "params_hash", "result_bytes"} <= record.keys())
+
+    def test_call_log_refused_connection_is_not_sent(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as reserved:
+            if os.name == "nt":
+                reserved.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            reserved.bind(("127.0.0.1", 0))
+            proxy = self.proxy(MONOLITH_CALL_LOG=1, MONOLITH_PROJECT_ROOT=self.directory.name,
+                               MONOLITH_URL="http://127.0.0.1:%d/mcp" % reserved.getsockname()[1])
+            proxy.send(request("refused-log"))
+            response = proxy.receive()
+            self.finish_call_log(proxy)
+        records = self.read_call_logs(proxy)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["outcome"], "not_sent")
+        self.assertIs(records[0]["ok"], False)
+        self.assertEqual(records[0]["error_code"], -32603)
+        self.assertEqual(records[0]["request_uuid"], response["result"]["structuredContent"]["data"]["request_id"])
+
+    def test_call_log_timeout_is_unknown_and_notification_does_not_cancel(self):
+        for identifier, timeout, expected in (("log-timeout", "1", "unknown"),
+                                              ("log-cancel-notification", "5", "ok")):
+            with self.subTest(identifier=identifier):
+                proxy = self.proxy(MONOLITH_CALL_LOG=1, MONOLITH_PROJECT_ROOT=self.directory.name,
+                                   MONOLITH_TIMEOUT_SECONDS=timeout)
+                gate = self.editor.block(identifier)
+                proxy.send(request(identifier))
+                self.editor.wait_received([identifier])
+                if expected == "ok":
+                    proxy.send({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                                "params": {"requestId": identifier, "reason": "fixture"}})
+                    gate.set()
+                response = proxy.receive()
+                if expected == "unknown":
+                    self.assert_tool_unknown(response, identifier)
+                    gate.set()
+                else:
+                    self.assertFalse(response["result"].get("isError", False))
+                self.finish_call_log(proxy)
+                records = self.read_call_logs(proxy)
+                self.assertEqual(len(records), 1)
+                self.assertEqual(records[0]["outcome"], expected)
+                self.assertIs(records[0]["ok"], expected == "ok")
 
     def test_identical_calls_keep_every_request_and_id(self):
         proxy = self.proxy()
