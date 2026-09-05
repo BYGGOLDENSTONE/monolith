@@ -55,7 +55,7 @@ These exist because Epic's `FNiagaraStackGraphUtilities` functions lack `NIAGARA
 | `set_emitter_enabled` | Enable/disable an emitter |
 | `reorder_emitters` | Reorder emitters (direct handle assignment + PostEditChange + MarkPackageDirty for proper change notifications) |
 | `set_emitter_property` | Set property: SimTarget, bLocalSpace, bDeterminism, RandomSeed, AllocationMode, PreAllocationCount, bRequiresPersistentIDs, MaxGPUParticlesSpawnPerFrame, CalculateBoundsMode |
-| `set_system_property` | Set a system-level property (WarmupTime, bDeterminism, etc.) |
+| `set_system_property` | Set a system-level property (WarmupTime, bDeterminism, etc.). Optional `save:boolean=false` leaves the package dirty; true checks and saves it to disk. Writable path guards run before mutation. Response preserves `result` and adds `saved`; save failure reports `executed:true`, `saved:false` and the asset path. |
 | `request_compile` | Request system compilation. Params: `force` (bool), synchronous (bool) |
 | `create_system` | Create new system (blank or from template via DuplicateAsset) |
 | `list_emitters` | List all emitters with name, index, enabled, sim_target, renderer_count, GUID |

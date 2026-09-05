@@ -15,6 +15,14 @@
 
 MonolithAudio provides MCP coverage of audio asset creation, inspection, batch management, Sound Cue graph building, MetaSound graph building, and AI Perception sound binding. It covers the 5 configurable audio asset types (SoundAttenuation, SoundClass, SoundMix, SoundConcurrency, SoundSubmix), read-only SoundWave inspection, Sound Cue node graph construction, MetaSound Builder API integration, and `UAssetUserData`-based perception stimulus authoring.
 
+`Monolith.Audio.RoundTrip` exercises SoundCue creation, a WaveParam root and
+property mutation, graph readback, the real AudioEditor graph compiler,
+validation, explicit saving, unloading and disk reload. It verifies unchanged
+disk bytes and dirty state with omitted `save`, then persisted graph/property
+state with `save=true`. A missing `get_sound_cue_graph` target returns
+`not_found` with nearby SoundCue suggestions. This fixture verifies authoring
+and persistence; it does not test audio playback.
+
 **No overlap with runtime audio playback plugins** — a runtime audio plugin owns footstep/surface/movement audio playback; MonolithAudio owns editor-time asset creation, management, and inspection.
 
 ### Existing-asset save contract

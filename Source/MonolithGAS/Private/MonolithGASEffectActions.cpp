@@ -2,6 +2,7 @@
 #include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithGASInternal.h"
+#include "MonolithAssetUtils.h"
 
 #include "GameplayEffect.h"
 #include "GameplayEffectExecutionCalculation.h"
@@ -59,7 +60,9 @@ bool LoadGEFromParams(
 	}
 	if (!MonolithGAS::LoadGameplayEffectBP(OutAssetPath, OutBP, OutGE, Error))
 	{
-		OutError = FMonolithActionResult::Error(Error);
+		OutError = OutBP
+			? FMonolithActionResult::Error(Error)
+			: FMonolithAssetUtils::AssetNotFound(TEXT("GameplayEffect Blueprint"), OutAssetPath, UBlueprint::StaticClass()).WithErrorMessage(Error);
 		return false;
 	}
 	return true;

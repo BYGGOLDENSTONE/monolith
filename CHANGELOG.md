@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Phase 1 asset round trips
+
+- Niagara `set_system_property` accepts explicit `save:true` while retaining its dirty-only default. GameplayEffect and SoundCue lookup failures return typed not-found errors with asset suggestions. Real Niagara, GAS, Material and Audio Automation fixtures cover creation, mutation, readback, compilation and persistence.
+
 ### Phase 1 domain honesty
 
 - Removed the executable Mesh integration design stub and placeholder co-op balance scores. Unpersisted collision generation now directs callers to `mesh.save_handle`. State-machine builds report `partial` and `deferred_rules` when transition logic remains deferred.

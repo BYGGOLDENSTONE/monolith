@@ -66,7 +66,7 @@ These selectors work on `get_ordered_modules`, `add_module`, `move_module`, and 
 | `reorder_emitters` | `asset_path`, `order` | Change emitter evaluation order |
 | `set_emitter_property` | `asset_path`, `emitter`, `property`, `value` | Modify emitter settings |
 | `get_system_property` | `asset_path`, `property` | Read a system-level property. Same aliases as set (warmup_time, determinism, random_seed, max_pool_size, etc.) |
-| `set_system_property` | `asset_path`, `property`, `value` | Set system-level properties (WarmupTime, bDeterminism, bFixedTickDelta, RandomSeed, MaxPoolSize, etc.). Snake_case aliases supported |
+| `set_system_property` | `asset_path`, `property`, `value`, `save`? | Set system-level properties (WarmupTime, bDeterminism, bFixedTickDelta, RandomSeed, MaxPoolSize, etc.). Snake_case aliases supported. Save defaults false (dirty only); true persists and reports `saved` |
 | `request_compile` | `asset_path` | Force recompile the system |
 
 ### Read / Inspection (7 + 4 summary + 3 new)
@@ -102,7 +102,7 @@ These selectors work on `get_ordered_modules`, `add_module`, `move_module`, and 
 | `reorder_emitters` | `asset_path`, `order` | Change emitter evaluation order |
 | `set_emitter_property` | `asset_path`, `emitter`, `property`, `value` | Modify emitter settings |
 | `get_system_property` | `asset_path`, `property` | Read a system-level property |
-| `set_system_property` | `asset_path`, `property`, `value` | Set system-level properties |
+| `set_system_property` | `asset_path`, `property`, `value`, `save`? | Set system-level properties; save defaults false, true persists to disk |
 | `request_compile` | `asset_path` | Force recompile |
 | `get_module_graph` | `asset_path`, `emitter`, `module_node` | Get module's internal graph |
 

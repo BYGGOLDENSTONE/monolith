@@ -64,6 +64,7 @@ Writable package-root checks apply to both creation and persistence.
 | Namespace | Actions with `save:false` by default | Details |
 |---|---|---|
 | `material` | `set_material_property`, `batch_set_material_property` | Property edits no longer save automatically; batches apply the same option to each asset. |
+| `niagara` | `set_system_property` | Retains the existing dirty-only default; `save:true` now persists the property edit with a checked package save and reports `saved`. |
 | `animation` | `add_compatible_skeleton`, `remove_compatible_skeleton` | Default changed from true to false. |
 | `gas` | `add_attribute` | Applies to the existing Blueprint attribute-set branch. |
 | `gas` | `add_modifier`, `set_modifier`, `remove_modifier`, `add_ge_component`, `set_ge_component`, `set_effect_stacking`, `set_duration`, `set_period`, `add_execution`, `remove_ge_component` | Existing GameplayEffect edits compile and remain dirty unless save is requested. |

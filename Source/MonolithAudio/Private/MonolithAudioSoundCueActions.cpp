@@ -3,6 +3,7 @@
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h" // LogMonolith
+#include "MonolithAssetUtils.h"
 
 // Sound Cue core
 #include "Sound/SoundCue.h"
@@ -929,7 +930,7 @@ FMonolithActionResult FMonolithAudioSoundCueActions::GetSoundCueGraph(const TSha
 	USoundCue* Cue = LoadSoundCue(AssetPath, Error);
 	if (!Cue)
 	{
-		return FMonolithActionResult::Error(Error);
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Sound Cue"), AssetPath, USoundCue::StaticClass()).WithErrorMessage(Error);
 	}
 
 	auto Result = MakeShared<FJsonObject>();

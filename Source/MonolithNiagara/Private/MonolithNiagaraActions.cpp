@@ -2973,6 +2973,7 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.Required(TEXT("property"), TEXT("string"), TEXT("Property: WarmupTime, WarmupTickCount, WarmupTickDelta, bFixedTickDelta, FixedTickDeltaTime, bDeterminism, RandomSeed, bSupportLargeWorldCoordinates, bNeedsSortedSignificanceHandling, SignificanceHandlerLink, MaxPoolSize"))
 			.Required(TEXT("value"), TEXT("string"), TEXT("Property value"))
 			.Optional(TEXT("property_name"), TEXT("string"), TEXT("Fallback property name when property is empty."))
+			.Optional(TEXT("save"), TEXT("boolean"), TEXT("Save the changed package to disk; false leaves it dirty."), TEXT("false"))
 			.Build());
 
 	// Static Switch (1)
@@ -8127,14 +8128,21 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetSystemProperty(const TSh
 FMonolithActionResult FMonolithNiagaraActions::HandleSetSystemProperty(const TSharedPtr<FJsonObject>& Params)
 {
 	FString SystemPath = NA_GetAssetPath(Params);
+	bool bSave = false;
+	Params->TryGetBoolField(TEXT("save"), bSave);
 	FString PropertyName = Params->GetStringField(TEXT("property"));
 	if (PropertyName.IsEmpty()) PropertyName = Params->GetStringField(TEXT("property_name"));
 	TSharedPtr<FJsonValue> JV = Params->TryGetField(TEXT("value"));
 	if (!JV.IsValid())
 		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
+	FString WritableError;
+	if (!MonolithCore::EnsureWritablePackagePath(SystemPath, WritableError))
+		return MonolithCore::WritablePathError(SystemPath, WritableError);
 	UNiagaraSystem* System = LoadSystem(SystemPath);
 	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
+	if (!MonolithCore::EnsureWritablePackagePath(System->GetPackage()->GetName(), WritableError))
+		return MonolithCore::WritablePathError(System->GetPackage()->GetName(), WritableError);
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetSysProp", "Set System Property"));
 	System->Modify();
@@ -8174,8 +8182,28 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetSystemProperty(const TSh
 		FPropertyChangedEvent PCE(nullptr);
 		System->PostEditChangeProperty(PCE);
 		System->RequestCompile(false);
+		System->MarkPackageDirty();
+		if (bSave)
+		{
+			UPackage* Package = System->GetPackage();
+			const FString Filename = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+			if (!UPackage::SavePackage(Package, System, *Filename, SaveArgs))
+			{
+				auto Data = MakeShared<FJsonObject>();
+				Data->SetBoolField(TEXT("executed"), true);
+				Data->SetBoolField(TEXT("saved"), false);
+				Data->SetStringField(TEXT("asset_path"), System->GetPathName());
+				return FMonolithActionResult::EngineError(TEXT("Niagara property changed, but its package could not be saved")).WithErrorData(Data);
+			}
+		}
+		auto Result = MakeShared<FJsonObject>();
+		Result->SetStringField(TEXT("result"), TEXT("System property set"));
+		Result->SetBoolField(TEXT("saved"), bSave);
+		return FMonolithActionResult::Success(Result);
 	}
-	return bOk ? NA_SuccessStr(TEXT("System property set")) : FMonolithActionResult::Error(
+	return FMonolithActionResult::Error(
 		FString::Printf(TEXT("Unknown property '%s'. Supported: WarmupTime, WarmupTickCount, WarmupTickDelta, bFixedTickDelta, FixedTickDeltaTime, bDeterminism, RandomSeed, MaxPoolSize, or any UNiagaraSystem UProperty name."), *PropertyName));
 }
 

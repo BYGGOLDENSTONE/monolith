@@ -17,6 +17,13 @@ MonolithGAS provides full MCP coverage of the Gameplay Ability System. It covers
 
 ### Existing-asset save contract
 
+`Monolith.GAS.RoundTrip` exercises GameplayEffect creation, period mutation,
+action readback, the real Blueprint compiler, explicit saving, unloading and
+disk reload. It checks dirty packages and unchanged disk bytes with omitted
+`save`, and persistent values with `save=true`. Missing GameplayEffect
+Blueprints now return `not_found` with nearby Blueprint suggestions; wrong
+GameplayEffect parent/CDO failures retain their existing diagnostics.
+
 The actions below accept `save` (boolean, default `false`). Asset mutations compile as before and leave their package dirty unless `save=true`. A requested save failure returns an error with `executed:true`, `partial:true`, and `saved:false`.
 
 | Actions | Persistence scope |
@@ -121,4 +128,3 @@ Returns:
 
 - `Plugins/Monolith/Source/MonolithGAS/Private/MonolithGASBulkFillAdapter.h` / `.cpp` — the adapter
 - `Plugins/Monolith/Source/MonolithGAS/Private/MonolithGASModule.cpp` — `Register()` + `Unregister()` call sites
-
