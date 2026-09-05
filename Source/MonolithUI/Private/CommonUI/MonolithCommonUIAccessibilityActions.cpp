@@ -10,11 +10,12 @@
 // exposes one. Full graph-editing fixups are a v2 follow-up.
 #include "MonolithCommonUIHelpers.h"
 
-#if WITH_COMMONUI
-
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+
+#if WITH_COMMONUI
+
 
 #include "CommonButtonBase.h"
 #include "CommonTextBlock.h"
@@ -26,8 +27,11 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 
+#endif // WITH_COMMONUI includes
+
 namespace MonolithCommonUIAccessibility
 {
+#if WITH_COMMONUI
 	static TArray<FAssetData> GetWbpsInFolder(const FString& FolderPath)
 	{
 		FAssetRegistryModule& ARM = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
@@ -284,6 +288,29 @@ namespace MonolithCommonUIAccessibility
 	}
 
 	// ----- Registration --------------------------------------------------------
+#else
+	static FMonolithActionResult HandleEnforceFocusRing(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleWrapWithReduceMotionGate(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleSetTextScaleBinding(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleApplyHighContrastVariant(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+#endif // WITH_COMMONUI implementation
+
 
 	void Register(FMonolithToolRegistry& Registry)
 	{
@@ -328,5 +355,3 @@ namespace MonolithCommonUIAccessibility
 			Cat);
 	}
 }
-
-#endif // WITH_COMMONUI

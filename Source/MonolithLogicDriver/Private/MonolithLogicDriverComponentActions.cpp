@@ -9,9 +9,10 @@
 #include "Dom/JsonValue.h"
 #include "UObject/UnrealType.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDComponent, Log, All);
+
 #if WITH_LOGICDRIVER
 
-DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDComponent, Log, All);
 
 namespace
 {
@@ -114,6 +115,8 @@ namespace
 	}
 }
 
+#endif // WITH_LOGICDRIVER
+
 void FMonolithLogicDriverComponentActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	Registry.RegisterAction(TEXT("logicdriver"), TEXT("get_sm_component_config"),
@@ -146,6 +149,8 @@ void FMonolithLogicDriverComponentActions::RegisterActions(FMonolithToolRegistry
 
 	UE_LOG(LogMonolithLDComponent, Log, TEXT("MonolithLogicDriver Component: registered 3 actions"));
 }
+
+#if WITH_LOGICDRIVER
 
 FMonolithActionResult FMonolithLogicDriverComponentActions::HandleGetSMComponentConfig(const TSharedPtr<FJsonObject>& Params)
 {
@@ -503,9 +508,19 @@ FMonolithActionResult FMonolithLogicDriverComponentActions::HandleConfigureSMCom
 
 #else
 
-void FMonolithLogicDriverComponentActions::RegisterActions(FMonolithToolRegistry& Registry)
+FMonolithActionResult FMonolithLogicDriverComponentActions::HandleGetSMComponentConfig(const TSharedPtr<FJsonObject>& Params)
 {
-	// Logic Driver not available
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverComponentActions::HandleAddSMComponent(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverComponentActions::HandleConfigureSMComponent(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
 }
 
 #endif // WITH_LOGICDRIVER

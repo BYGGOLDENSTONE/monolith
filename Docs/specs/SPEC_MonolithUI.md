@@ -11,7 +11,7 @@
 **Dependencies:** Core, CoreUObject, Engine, MonolithCore, UnrealEd, UMGEditor, UMG, Slate, SlateCore, Json, JsonUtilities, KismetCompiler, MovieScene, MovieSceneTracks, DeveloperSettings, AssetTools, ImageWrapper, ImageCore, Kismet, MaterialEditor, EditorSubsystem (Public — `UMonolithUIRegistrySubsystem` is exported), CommonUI (optional — `#if WITH_COMMONUI`)
 
 **The optional EffectSurface provider is NOT a build-system dependency** (decoupled 2026-04-27). EffectSurface support is delivered via UClass-by-name reflection through `MonolithUI::GetEffectSurfaceClass()` — see § "Optional Dep Probe API" and § "Error Contract — Optional EffectSurface Provider Absence (-32010)". External providers may depend on MonolithUI for registry/spec structs, but MonolithUI must not depend on them.
-**Total actions in `ui::` namespace:** **130** when `WITH_COMMONUI=1` (72 always-on owned by this module + 57 CommonUI owned by this module conditional on `WITH_COMMONUI` + 1 inline diagnostic `dump_style_cache_stats` registered from `MonolithUIModule.cpp` under the same gate) + **4 GAS UI binding aliases owned by `MonolithGAS`** (also registered into `ui::`, conditional on `WITH_GBA`). Without `WITH_COMMONUI`, the namespace registers **72** actions; without `WITH_GBA` the four bridge aliases are absent. Phase 3 of the 2026-05-16 UI Gap Audit (2026-05-16) landed 4 actions: 3 CommonUI scaffolders (`scaffold_main_menu`, `scaffold_settings_panel_with_tabs`, `scaffold_pause_menu`) + 1 always-on multi-screen menu builder (`build_menu_from_spec`).
+**Availability:** Base UMG actions, the 61 CommonUI category actions, and `dump_style_cache_stats` register with their schemas in every build of the enabled UI module. CommonUI implementations remain guarded by `WITH_COMMONUI`; when absent, their handlers return `-32010`, `class:"optional_dep_unavailable"`, `dep_name:"CommonUI"`, and `executed:false`. Top-level discovery keeps `ui.availability.available:true` and reports CommonUI separately in `optional_dependencies` with `required_plugin:"CommonUI"`, its compiled availability, and `reason:"not_compiled"` when absent. Base UMG actions remain usable. GAS-owned UI aliases retain their independent `WITH_GBA` gate; query discovery for the live total.
 **Settings toggle:** `bEnableUI` (default: True)
 **MCP tool:** `ui_query`
 **Namespace:** `ui`
@@ -1153,7 +1153,7 @@ Phase I deliberately defers the wiring of the spec-driven builder into `build_ui
 
 ## Style Service (M5 — Phase G)
 
-**Status:** Phase G shipped 2026-04-26. CommonUI-only (`#if WITH_COMMONUI`).
+**Status:** Phase G shipped 2026-04-26. The style service implementation requires CommonUI (`#if WITH_COMMONUI`); `dump_style_cache_stats` stays registered and returns the structured CommonUI dependency error when unavailable.
 
 `FMonolithUIStyleService` is a process-singleton (held by `TUniquePtr` in `MonolithUIStyleService.cpp`, lifecycle anchored to `FMonolithUIModule`) that dedupes CommonUI style assets — `UCommonButtonStyle` / `UCommonTextStyle` / `UCommonBorderStyle` Blueprints created via the class-as-data pattern. Every call to `create_common_button_style` / `create_common_text_style` / `create_common_border_style` now flows through the service before any disk I/O.
 

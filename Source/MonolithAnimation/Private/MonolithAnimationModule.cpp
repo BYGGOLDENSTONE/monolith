@@ -20,6 +20,8 @@
 
 void FMonolithAnimationModule::StartupModule()
 {
+	FMonolithToolRegistry::Get().SetOptionalDependencyAvailability(TEXT("chooser"), TEXT("Chooser"),
+		WITH_CHOOSER != 0, WITH_CHOOSER ? TEXT("") : TEXT("not_compiled"));
 	FMonolithAnimationActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithAnimationRuntimeActions::RegisterActions(FMonolithToolRegistry::Get());
 	FMonolithPoseSearchActions::RegisterActions(FMonolithToolRegistry::Get());

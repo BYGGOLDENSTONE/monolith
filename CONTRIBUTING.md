@@ -162,6 +162,14 @@ undeclared literal input reads. It checks all compile-gated implementations;
 Automation fixture registrations under `Tests` are excluded. The check also runs
 through repository lint and the CI lint job.
 
+Optional-plugin actions retain their registrations and schemas in all builds.
+Keep plugin types and implementation bodies behind `WITH_*`; absent handlers
+return `OptionalDepUnavailable` with the same plugin name used in discovery.
+Owner modules call `SetOptionalDependencyAvailability` with their actual compile
+flag. Set `bWholeNamespace=false` for an optional feature inside a usable base
+namespace (CommonUI in `ui`, Metasound in `audio`). Discovery emits those records
+as `optional_dependencies`, without marking the base namespace unavailable.
+
 When a handler forwards its original input to a helper, record the reviewed
 helper, argument position, consumed keys, and reason in
 `Scripts/schema_drift_forwarding.json`. These entries add helper inputs to the

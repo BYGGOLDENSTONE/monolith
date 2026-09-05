@@ -1,6 +1,8 @@
 #include "MonolithLogicDriverGraphActions.h"
 #include "MonolithParamSchema.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDGraph, Log, All);
+
 #if WITH_LOGICDRIVER
 
 #include "MonolithLogicDriverInternal.h"
@@ -13,7 +15,8 @@
 #include "Dom/JsonValue.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDGraph, Log, All);
+
+#endif // WITH_LOGICDRIVER
 
 void FMonolithLogicDriverGraphActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
@@ -203,6 +206,8 @@ void FMonolithLogicDriverGraphActions::RegisterActions(FMonolithToolRegistry& Re
 
 	UE_LOG(LogMonolithLDGraph, Log, TEXT("MonolithLogicDriver Graph: registered 20 actions (6 read + 13 write + compile)"));
 }
+
+#if WITH_LOGICDRIVER
 
 FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetSMStructure(const TSharedPtr<FJsonObject>& Params)
 {
@@ -1470,9 +1475,104 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleCompileStateMachin
 
 #else
 
-void FMonolithLogicDriverGraphActions::RegisterActions(FMonolithToolRegistry& Registry)
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetSMStructure(const TSharedPtr<FJsonObject>& Params)
 {
-	// Logic Driver not available
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetNodeDetails(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetNodeConnections(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleFindNodesByType(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddState(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddTransition(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddConduit(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddStateMachineNode(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddAnyStateNode(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleRemoveNode(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetNodeProperties(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetInitialState(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetEndState(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetNodeClass(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleRenameNode(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleCompileStateMachine(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleFindNodesByClass(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetSMStatistics(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleMoveNode(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAutoArrangeGraph(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
 }
 
 #endif // WITH_LOGICDRIVER

@@ -10,7 +10,7 @@
 
 **Dependencies:** Core, CoreUObject, Engine, MonolithCore
 **Namespace:** `combograph` | **Tool:** `combograph_query(action, params)` | **Actions:** 13
-**Conditional:** ComboGraph plugin features wrapped in `#if WITH_COMBOGRAPH`. When ComboGraph is absent, the module compiles to an empty stub (0 actions registered). Uses UObject reflection only — no direct C++ API linkage against ComboGraph binaries.
+**Conditional:** Implementation bodies remain guarded by `#if WITH_COMBOGRAPH`. When the dependency is absent, all 13 actions and their parameter schemas remain registered. Calls with valid required parameters return `OptionalDepUnavailable("ComboGraph")`: code `-32010`, `class:optional_dep_unavailable`, `dep_name:ComboGraph`, `executed:false`, `retryable:false`. Top-level discovery includes `availability:{available:false, reason:"not_compiled", required_plugin:"ComboGraph"}`. Explicitly disabling the module setting still disables registration. Plugin objects are accessed through UObject reflection.
 **Settings toggle:** `bEnableComboGraph` (default: True)
 
 MonolithComboGraph provides MCP coverage of the ComboGraph marketplace plugin. It covers combo graph CRUD, node and edge management, gameplay effect and cue assignment per node, ability creation/linking, and full-graph scaffolding from montage lists.

@@ -1,8 +1,7 @@
 // MonolithCommonUIActions.h
-// Public aggregator for the CommonUI action pack. Compiles to empty header when CommonUI absent.
+// Public aggregator; absent CommonUI implementations return a dependency error.
 #pragma once
 
-#if WITH_COMMONUI
 
 #include "CoreMinimal.h"
 
@@ -11,8 +10,6 @@ class FMonolithToolRegistry;
 class MONOLITHUI_API FMonolithCommonUIActions
 {
 public:
-	/** Register every CommonUI action across all 9 categories with the registry. */
+	/** Register every CommonUI action, including unavailable handlers when absent. */
 	static void RegisterAll(FMonolithToolRegistry& Registry);
 };
-
-#endif // WITH_COMMONUI

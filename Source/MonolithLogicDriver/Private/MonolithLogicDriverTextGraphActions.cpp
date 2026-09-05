@@ -1,6 +1,8 @@
 #include "MonolithLogicDriverTextGraphActions.h"
 #include "MonolithParamSchema.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDTextGraph, Log, All);
+
 #if WITH_LOGICDRIVER
 
 #include "MonolithLogicDriverInternal.h"
@@ -11,7 +13,6 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDTextGraph, Log, All);
 
 namespace
 {
@@ -85,6 +86,8 @@ namespace
 	}
 }
 
+#endif // WITH_LOGICDRIVER
+
 void FMonolithLogicDriverTextGraphActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	Registry.RegisterAction(TEXT("logicdriver"), TEXT("get_text_graph_content"),
@@ -104,6 +107,8 @@ void FMonolithLogicDriverTextGraphActions::RegisterActions(FMonolithToolRegistry
 
 	UE_LOG(LogMonolithLDTextGraph, Log, TEXT("MonolithLogicDriver TextGraph: registered 2 actions"));
 }
+
+#if WITH_LOGICDRIVER
 
 FMonolithActionResult FMonolithLogicDriverTextGraphActions::HandleGetTextGraphContent(const TSharedPtr<FJsonObject>& Params)
 {
@@ -329,9 +334,14 @@ FMonolithActionResult FMonolithLogicDriverTextGraphActions::HandleGetDialogueFlo
 
 #else
 
-void FMonolithLogicDriverTextGraphActions::RegisterActions(FMonolithToolRegistry& Registry)
+FMonolithActionResult FMonolithLogicDriverTextGraphActions::HandleGetTextGraphContent(const TSharedPtr<FJsonObject>& Params)
 {
-	// Logic Driver not available
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverTextGraphActions::HandleGetDialogueFlow(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
 }
 
 #endif // WITH_LOGICDRIVER

@@ -1,10 +1,11 @@
 #include "MonolithAudioMetaSoundIntrospectionActions.h"
 
-#if WITH_METASOUND
-
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+
+#if WITH_METASOUND
+
 #include "MonolithAssetUtils.h"
 
 // MetaSound Engine
@@ -284,6 +285,8 @@ namespace
 // Registration
 // ============================================================================
 
+#endif // WITH_METASOUND helpers
+
 void FMonolithAudioMetaSoundIntrospectionActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	Registry.RegisterAction(TEXT("audio"), TEXT("list_metasounds"),
@@ -381,6 +384,9 @@ void FMonolithAudioMetaSoundIntrospectionActions::RegisterActions(FMonolithToolR
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("MetaSound asset path"))
 			.Build());
 }
+
+#if WITH_METASOUND
+
 
 // ============================================================================
 // Handlers — ported from PR #18 by @alakangas, namespace changed metasound -> audio
@@ -1119,6 +1125,67 @@ FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleValidat
 	Result->SetBoolField(TEXT("valid"), ErrorsArray.Num() == 0);
 
 	return FMonolithActionResult::Success(Result);
+}
+
+#else
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleListMetaSounds(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleListMetaSoundDocuments(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleGetMetaSoundDocument(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleGetMetaSoundSummary(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleInspectMetaSoundNodeInstance(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleGetMetaSoundDocumentConnections(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleGetMetaSoundDocumentVariables(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleGetMetaSoundUserParameters(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleSearchMetaSoundDocumentNodes(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleGetMetaSoundInfo(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleGetMetaSoundDependencies(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundIntrospectionActions::HandleValidateMetaSound(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
 }
 
 #endif // WITH_METASOUND

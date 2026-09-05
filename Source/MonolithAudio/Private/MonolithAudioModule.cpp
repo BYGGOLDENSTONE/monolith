@@ -7,10 +7,8 @@
 #include "MonolithAudioBatchActions.h"
 #include "MonolithAudioSoundCueActions.h"
 #include "MonolithAudioPerceptionActions.h"
-#if WITH_METASOUND
 #include "MonolithAudioMetaSoundActions.h"
 #include "MonolithAudioMetaSoundIntrospectionActions.h"
-#endif
 
 // Phase 5 Step 4 (MCP Ergonomics, 2026-05-11) — bulk_fill / describe adapter.
 // H5 stub-adapter invariant: Register() ALWAYS runs from StartupModule regardless
@@ -34,10 +32,10 @@ void FMonolithAudioModule::StartupModule()
 	FMonolithAudioBatchActions::RegisterActions(Registry);
 	FMonolithAudioSoundCueActions::RegisterActions(Registry);
 	FMonolithAudioPerceptionActions::RegisterActions(Registry);
-#if WITH_METASOUND
 	FMonolithAudioMetaSoundActions::RegisterActions(Registry);
 	FMonolithAudioMetaSoundIntrospectionActions::RegisterActions(Registry);
-#endif
+	Registry.SetOptionalDependencyAvailability(TEXT("audio"), TEXT("Metasound"), WITH_METASOUND != 0,
+		WITH_METASOUND ? TEXT("") : TEXT("not_compiled"), false);
 
 	// Phase 5 Step 4 — register the audio adapter on the central
 	// FMonolithBulkFillRegistry. H5 invariant: this call runs unconditionally;
@@ -49,7 +47,7 @@ void FMonolithAudioModule::StartupModule()
 #if WITH_METASOUND
 		TEXT("available");
 #else
-		TEXT("not installed");
+		TEXT("not compiled");
 #endif
 	UE_LOG(LogMonolith, Log, TEXT("MonolithAudio: Loaded (%d actions, MetaSound=%s)"), ActionCount, MetaSoundStatus);
 }

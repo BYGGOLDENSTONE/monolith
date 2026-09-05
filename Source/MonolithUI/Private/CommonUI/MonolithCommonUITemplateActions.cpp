@@ -29,17 +29,18 @@
 //
 // File is .cpp-only: handlers live in the anonymous namespace, the single
 // extern entry point `Register(FMonolithToolRegistry&)` is the only symbol
-// visible to MonolithCommonUIActionsAggregator.cpp. WITH_COMMONUI-gated so
-// the whole file compiles to an empty TU when CommonUI is absent.
+// visible to MonolithCommonUIActionsAggregator.cpp. Implementations require
+// CommonUI; schemas and dependency-error handlers remain available when absent.
 
 #include "MonolithCommonUIHelpers.h"
 #include "MonolithPackagePathValidator.h"
 
-#if WITH_COMMONUI
-
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+
+#if WITH_COMMONUI
+
 
 // CommonUI types — verified present from Phase 1 + Phase 2 includes.
 #include "CommonActivatableWidget.h"
@@ -83,8 +84,11 @@
 #include "Types/NavigationMetaData.h"
 #include "Types/SlateEnums.h"
 
+#endif // WITH_COMMONUI includes
+
 namespace MonolithCommonUITemplate
 {
+#if WITH_COMMONUI
     // ----- Shared: default UCommonButtonBase path ------------------------------
     //
     // Mirrors the Phase 1 Bug #4 contract from create_bound_action_bar
@@ -927,6 +931,24 @@ namespace MonolithCommonUITemplate
     // file-local-by-convention (static handlers in the same named namespace
     // give linker-private symbols that match the precedent in
     // MonolithCommonUIActivatableActions.cpp etc.).
+#else
+	static FMonolithActionResult HandleScaffoldMainMenu(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleScaffoldSettingsPanelWithTabs(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleScaffoldPauseMenu(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+#endif // WITH_COMMONUI implementation
+
     void Register(FMonolithToolRegistry& Registry)
     {
         const FString Cat(TEXT("CommonUI"));
@@ -1012,5 +1034,3 @@ namespace MonolithCommonUITemplate
             Cat);
     }
 }
-
-#endif // WITH_COMMONUI

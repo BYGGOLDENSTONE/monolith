@@ -1,6 +1,8 @@
 #include "MonolithLogicDriverAssetActions.h"
 #include "MonolithParamSchema.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDAsset, Log, All);
+
 #if WITH_LOGICDRIVER
 
 #include "MonolithLogicDriverInternal.h"
@@ -16,7 +18,6 @@
 #include "EditorAssetLibrary.h"
 #include "UObject/GarbageCollection.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDAsset, Log, All);
 
 // ============================================================
 //  Anonymous helpers
@@ -56,6 +57,8 @@ namespace
 // ============================================================
 //  RegisterActions
 // ============================================================
+#endif // WITH_LOGICDRIVER
+
 void FMonolithLogicDriverAssetActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	Registry.RegisterAction(TEXT("logicdriver"), TEXT("create_state_machine"),
@@ -125,6 +128,8 @@ void FMonolithLogicDriverAssetActions::RegisterActions(FMonolithToolRegistry& Re
 
 	UE_LOG(LogMonolithLDAsset, Log, TEXT("MonolithLogicDriver Asset: registered 8 actions"));
 }
+
+#if WITH_LOGICDRIVER
 
 // ============================================================
 //  1. create_state_machine
@@ -667,9 +672,44 @@ FMonolithActionResult FMonolithLogicDriverAssetActions::HandleListNodeBlueprints
 
 #else
 
-void FMonolithLogicDriverAssetActions::RegisterActions(FMonolithToolRegistry& Registry)
+FMonolithActionResult FMonolithLogicDriverAssetActions::HandleCreateStateMachine(const TSharedPtr<FJsonObject>& Params)
 {
-	// Logic Driver not available
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverAssetActions::HandleGetStateMachine(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverAssetActions::HandleListStateMachines(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverAssetActions::HandleDeleteStateMachine(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverAssetActions::HandleDuplicateStateMachine(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverAssetActions::HandleCreateNodeBlueprint(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverAssetActions::HandleGetNodeBlueprint(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverAssetActions::HandleListNodeBlueprints(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
 }
 
 #endif // WITH_LOGICDRIVER

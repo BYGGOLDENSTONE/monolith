@@ -1,6 +1,8 @@
 #include "MonolithLogicDriverScaffoldActions.h"
 #include "MonolithParamSchema.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDScaffold, Log, All);
+
 #if WITH_LOGICDRIVER
 
 #include "MonolithLogicDriverInternal.h"
@@ -19,7 +21,6 @@
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDScaffold, Log, All);
 
 namespace
 {
@@ -97,6 +98,8 @@ namespace
 	}
 }
 
+#endif // WITH_LOGICDRIVER
+
 void FMonolithLogicDriverScaffoldActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	Registry.RegisterAction(TEXT("logicdriver"), TEXT("scaffold_hello_world_sm"),
@@ -160,6 +163,8 @@ void FMonolithLogicDriverScaffoldActions::RegisterActions(FMonolithToolRegistry&
 
 	UE_LOG(LogMonolithLDScaffold, Log, TEXT("MonolithLogicDriver Scaffold: registered 7 actions"));
 }
+
+#if WITH_LOGICDRIVER
 
 FMonolithActionResult FMonolithLogicDriverScaffoldActions::HandleScaffoldHelloWorldSM(const TSharedPtr<FJsonObject>& Params)
 {
@@ -749,9 +754,39 @@ FMonolithActionResult FMonolithLogicDriverScaffoldActions::HandleScaffoldGameFlo
 
 #else
 
-void FMonolithLogicDriverScaffoldActions::RegisterActions(FMonolithToolRegistry& Registry)
+FMonolithActionResult FMonolithLogicDriverScaffoldActions::HandleScaffoldHelloWorldSM(const TSharedPtr<FJsonObject>& Params)
 {
-	// Logic Driver not available
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverScaffoldActions::HandleScaffoldWeaponSM(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverScaffoldActions::HandleScaffoldHorrorEncounterSM(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverScaffoldActions::HandleScaffoldGameFlowSM(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverScaffoldActions::HandleScaffoldDialogueSM(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverScaffoldActions::HandleScaffoldQuestSM(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverScaffoldActions::HandleScaffoldInteractableSM(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
 }
 
 #endif // WITH_LOGICDRIVER

@@ -10,11 +10,12 @@
 #include "MonolithCommonUIHelpers.h"
 #include "MonolithPackagePathValidator.h"
 
-#if WITH_COMMONUI
-
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+
+#if WITH_COMMONUI
+
 
 #include "CommonActivatableWidget.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
@@ -34,8 +35,11 @@
 #include "UObject/UObjectIterator.h"
 #include "Engine/World.h"
 
+#endif // WITH_COMMONUI includes
+
 namespace MonolithCommonUIActivatable
 {
+#if WITH_COMMONUI
 	// ----- 2.A.1 create_activatable_widget -------------------------------------
 
 	static FMonolithActionResult HandleCreateActivatableWidget(const TSharedPtr<FJsonObject>& Params)
@@ -471,6 +475,49 @@ namespace MonolithCommonUIActivatable
 	}
 
 	// ----- Registration ---------------------------------------------------------
+#else
+	static FMonolithActionResult HandleCreateActivatableWidget(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateActivatableStack(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateActivatableSwitcher(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleConfigureActivatable(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandlePushToActivatableStack(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandlePopActivatableStack(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleGetActivatableStackState(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleSetActivatableTransition(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+#endif // WITH_COMMONUI implementation
+
 
 	void Register(FMonolithToolRegistry& Registry)
 	{
@@ -571,5 +618,3 @@ namespace MonolithCommonUIActivatable
 			Cat);
 	}
 }
-
-#endif // WITH_COMMONUI

@@ -2,10 +2,11 @@
 
 #include "CoreMinimal.h"
 
-#if WITH_METASOUND
 
 class FMonolithToolRegistry;
 struct FMonolithActionResult;
+class FJsonObject;
+class FJsonValue;
 
 class FMonolithAudioMetaSoundActions
 {
@@ -76,5 +77,3 @@ private:
 	/** Phase F #3: look up a user label registered by add_metasound_node. Returns invalid FGuid on miss. */
 	static FGuid LookupNodeIdAlias(const FString& AssetPath, const FString& UserLabel);
 };
-
-#endif // WITH_METASOUND

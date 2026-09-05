@@ -51,8 +51,8 @@
 // THE fix for the 2026-04-25 parallel-burst editor crash.
 #include "MonolithUIBulkFillAdapter.h"
 
-#if WITH_COMMONUI
 #include "CommonUI/MonolithCommonUIActions.h"
+#if WITH_COMMONUI
 #include "Style/MonolithUIStyleService.h"   // Phase G: cache stats + shutdown
 #endif
 
@@ -109,8 +109,9 @@ void FMonolithUIModule::StartupModule()
     // #if WITH_COMMONUI INSIDE the adapter with a clean stub error fallback.
     FMonolithUIBulkFillAdapter::Register();
 
-#if WITH_COMMONUI
     FMonolithCommonUIActions::RegisterAll(Registry);
+    Registry.SetOptionalDependencyAvailability(TEXT("ui"), TEXT("CommonUI"), WITH_COMMONUI != 0,
+        WITH_COMMONUI ? TEXT("") : TEXT("not_compiled"), false);
 
     // Phase G — diagnostic action that exposes the style service cache state.
     // Lives here (in the module file) rather than in a per-feature actions
@@ -122,6 +123,7 @@ void FMonolithUIModule::StartupModule()
              "and per-type counts (Button/Text/Border). Diagnostic for the Phase G dedup work."),
         FMonolithActionHandler::CreateLambda([](const TSharedPtr<FJsonObject>& /*Params*/) -> FMonolithActionResult
         {
+#if WITH_COMMONUI
             const FUIStyleCacheStats Stats = FMonolithUIStyleService::Get().GetStats();
 
             TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -137,10 +139,12 @@ void FMonolithUIModule::StartupModule()
             Result->SetObjectField(TEXT("by_type"), ByType);
 
             return FMonolithActionResult::Success(Result);
+#else
+            return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+#endif
         }),
         FParamSchemaBuilder().Build(),
         TEXT("Diagnostics"));
-#endif
 
     // OnPostEngineInit re-scan: editor subsystems initialise AFTER OnPostEngineInit
     // has fired, so the SUBSYSTEM's own Initialize cannot listen to it. The
@@ -166,7 +170,7 @@ void FMonolithUIModule::StartupModule()
         }
     });
 
-    // Dynamic action count — reflects base UMG + any conditionally-registered CommonUI actions.
+    // Dynamic action count includes CommonUI availability handlers in every build.
     const int32 UINamespaceActions = Registry.GetActions(TEXT("ui")).Num();
     UE_LOG(LogMonolith, Log, TEXT("Monolith — UI module loaded (%d ui actions)"), UINamespaceActions);
 }

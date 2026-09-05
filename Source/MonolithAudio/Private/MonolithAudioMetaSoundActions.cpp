@@ -1,11 +1,12 @@
 #include "MonolithAudioMetaSoundActions.h"
 #include "MonolithPackagePathValidator.h"
 
-#if WITH_METASOUND
-
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+
+#if WITH_METASOUND
+
 
 // MetaSound Engine
 #include "MetasoundBuilderSubsystem.h"
@@ -285,6 +286,8 @@ bool FMonolithAudioMetaSoundActions::ResolveNodeHandle(
 // Registration
 // ============================================================================
 
+#endif // WITH_METASOUND helpers
+
 void FMonolithAudioMetaSoundActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	// ---- Core CRUD (12) ----
@@ -512,6 +515,9 @@ void FMonolithAudioMetaSoundActions::RegisterActions(FMonolithToolRegistry& Regi
 			.Required(TEXT("y"), TEXT("number"), TEXT("Y position"))
 			.Build());
 }
+
+#if WITH_METASOUND
+
 
 // ============================================================================
 // Core CRUD (12 actions)
@@ -3017,6 +3023,132 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::SetMetaSoundNodeLocation(c
 	ResultJson->SetNumberField(TEXT("x"), X);
 	ResultJson->SetNumberField(TEXT("y"), Y);
 	return FMonolithActionResult::Success(ResultJson);
+}
+
+#else
+FMonolithActionResult FMonolithAudioMetaSoundActions::CreateMetaSoundSource(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::CreateMetaSoundPatch(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::AddMetaSoundNode(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::RemoveMetaSoundNode(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::ConnectMetaSoundNodes(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::DisconnectMetaSoundNodes(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::AddMetaSoundInput(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::AddMetaSoundOutput(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::SetMetaSoundInputDefault(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::AddMetaSoundInterface(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::GetMetaSoundGraph(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::ListMetaSoundConnections(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::ListAvailableMetaSoundNodes(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::GetMetaSoundNodeInfo(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::FindMetaSoundNodeInputs(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::FindMetaSoundNodeOutputs(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::GetMetaSoundInputNames(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::BuildMetaSoundFromSpec(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::CreateMetaSoundPreset(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::CreateOneShotSfx(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::CreateLoopingAmbientMetaSound(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::CreateSynthesizedTone(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::CreateInteractiveMetaSound(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::AddMetaSoundVariable(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
+}
+
+FMonolithActionResult FMonolithAudioMetaSoundActions::SetMetaSoundNodeLocation(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("Metasound"));
 }
 
 #endif // WITH_METASOUND

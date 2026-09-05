@@ -9,11 +9,12 @@
 #include "MonolithCommonUIHelpers.h"
 #include "MonolithPackagePathValidator.h"
 
-#if WITH_COMMONUI
-
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+
+#if WITH_COMMONUI
+
 
 #include "CommonListView.h"
 #include "CommonTileView.h"
@@ -36,8 +37,11 @@
 #include "UObject/SavePackage.h"
 #include "UObject/UObjectIterator.h"
 
+#endif // WITH_COMMONUI includes
+
 namespace MonolithCommonUIList
 {
+#if WITH_COMMONUI
 	// ----- 3.E.1 setup_common_list_view ----------------------------------------
 
 	static FMonolithActionResult HandleSetupCommonListView(const TSharedPtr<FJsonObject>& Params)
@@ -398,6 +402,44 @@ namespace MonolithCommonUIList
 	}
 
 	// ----- Registration --------------------------------------------------------
+#else
+	static FMonolithActionResult HandleSetupCommonListView(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateTabListWidget(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleRegisterTab(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateButtonGroup(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleConfigureAnimatedSwitcher(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateWidgetCarousel(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateHardwareVisibilityBorder(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+#endif // WITH_COMMONUI implementation
+
 
 	void Register(FMonolithToolRegistry& Registry)
 	{
@@ -488,5 +530,3 @@ namespace MonolithCommonUIList
 			Cat);
 	}
 }
-
-#endif // WITH_COMMONUI

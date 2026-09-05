@@ -6,6 +6,8 @@ public class MonolithLogicDriver : ModuleRules
 	public MonolithLogicDriver(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+		// Parameter schemas and unavailable-dependency diagnostics are always compiled.
+		PrivateDependencyModuleNames.Add("Json");
 
 		// Release builds: set MONOLITH_RELEASE_BUILD=1 to force all optional deps off.
 		bool bHasLogicDriver = false;
@@ -58,7 +60,7 @@ public class MonolithLogicDriver : ModuleRules
 				"EditorScriptingUtilities",
 				"SMSystem", "SMSystemEditor",
 				"GameplayTags",
-				"Json", "JsonUtilities"
+				"JsonUtilities"
 			});
 			PublicDefinitions.Add("WITH_LOGICDRIVER=1");
 		}

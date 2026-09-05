@@ -5,11 +5,12 @@
 // 4.F.4 create_load_guard
 #include "MonolithCommonUIHelpers.h"
 
-#if WITH_COMMONUI
-
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+
+#if WITH_COMMONUI
+
 
 #include "CommonNumericTextBlock.h"
 #include "CommonRotator.h"
@@ -22,8 +23,11 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 
+#endif // WITH_COMMONUI includes
+
 namespace MonolithCommonUIContent
 {
+#if WITH_COMMONUI
 	// ----- 4.F.1 configure_numeric_text ----------------------------------------
 
 	static FMonolithActionResult HandleConfigureNumericText(const TSharedPtr<FJsonObject>& Params)
@@ -249,6 +253,29 @@ namespace MonolithCommonUIContent
 	}
 
 	// ----- Registration --------------------------------------------------------
+#else
+	static FMonolithActionResult HandleConfigureNumericText(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleConfigureRotator(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateLazyImage(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateLoadGuard(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+#endif // WITH_COMMONUI implementation
+
 
 	void Register(FMonolithToolRegistry& Registry)
 	{
@@ -308,5 +335,3 @@ namespace MonolithCommonUIContent
 			Cat);
 	}
 }
-
-#endif // WITH_COMMONUI

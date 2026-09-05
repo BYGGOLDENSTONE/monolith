@@ -1,6 +1,8 @@
 #include "MonolithLogicDriverRuntimeActions.h"
 #include "MonolithParamSchema.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDRuntime, Log, All);
+
 #if WITH_LOGICDRIVER
 
 #include "MonolithLogicDriverInternal.h"
@@ -9,7 +11,6 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDRuntime, Log, All);
 
 // ── Shared PIE helper ──────────────────────────────────────────────
 
@@ -120,6 +121,8 @@ namespace
 
 // ── Registration ────────────────────────────────────────────────────
 
+#endif // WITH_LOGICDRIVER
+
 void FMonolithLogicDriverRuntimeActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	Registry.RegisterAction(TEXT("logicdriver"), TEXT("runtime_get_sm_state"),
@@ -182,6 +185,8 @@ void FMonolithLogicDriverRuntimeActions::RegisterActions(FMonolithToolRegistry& 
 
 	UE_LOG(LogMonolithLDRuntime, Log, TEXT("MonolithLogicDriver Runtime: registered 7 actions"));
 }
+
+#if WITH_LOGICDRIVER
 
 // ── runtime_get_sm_state ────────────────────────────────────────────
 
@@ -444,9 +449,39 @@ FMonolithActionResult FMonolithLogicDriverRuntimeActions::HandleRuntimeGetStateH
 
 #else
 
-void FMonolithLogicDriverRuntimeActions::RegisterActions(FMonolithToolRegistry& Registry)
+FMonolithActionResult FMonolithLogicDriverRuntimeActions::HandleRuntimeGetSMState(const TSharedPtr<FJsonObject>& Params)
 {
-	// Logic Driver not available
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverRuntimeActions::HandleRuntimeStartSM(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverRuntimeActions::HandleRuntimeStopSM(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverRuntimeActions::HandleRuntimeRestartSM(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverRuntimeActions::HandleRuntimeSwitchState(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverRuntimeActions::HandleRuntimeEvaluateTransitions(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverRuntimeActions::HandleRuntimeGetStateHistory(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
 }
 
 #endif // WITH_LOGICDRIVER

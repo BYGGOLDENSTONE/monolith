@@ -189,6 +189,7 @@ void FMonolithToolRegistry::RegisterAction(
 void FMonolithToolRegistry::UnregisterNamespace(const FString& Namespace)
 {
 	FScopeLock Lock(&RegistryLock);
+	OptionalDependencyAvailability.Remove(Namespace);
 
 	if (TArray<FString>* Keys = NamespaceActions.Find(Namespace))
 	{
@@ -642,6 +643,29 @@ void FMonolithToolRegistry::SetDispatcherAnnotations(
 {
 	FScopeLock Lock(&RegistryLock);
 	DispatcherAnnotations.Add(Namespace, Annotations);
+}
+
+void FMonolithToolRegistry::SetOptionalDependencyAvailability(const FString& Namespace,
+	const FString& RequiredPlugin, bool bAvailable, const FString& Reason, bool bWholeNamespace)
+{
+	FScopeLock Lock(&RegistryLock);
+	auto& Entries = OptionalDependencyAvailability.FindOrAdd(Namespace);
+	for (auto& Entry : Entries)
+	{
+		if (Entry.RequiredPlugin == RequiredPlugin)
+		{
+			Entry = {RequiredPlugin, bAvailable, Reason, bWholeNamespace};
+			return;
+		}
+	}
+	Entries.Add({RequiredPlugin, bAvailable, Reason, bWholeNamespace});
+}
+
+TArray<FMonolithOptionalDependencyAvailability> FMonolithToolRegistry::GetOptionalDependencyAvailability(const FString& Namespace) const
+{
+	FScopeLock Lock(&RegistryLock);
+	if (const auto* Entries = OptionalDependencyAvailability.Find(Namespace)) return *Entries;
+	return {};
 }
 
 FMonolithDispatcherAnnotations FMonolithToolRegistry::GetDispatcherAnnotations(const FString& Namespace) const

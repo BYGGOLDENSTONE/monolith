@@ -328,6 +328,10 @@ FMonolithActionResult FMonolithBlueprintLayoutActions::HandleAutoLayout(const TS
 	if (Formatter == TEXT("auto") || Formatter == TEXT("blueprint_assist"))
 	{
 		bool bExplicitBA = (Formatter == TEXT("blueprint_assist"));
+		if (bExplicitBA && !IMonolithGraphFormatter::IsAvailable())
+		{
+			return FMonolithActionResult::OptionalDepUnavailable(TEXT("BlueprintAssist"));
+		}
 		bool bBAAvailable = IMonolithGraphFormatter::IsAvailable()
 			&& IMonolithGraphFormatter::Get().SupportsGraph(Graph);
 

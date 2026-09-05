@@ -2,10 +2,10 @@
 
 #include "CoreMinimal.h"
 
-#if WITH_METASOUND
 
 class FMonolithToolRegistry;
 struct FMonolithActionResult;
+class FJsonObject;
 
 /**
  * MetaSound document-introspection action pack (read-only).
@@ -40,5 +40,3 @@ private:
 	static FMonolithActionResult HandleGetMetaSoundDependencies(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult HandleValidateMetaSound(const TSharedPtr<FJsonObject>& Params);
 };
-
-#endif // WITH_METASOUND

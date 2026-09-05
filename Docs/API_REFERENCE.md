@@ -48,6 +48,12 @@ The per-namespace numbers in the Table of Contents and body sections below are k
 
 ---
 
+## Optional-plugin availability (Unreleased)
+
+`monolith_discover()` includes `availability:{available,reason,required_plugin}` on every namespace row. LogicDriver, ComboGraph and Chooser report their whole-namespace dependency; UI/audio retain base functionality and expose CommonUI/Metasound in `optional_dependencies` with the same fields. GAS also distinguishes its optional BlueprintAttributes feature from core GameplayAbilities.
+
+Missing dependencies keep action names, descriptions and schemas registered. With valid action parameters, the fallback returns `-32010`, `class:"optional_dep_unavailable"`, `dep_name`, `executed:false`, and `retryable:false`. `reason:"not_compiled"` reflects the owner module's compile flags, including releases that disable optional dependencies despite installed plugins. Explicitly disabled owner modules are reported with `reason:"disabled_in_settings"` and zero actions. Availability does not claim asset/runtime prerequisites are satisfied.
+
 ## Save contract (Unreleased)
 
 The following existing-asset mutations accept `save` (boolean, default `false`).

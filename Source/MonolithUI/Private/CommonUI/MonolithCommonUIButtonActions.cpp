@@ -11,11 +11,12 @@
 #include "MonolithCommonUIHelpers.h"
 #include "MonolithPackagePathValidator.h"
 
-#if WITH_COMMONUI
-
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+
+#if WITH_COMMONUI
+
 #include "MonolithUICommon.h"
 #include "MonolithUISettings.h"
 
@@ -49,8 +50,11 @@
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Input/CommonBoundActionBar.h"
 
+#endif // WITH_COMMONUI includes
+
 namespace MonolithCommonUIButton
 {
+#if WITH_COMMONUI
 	// ----- Shared: create-or-resolve a style Blueprint via the Style Service ---
 	//
 	// CommonUI styles are TSubclassOf<UStyle> — widgets expect a UClass*, not
@@ -1326,6 +1330,79 @@ namespace MonolithCommonUIButton
 	}
 
 	// ----- Registration --------------------------------------------------------
+#else
+	static FMonolithActionResult HandleConvertButtonToCommon(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleConfigureCommonButton(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateCommonButtonStyle(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateCommonTextStyle(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleCreateCommonBorderStyle(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleApplyStyleToWidget(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleBatchRetheme(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleConfigureCommonText(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleConfigureCommonBorder(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleApplyTokenBinding(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleConvertTextBlockToCommon(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleSetActionBarButtonClass(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleConvertBorderToCommon(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleReparentWidgetRoot(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+#endif // WITH_COMMONUI implementation
+
 
 	void Register(FMonolithToolRegistry& Registry)
 	{
@@ -1542,7 +1619,7 @@ namespace MonolithCommonUIButton
 	}
 }
 
-#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_COMMONUI && WITH_DEV_AUTOMATION_TESTS
 #include "Tests/UIHonestyTestUtils.h"
 #include "EdGraph/EdGraph.h"
 
@@ -1618,5 +1695,3 @@ bool FMonolithUITokenBindingLiveProbeTest::RunTest(const FString& Parameters)
 	return true;
 }
 #endif
-
-#endif // WITH_COMMONUI

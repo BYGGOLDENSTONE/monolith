@@ -10,7 +10,7 @@
 
 **Dependencies:** Core, CoreUObject, Engine, MonolithCore
 **Namespace:** `logicdriver` | **Tool:** `logicdriver_query(action, params)` | **Actions:** 66
-**Conditional:** Logic Driver Pro plugin features wrapped in `#if WITH_LOGICDRIVER`. When Logic Driver Pro is absent, the module compiles to an empty stub (0 actions registered). Uses UObject reflection only — no direct C++ API linkage against Logic Driver binaries. Build.cs detection at 3 locations (project plugins, engine marketplace, engine plugins).
+**Conditional:** Implementation bodies remain guarded by `#if WITH_LOGICDRIVER`. When the dependency is absent, all 66 actions and their parameter schemas remain registered. Calls with valid required parameters return `OptionalDepUnavailable("LogicDriver")`: code `-32010`, `class:optional_dep_unavailable`, `dep_name:LogicDriver`, `executed:false`, `retryable:false`. Top-level discovery includes `availability:{available:false, reason:"not_compiled", required_plugin:"LogicDriver"}`. Explicitly disabling the module setting still disables registration. Plugin objects are accessed through UObject reflection.
 **Settings toggle:** `bEnableLogicDriver` (default: True)
 
 MonolithLogicDriver provides MCP coverage of the Logic Driver Pro marketplace plugin. It covers state machine asset CRUD, graph read/write, node configuration, runtime/PIE control, JSON spec-based generation, scaffolding templates, discovery, component management, and text-based graph visualization.

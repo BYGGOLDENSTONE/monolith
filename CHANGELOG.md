@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Phase 1 optional-plugin availability
+
+- LogicDriver, ComboGraph, CommonUI and MetaSound actions keep their schemas registered without the optional plugin and return typed unavailable errors. Discovery reports compiled availability while retaining base UMG/audio functionality. Explicit Blueprint Assist requests use the same error taxonomy; automatic fallback still reports the formatter used.
+
 ### Phase 1 risk mining
 
 - Risk queries require a completed snapshot and suggest `risk.mine` immediately when unmined. Explicit mining runs git, gate scans and SQLite writes in one owned background task; `get_mining_status` reports progress and completion. Failed refreshes preserve the previous committed disk snapshot.

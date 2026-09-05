@@ -125,14 +125,25 @@ struct FMonolithDispatcherAnnotations
 	}
 };
 
-/**
- * Central registry for all Monolith tool actions.
- * Domain modules register actions here. The HTTP server dispatches through this.
- */
+/** Compiled optional capability reported by its owning module. */
+struct FMonolithOptionalDependencyAvailability
+{
+	FString RequiredPlugin;
+	bool bAvailable = false;
+	FString Reason;
+	bool bWholeNamespace = true;
+};
+
+/** Central action registry used by domain modules and HTTP dispatch. */
 class MONOLITHCORE_API FMonolithToolRegistry
 {
 public:
 	static FMonolithToolRegistry& Get();
+
+	/** Owner modules report compiled capability; registration alone is not availability. */
+	void SetOptionalDependencyAvailability(const FString& Namespace, const FString& RequiredPlugin,
+		bool bAvailable, const FString& Reason, bool bWholeNamespace = true);
+	TArray<FMonolithOptionalDependencyAvailability> GetOptionalDependencyAvailability(const FString& Namespace) const;
 
 	/**
 	 * Register an action handler.
@@ -232,6 +243,7 @@ private:
 
 	/** Survivor A — Map of namespace → dispatcher-level MCP hint annotations. */
 	TMap<FString, FMonolithDispatcherAnnotations> DispatcherAnnotations;
+	TMap<FString, TArray<FMonolithOptionalDependencyAvailability>> OptionalDependencyAvailability;
 
 	static FString MakeKey(const FString& Namespace, const FString& Action)
 	{

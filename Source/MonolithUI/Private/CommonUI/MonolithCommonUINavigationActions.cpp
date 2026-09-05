@@ -7,11 +7,12 @@
 #include "MonolithCommonUIHelpers.h"
 #include "MonolithPackagePathValidator.h"
 
-#if WITH_COMMONUI
-
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+
+#if WITH_COMMONUI
+
 
 #include "CommonActivatableWidget.h"
 #include "WidgetBlueprint.h"
@@ -28,8 +29,11 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Blueprint/UserWidget.h"
 
+#endif // WITH_COMMONUI includes
+
 namespace MonolithCommonUINavigation
 {
+#if WITH_COMMONUI
 	static bool ParseDirection(const FString& S, EUINavigation& Out)
 	{
 		if (S.Equals(TEXT("Up"), ESearchCase::IgnoreCase))       { Out = EUINavigation::Up; return true; }
@@ -907,6 +911,49 @@ namespace MonolithCommonUINavigation
 	}
 
 	// ----- Registration --------------------------------------------------------
+#else
+	static FMonolithActionResult HandleSetWidgetNavigation(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleSetWidgetNavigationBulk(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleDumpWidgetNavigation(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleSetInitialFocusTarget(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleForceFocus(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleGetFocusPath(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleRequestRefreshFocus(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleAuditFocusChain(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+#endif // WITH_COMMONUI implementation
+
 
 	void Register(FMonolithToolRegistry& Registry)
 	{
@@ -1010,5 +1057,3 @@ namespace MonolithCommonUINavigation
 			Cat);
 	}
 }
-
-#endif // WITH_COMMONUI

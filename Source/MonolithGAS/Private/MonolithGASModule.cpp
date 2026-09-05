@@ -27,6 +27,9 @@ void FMonolithGASModule::StartupModule()
 	}
 
 	FMonolithToolRegistry& Registry = FMonolithToolRegistry::Get();
+	Registry.SetOptionalDependencyAvailability(TEXT("gas"), TEXT("GameplayAbilities"), true, TEXT(""));
+	Registry.SetOptionalDependencyAvailability(TEXT("gas"), TEXT("BlueprintAttributes"),
+		WITH_GBA != 0, WITH_GBA ? TEXT("") : TEXT("not_compiled"), false);
 	FMonolithGASAbilityActions::RegisterActions(Registry);
 	FMonolithGASAttributeActions::RegisterActions(Registry);
 	FMonolithGASEffectActions::RegisterActions(Registry);

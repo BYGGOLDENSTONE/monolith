@@ -392,6 +392,10 @@ FMonolithActionResult FMonolithAnimLayoutActions::HandleAutoLayout(const TShared
 
 	const bool bExplicitBA = (Formatter == TEXT("blueprint_assist"));
 	const bool bForceBuiltin = (Formatter == TEXT("builtin") || Formatter == TEXT("monolith"));
+	if (bExplicitBA && !IMonolithGraphFormatter::IsAvailable())
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("BlueprintAssist"));
+	}
 
 	// --- "all" mode: format every graph ---
 	if (GraphName.Equals(TEXT("all"), ESearchCase::IgnoreCase))

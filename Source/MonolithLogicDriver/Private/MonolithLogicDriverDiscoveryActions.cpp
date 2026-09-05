@@ -10,9 +10,12 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDDiscovery, Log, All);
+
 #if WITH_LOGICDRIVER
 
-DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDDiscovery, Log, All);
+
+#endif // WITH_LOGICDRIVER
 
 void FMonolithLogicDriverDiscoveryActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
@@ -61,6 +64,8 @@ void FMonolithLogicDriverDiscoveryActions::RegisterActions(FMonolithToolRegistry
 
 	UE_LOG(LogMonolithLDDiscovery, Log, TEXT("MonolithLogicDriver Discovery: registered 6 actions"));
 }
+
+#if WITH_LOGICDRIVER
 
 FMonolithActionResult FMonolithLogicDriverDiscoveryActions::HandleGetSMOverview(const TSharedPtr<FJsonObject>& Params)
 {
@@ -920,9 +925,34 @@ FMonolithActionResult FMonolithLogicDriverDiscoveryActions::HandleExplainStateMa
 
 #else
 
-void FMonolithLogicDriverDiscoveryActions::RegisterActions(FMonolithToolRegistry& Registry)
+FMonolithActionResult FMonolithLogicDriverDiscoveryActions::HandleGetSMOverview(const TSharedPtr<FJsonObject>& Params)
 {
-	// Logic Driver not available
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverDiscoveryActions::HandleValidateStateMachine(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverDiscoveryActions::HandleFindSMReferences(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverDiscoveryActions::HandleVisualizeSMAsText(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverDiscoveryActions::HandleExplainStateMachine(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverDiscoveryActions::HandleFindNodeClassUsages(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
 }
 
 #endif // WITH_LOGICDRIVER

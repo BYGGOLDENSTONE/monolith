@@ -1,7 +1,6 @@
 // MonolithCommonUIActionsAggregator.cpp
 // Central registration aggregator for all CommonUI categories. Each category file implements
 // a namespace-scoped Register() function that this aggregator calls from StartupModule().
-#if WITH_COMMONUI
 
 #include "CommonUI/MonolithCommonUIActions.h"
 #include "MonolithToolRegistry.h"
@@ -33,5 +32,3 @@ void FMonolithCommonUIActions::RegisterAll(FMonolithToolRegistry& Registry)
 	MonolithCommonUIAccessibility::Register(Registry);
 	MonolithCommonUITemplate::Register(Registry);
 }
-
-#endif // WITH_COMMONUI

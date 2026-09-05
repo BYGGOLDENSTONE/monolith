@@ -472,6 +472,8 @@ namespace
 //  Registration
 // ============================================================
 
+#endif // WITH_COMBOGRAPH
+
 void FMonolithComboGraphActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	// ── Read/Inspect ──
@@ -598,6 +600,8 @@ void FMonolithComboGraphActions::RegisterActions(FMonolithToolRegistry& Registry
 
 	UE_LOG(LogMonolithComboGraph, Log, TEXT("Registered 13 combograph actions"));
 }
+
+#if WITH_COMBOGRAPH
 
 // ============================================================
 //  1. list_combo_graphs
@@ -2227,9 +2231,69 @@ FMonolithActionResult FMonolithComboGraphActions::HandleLayoutComboGraph(const T
 
 #else // !WITH_COMBOGRAPH
 
-void FMonolithComboGraphActions::RegisterActions(FMonolithToolRegistry& Registry)
+FMonolithActionResult FMonolithComboGraphActions::HandleListComboGraphs(const TSharedPtr<FJsonObject>& Params)
 {
-	UE_LOG(LogMonolithComboGraph, Log, TEXT("ComboGraph not installed — no combograph actions registered"));
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleGetComboGraphInfo(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleGetComboNodeEffects(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleValidateComboGraph(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleCreateComboGraph(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleAddComboNode(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleAddComboEdge(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleSetComboNodeEffects(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleSetComboNodeCues(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleCreateComboAbility(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleLinkAbilityToComboGraph(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleScaffoldComboFromMontages(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
+}
+
+FMonolithActionResult FMonolithComboGraphActions::HandleLayoutComboGraph(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("ComboGraph"));
 }
 
 #endif // WITH_COMBOGRAPH

@@ -16,14 +16,17 @@ void FMonolithComboGraphModule::StartupModule()
 		return;
 	}
 
+	FMonolithToolRegistry& Registry = FMonolithToolRegistry::Get();
+	Registry.SetOptionalDependencyAvailability(TEXT("combograph"), TEXT("ComboGraph"),
+		WITH_COMBOGRAPH != 0, WITH_COMBOGRAPH ? TEXT("") : TEXT("not_compiled"));
+	FMonolithComboGraphActions::RegisterActions(Registry);
 #if WITH_COMBOGRAPH
-	FMonolithComboGraphActions::RegisterActions(FMonolithToolRegistry::Get());
 	int32 ActionCount = FMonolithToolRegistry::Get().GetActions(TEXT("combograph")).Num();
 	UE_LOG(LogMonolithComboGraph, Log,
 		TEXT("MonolithComboGraph: Loaded (%d actions)"), ActionCount);
 #else
 	UE_LOG(LogMonolithComboGraph, Log,
-		TEXT("MonolithComboGraph: ComboGraph plugin not found at compile time, bridge inactive"));
+		TEXT("MonolithComboGraph: ComboGraph not compiled; actions retained with dependency errors"));
 #endif
 
 	// Phase 5 Step 8 (MCP Ergonomics, 2026-05-11) — register the combograph adapter

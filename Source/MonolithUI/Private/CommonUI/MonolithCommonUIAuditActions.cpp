@@ -5,11 +5,12 @@
 // 5.H.4 dump_action_router_state [RUNTIME, EXPERIMENTAL]
 #include "MonolithCommonUIHelpers.h"
 
-#if WITH_COMMONUI
-
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
+
+#if WITH_COMMONUI
+
 
 #include "CommonActivatableWidget.h"
 #include "CommonButtonBase.h"
@@ -26,8 +27,11 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 
+#endif // WITH_COMMONUI includes
+
 namespace MonolithCommonUIAudit
 {
+#if WITH_COMMONUI
 	// ----- 5.H.1 audit_commonui_widget -----------------------------------------
 	// Single-WBP lint. Checks:
 	//   - UCommonActivatableWidget has some DesiredFocusTargetName or input mapping set
@@ -254,6 +258,29 @@ namespace MonolithCommonUIAudit
 	}
 
 	// ----- Registration --------------------------------------------------------
+#else
+	static FMonolithActionResult HandleAuditCommonUIWidget(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleExportCommonUIReport(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleHotReloadStyles(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+	static FMonolithActionResult HandleDumpActionRouterState(const TSharedPtr<FJsonObject>& /*Params*/)
+	{
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("CommonUI"));
+	}
+
+#endif // WITH_COMMONUI implementation
+
 
 	void Register(FMonolithToolRegistry& Registry)
 	{
@@ -293,5 +320,3 @@ namespace MonolithCommonUIAudit
 			Cat);
 	}
 }
-
-#endif // WITH_COMMONUI

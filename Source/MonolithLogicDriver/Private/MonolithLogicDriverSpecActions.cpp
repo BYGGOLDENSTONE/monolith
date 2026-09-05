@@ -1,6 +1,8 @@
 #include "MonolithLogicDriverSpecActions.h"
 #include "MonolithParamSchema.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDSpec, Log, All);
+
 #if WITH_LOGICDRIVER
 
 #include "MonolithLogicDriverInternal.h"
@@ -20,7 +22,8 @@
 #include "Factories/Factory.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDSpec, Log, All);
+
+#endif // WITH_LOGICDRIVER
 
 void FMonolithLogicDriverSpecActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
@@ -65,6 +68,8 @@ void FMonolithLogicDriverSpecActions::RegisterActions(FMonolithToolRegistry& Reg
 
 	UE_LOG(LogMonolithLDSpec, Log, TEXT("MonolithLogicDriver Spec: registered 5 actions"));
 }
+
+#if WITH_LOGICDRIVER
 
 FMonolithActionResult FMonolithLogicDriverSpecActions::HandleExportSMJson(const TSharedPtr<FJsonObject>& Params)
 {
@@ -723,9 +728,29 @@ FMonolithActionResult FMonolithLogicDriverSpecActions::HandleCompareStateMachine
 
 #else
 
-void FMonolithLogicDriverSpecActions::RegisterActions(FMonolithToolRegistry& Registry)
+FMonolithActionResult FMonolithLogicDriverSpecActions::HandleExportSMJson(const TSharedPtr<FJsonObject>& Params)
 {
-	// Logic Driver not available
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverSpecActions::HandleBuildSMFromSpec(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverSpecActions::HandleExportSMSpec(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverSpecActions::HandleImportSMJson(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverSpecActions::HandleCompareStateMachines(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
 }
 
 #endif // WITH_LOGICDRIVER

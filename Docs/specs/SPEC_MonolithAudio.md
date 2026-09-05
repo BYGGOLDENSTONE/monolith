@@ -10,7 +10,7 @@
 
 **Dependencies:** Core, CoreUObject, Engine, MonolithCore, AudioMixer, AudioEditor, AssetTools, Json, JsonUtilities, Slate, SlateCore, UnrealEd
 **Namespace:** `audio` | **Tool:** `audio_query(action, params)` | **Actions:** 98 (Phase J F18: +`create_test_wave`; v0.14.10 [Unreleased]: +12 MetaSound document introspection actions from PR #18 by @alakangas)
-**Conditional:** MetaSound features wrapped in `#if WITH_METASOUND`. When MetaSound is absent, MetaSound Builder + introspection actions are inert but all other actions (Sound Cue, CRUD, batch, query, perception) function normally. Build.cs auto-detects MetaSound at `Engine/Plugins/Runtime/Metasound`. Companion deep indexer `FMetaSoundIndexer` lives in MonolithIndex (also v0.14.10 [Unreleased] from PR #18).
+**Availability:** All 37 MetaSound Builder and introspection actions register with their schemas in every build of the enabled audio module. Implementations remain guarded by `WITH_METASOUND`; absent handlers return `-32010`, `class:"optional_dep_unavailable"`, `dep_name:"Metasound"`, and `executed:false`. Top-level discovery keeps `audio.availability.available:true` and reports MetaSound separately in `optional_dependencies` with `required_plugin:"Metasound"`, its compiled availability, and `reason:"not_compiled"` when absent. Sound Cue, CRUD, batch, query and perception actions remain usable. Build.cs checks target plugin enablement and the release-build override; disk presence alone is insufficient. Companion deep indexer `FMetaSoundIndexer` lives in MonolithIndex.
 **Settings toggle:** `bEnableAudio` (default: True)
 
 MonolithAudio provides MCP coverage of audio asset creation, inspection, batch management, Sound Cue graph building, MetaSound graph building, and AI Perception sound binding. It covers the 5 configurable audio asset types (SoundAttenuation, SoundClass, SoundMix, SoundConcurrency, SoundSubmix), read-only SoundWave inspection, Sound Cue node graph construction, MetaSound Builder API integration, and `UAssetUserData`-based perception stimulus authoring.
@@ -53,7 +53,7 @@ Read-only inspection of MetaSound asset state via `IMetaSoundDocumentInterface::
 
 Source-of-truth: PR [#18](https://github.com/tumourlove/monolith/pull/18) by **@alakangas**. The PR originally proposed a separate `MonolithMetaSound` module + `metasound_query` namespace; landed refactored into the existing `MonolithAudio` module + `audio_query` namespace per maintainer architectural preference. All 12 PR action handlers ported with name disambiguation; helper functions consolidated into a `MonolithAudioMetaSoundIntrospectionActions.cpp` anonymous namespace with `Introspection_*` prefix.
 
-**12 actions** — all conditional on `WITH_METASOUND`:
+**12 actions** — always registered; implementation requires `WITH_METASOUND`:
 
 | Action | Purpose | Returns |
 |---|---|---|

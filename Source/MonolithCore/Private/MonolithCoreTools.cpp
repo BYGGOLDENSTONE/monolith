@@ -19,6 +19,8 @@ struct FKnownOptionalModule
 	FString SettingsField;   // bool property name on UMonolithSettings
 	FString ToolName;        // MCP tool name (namespace_query)
 	FString InstallHint;
+	FString RequiredPlugin;
+	bool bWholeNamespace = true;
 };
 
 // One-line purpose per in-tree namespace for the top-level discover inventory.
@@ -65,16 +67,54 @@ static const TArray<FKnownOptionalModule>& GetKnownOptionalModules()
 			TEXT("gas"),
 			TEXT("bEnableGAS"),
 			TEXT("gas_query"),
-			TEXT("MonolithGAS module provides Gameplay Ability System tooling (attributes, abilities, effects, cues). Requires GameplayAbilities plugin (engine-bundled).")
+			TEXT("MonolithGAS provides Gameplay Ability System tooling. Enable GameplayAbilities and MonolithGAS."),
+			TEXT("GameplayAbilities")
 		},
 		{
 			TEXT("combograph"),
 			TEXT("bEnableComboGraph"),
 			TEXT("combograph_query"),
-			TEXT("MonolithComboGraph module provides combo graph tooling (nodes, edges, transitions, effects). Requires ComboGraph plugin (Fab marketplace).")
-		}
+			TEXT("MonolithComboGraph tooling requires the ComboGraph plugin and a plugin rebuild."),
+			TEXT("ComboGraph")
+		},
+		{TEXT("logicdriver"), TEXT("bEnableLogicDriver"), TEXT("logicdriver_query"),
+			TEXT("Logic Driver Pro tooling requires its plugin and a Monolith rebuild."), TEXT("LogicDriver")},
+		{TEXT("chooser"), TEXT(""), TEXT("chooser_query"),
+			TEXT("Chooser tooling requires the Chooser plugin and a Monolith rebuild."), TEXT("Chooser")},
+		{TEXT("ui"), TEXT("bEnableUI"), TEXT("ui_query"),
+			TEXT("CommonUI actions require CommonUI compiled into Monolith; base UMG actions remain available."), TEXT("CommonUI"), false},
+		{TEXT("audio"), TEXT("bEnableAudio"), TEXT("audio_query"),
+			TEXT("MetaSound actions require Metasound compiled into Monolith; base audio actions remain available."), TEXT("Metasound"), false}
 	};
 	return Modules;
+}
+
+static TSharedPtr<FJsonObject> MonolithAvailabilityJson(bool bAvailable, const FString& Reason, const FString& Plugin)
+{
+	auto Out = MakeShared<FJsonObject>();
+	Out->SetBoolField(TEXT("available"), bAvailable);
+	Out->SetStringField(TEXT("reason"), Reason);
+	Out->SetStringField(TEXT("required_plugin"), Plugin);
+	return Out;
+}
+
+static void MonolithAttachAvailability(FMonolithToolRegistry& Registry, const FString& Namespace,
+	const TSharedPtr<FJsonObject>& Out)
+{
+	auto Availability = MonolithAvailabilityJson(true, TEXT(""), TEXT(""));
+	TArray<TSharedPtr<FJsonValue>> Features;
+	for (const auto& Entry : Registry.GetOptionalDependencyAvailability(Namespace))
+	{
+		auto Dependency = MonolithAvailabilityJson(Entry.bAvailable, Entry.Reason, Entry.RequiredPlugin);
+		if (Entry.bWholeNamespace)
+		{
+			// A required unavailable dependency takes precedence over available ones.
+			if (Availability->GetBoolField(TEXT("available"))) Availability = Dependency;
+		}
+		else Features.Add(MakeShared<FJsonValueObject>(Dependency));
+	}
+	Out->SetObjectField(TEXT("availability"), Availability);
+	if (Features.Num()) Out->SetArrayField(TEXT("optional_dependencies"), Features);
 }
 
 // Trim a (possibly multi-paragraph) registry description down to a single line
@@ -541,6 +581,7 @@ FMonolithActionResult FMonolithCoreTools::HandleDiscover(const TSharedPtr<FJsonO
 			TSharedPtr<FJsonObject> NsObj = MakeShared<FJsonObject>();
 			NsObj->SetStringField(TEXT("namespace"), Ns);
 			NsObj->SetNumberField(TEXT("action_count"), Actions.Num());
+			MonolithAttachAvailability(Registry, Ns, NsObj);
 			if (const TCHAR* Description = NamespaceDescription(Ns))
 			{
 				NsObj->SetStringField(TEXT("description"), Description);
@@ -575,8 +616,11 @@ FMonolithActionResult FMonolithCoreTools::HandleDiscover(const TSharedPtr<FJsonO
 			OptObj->SetStringField(TEXT("namespace"), Mod.Namespace);
 			OptObj->SetStringField(TEXT("tool"), Mod.ToolName);
 			OptObj->SetNumberField(TEXT("action_count"), 0);
+			OptObj->SetArrayField(TEXT("categories"), TArray<TSharedPtr<FJsonValue>>());
+			if (bIncludeActionNames) OptObj->SetArrayField(TEXT("actions"), TArray<TSharedPtr<FJsonValue>>());
+			if (const TCHAR* Description = NamespaceDescription(Mod.Namespace)) OptObj->SetStringField(TEXT("description"), Description);
 
-			bool bSettingEnabled = false;
+			bool bSettingEnabled = Mod.SettingsField.IsEmpty();
 			if (Settings)
 			{
 				const FBoolProperty* Prop = CastField<FBoolProperty>(
@@ -588,10 +632,15 @@ FMonolithActionResult FMonolithCoreTools::HandleDiscover(const TSharedPtr<FJsonO
 			}
 
 			OptObj->SetStringField(TEXT("status"), bSettingEnabled ? TEXT("not_installed") : TEXT("disabled"));
+			OptObj->SetObjectField(TEXT("availability"), MonolithAvailabilityJson(false,
+				bSettingEnabled ? TEXT("module_not_registered") : TEXT("disabled_in_settings"),
+				Mod.bWholeNamespace ? Mod.RequiredPlugin : FString()));
 			OptObj->SetStringField(TEXT("hint"), bSettingEnabled ? Mod.InstallHint
 				: FString::Printf(TEXT("Enable in Project Settings > Plugins > Monolith > Modules > Optional (%s), then restart the editor."), *Mod.SettingsField));
 
 			OptionalArray.Add(MakeShared<FJsonValueObject>(OptObj));
+			// Explicitly disabled owner modules still have an inventory entry.
+			NsArray.Add(MakeShared<FJsonValueObject>(OptObj));
 		}
 
 		if (OptionalArray.Num() > 0)

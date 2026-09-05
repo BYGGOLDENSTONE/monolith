@@ -1,6 +1,8 @@
 #include "MonolithLogicDriverNodeActions.h"
 #include "MonolithParamSchema.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDNode, Log, All);
+
 #if WITH_LOGICDRIVER
 
 #include "MonolithLogicDriverInternal.h"
@@ -12,7 +14,6 @@
 #include "GameplayTagContainer.h"
 #include "GameplayTagsManager.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDNode, Log, All);
 
 // ── Reflection helpers (local) ──────────────────────────────────────
 
@@ -163,6 +164,8 @@ FNodeLookupResult LoadAndFindNode(const TSharedPtr<FJsonObject>& Params)
 
 // ── Registration ────────────────────────────────────────────────────
 
+#endif // WITH_LOGICDRIVER
+
 void FMonolithLogicDriverNodeActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	// ── configure_state (29) ──
@@ -256,6 +259,8 @@ void FMonolithLogicDriverNodeActions::RegisterActions(FMonolithToolRegistry& Reg
 
 	UE_LOG(LogMonolithLDNode, Log, TEXT("MonolithLogicDriver Node: registered 8 actions"));
 }
+
+#if WITH_LOGICDRIVER
 
 // ── configure_state (29) ────────────────────────────────────────────
 
@@ -935,9 +940,44 @@ FMonolithActionResult FMonolithLogicDriverNodeActions::HandleSetStateTags(const 
 
 #else
 
-void FMonolithLogicDriverNodeActions::RegisterActions(FMonolithToolRegistry& Registry)
+FMonolithActionResult FMonolithLogicDriverNodeActions::HandleConfigureState(const TSharedPtr<FJsonObject>& Params)
 {
-	// Logic Driver not available
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverNodeActions::HandleConfigureTransition(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverNodeActions::HandleConfigureConduit(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverNodeActions::HandleSetTransitionCondition(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverNodeActions::HandleSetStateTags(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverNodeActions::HandleGetExposedProperties(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverNodeActions::HandleSetExposedProperty(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
+}
+
+FMonolithActionResult FMonolithLogicDriverNodeActions::HandleConfigureStateMachineNode(const TSharedPtr<FJsonObject>& Params)
+{
+	return FMonolithActionResult::OptionalDepUnavailable(TEXT("LogicDriver"));
 }
 
 #endif // WITH_LOGICDRIVER

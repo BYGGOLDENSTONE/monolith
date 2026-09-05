@@ -25,8 +25,9 @@ void FMonolithLogicDriverModule::StartupModule()
 		return;
 	}
 
-#if WITH_LOGICDRIVER
 	FMonolithToolRegistry& Registry = FMonolithToolRegistry::Get();
+	Registry.SetOptionalDependencyAvailability(TEXT("logicdriver"), TEXT("LogicDriver"),
+		WITH_LOGICDRIVER != 0, WITH_LOGICDRIVER ? TEXT("") : TEXT("not_compiled"));
 	FMonolithLogicDriverAssetActions::RegisterActions(Registry);
 	FMonolithLogicDriverGraphActions::RegisterActions(Registry);
 	FMonolithLogicDriverNodeActions::RegisterActions(Registry);
@@ -36,12 +37,13 @@ void FMonolithLogicDriverModule::StartupModule()
 	FMonolithLogicDriverDiscoveryActions::RegisterActions(Registry);
 	FMonolithLogicDriverComponentActions::RegisterActions(Registry);
 	FMonolithLogicDriverTextGraphActions::RegisterActions(Registry);
+#if WITH_LOGICDRIVER
 	int32 ActionCount = Registry.GetActions(TEXT("logicdriver")).Num();
 	UE_LOG(LogMonolithLogicDriver, Log,
 		TEXT("MonolithLogicDriver: Loaded (%d actions)"), ActionCount);
 #else
 	UE_LOG(LogMonolithLogicDriver, Log,
-		TEXT("MonolithLogicDriver: Logic Driver Pro not found at compile time, bridge inactive"));
+		TEXT("MonolithLogicDriver: Logic Driver Pro not compiled; actions retained with dependency errors"));
 #endif
 
 	// Phase 5 Step 7 (MCP Ergonomics, 2026-05-11) — register the logicdriver adapter
