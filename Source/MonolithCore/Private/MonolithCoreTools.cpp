@@ -136,6 +136,11 @@ void FMonolithCoreTools::RegisterAll()
 		CatProp->SetStringField(TEXT("description"), TEXT("Optional: filter actions within the namespace by category (e.g. 'CommonUI' inside 'ui')"));
 		Schema->SetObjectField(TEXT("category"), CatProp);
 
+		auto ActionNamesProp = MakeShared<FJsonObject>();
+		ActionNamesProp->SetStringField(TEXT("type"), TEXT("boolean"));
+		ActionNamesProp->SetStringField(TEXT("description"), TEXT("Optional: include action-name arrays in the namespace inventory (default false)."));
+		Schema->SetObjectField(TEXT("include_action_names"), ActionNamesProp);
+
 		TSharedPtr<FJsonObject> DetailProp = MakeShared<FJsonObject>();
 		DetailProp->SetStringField(TEXT("type"), TEXT("boolean"));
 		DetailProp->SetStringField(TEXT("description"), TEXT("Optional: inline the full param schema for every action (default false = terse). 'verbose' is an accepted alias. Prefer describe_query action_schema for a single action's schema."));
@@ -236,6 +241,7 @@ FMonolithActionResult FMonolithCoreTools::HandleDiscover(const TSharedPtr<FJsonO
 	int32 Offset = 0;
 	int32 Limit = 0;
 	bool bDetail = false;
+	bool bIncludeActionNames = false;
 	// Absence, not value, selects the cross-namespace default cap below. Do NOT
 	// initialise Limit to 50: the per-namespace branch treats limit=0 as ALL, and
 	// pre-seeding it would silently truncate that shipped contract at 50.
@@ -248,6 +254,7 @@ FMonolithActionResult FMonolithCoreTools::HandleDiscover(const TSharedPtr<FJsonO
 		Params->TryGetNumberField(TEXT("offset"), Offset);
 		bLimitSpecified = Params->TryGetNumberField(TEXT("limit"), Limit);
 		Params->TryGetBoolField(TEXT("detail"), bDetail);          // canonical
+		Params->TryGetBoolField(TEXT("include_action_names"), bIncludeActionNames);
 		if (!bDetail)
 		{
 			Params->TryGetBoolField(TEXT("verbose"), bDetail);     // accepted alias
@@ -494,13 +501,18 @@ FMonolithActionResult FMonolithCoreTools::HandleDiscover(const TSharedPtr<FJsonO
 			TSharedPtr<FJsonObject> NsObj = MakeShared<FJsonObject>();
 			NsObj->SetStringField(TEXT("namespace"), Ns);
 			NsObj->SetNumberField(TEXT("action_count"), Actions.Num());
+			NsObj->SetStringField(TEXT("description"), FString::Printf(TEXT("Actions in the %s domain."), *Ns));
 
 			TArray<TSharedPtr<FJsonValue>> ActionNames;
+			TArray<FString> Categories;
 			for (const FMonolithActionInfo& ActionInfo : Actions)
 			{
-				ActionNames.Add(MakeShared<FJsonValueString>(ActionInfo.Action));
+				if (bIncludeActionNames) { ActionNames.Add(MakeShared<FJsonValueString>(ActionInfo.Action)); }
+				if (!ActionInfo.Category.IsEmpty()) { Categories.AddUnique(ActionInfo.Category); }
 			}
-			NsObj->SetArrayField(TEXT("actions"), ActionNames);
+			Categories.Sort();
+			NsObj->SetField(TEXT("categories"), FMonolithJsonUtils::StringArrayToJson(Categories));
+			if (bIncludeActionNames) { NsObj->SetArrayField(TEXT("actions"), ActionNames); }
 			NsArray.Add(MakeShared<FJsonValueObject>(NsObj));
 		}
 		// Append known optional modules that aren't already registered

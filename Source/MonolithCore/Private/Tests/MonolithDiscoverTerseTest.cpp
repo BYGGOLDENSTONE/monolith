@@ -15,6 +15,7 @@
 // MonolithCore tests in this folder.
 
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithJsonUtils.h"
 #include "Dom/JsonObject.h"
@@ -663,6 +664,59 @@ bool FMonolithDiscoverCrossNamespaceTest::RunTest(const FString& /*Parameters*/)
 			TestTrue(TEXT("whitespace filter returns the namespace inventory"),
 				WsR.Result->HasField(TEXT("namespaces")));
 		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithDiscoverInventoryTest, "Monolith.Discover.Terse.NamespaceInventory",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMonolithDiscoverInventoryTest::RunTest(const FString& Parameters)
+{
+	using namespace MonolithDiscoverTerseTestDetail;
+	auto& Registry = FMonolithToolRegistry::Get();
+	const FString Namespace = TEXT("__discover_inventory_fixture");
+	ON_SCOPE_EXIT { Registry.UnregisterNamespace(Namespace); };
+	const auto Handler = FMonolithActionHandler::CreateLambda([](const TSharedPtr<FJsonObject>&)
+	{
+		return FMonolithActionResult::Success(MakeShared<FJsonObject>());
+	});
+	Registry.RegisterAction(Namespace, TEXT("first"), TEXT("Fixture"), Handler, nullptr, TEXT("Zebra"));
+	Registry.RegisterAction(Namespace, TEXT("second"), TEXT("Fixture"), Handler, nullptr, TEXT("Alpha"));
+	Registry.RegisterAction(Namespace, TEXT("third"), TEXT("Fixture"), Handler, nullptr, TEXT("Alpha"));
+	Registry.RegisterAction(Namespace, TEXT("uncategorized"), TEXT("Fixture"), Handler);
+	auto Params = MakeShared<FJsonObject>();
+	for (const bool bIncludeNames : {false, true})
+	{
+		if (bIncludeNames) Params->SetBoolField(TEXT("include_action_names"), true);
+		const auto R = Discover(Params);
+		if (!TestTrue(TEXT("Inventory succeeds"), R.bSuccess && R.Result.IsValid())) return false;
+		TestFalse(TEXT("Inventory flag is registered without warnings"), R.Result->HasField(TEXT("warnings")));
+		bool bFoundFixture = false;
+		for (const auto& Value : R.Result->GetArrayField(TEXT("namespaces")))
+		{
+			const auto Row = Value->AsObject();
+			TestEqual(TEXT("Action names require explicit opt-in"), Row->HasField(TEXT("actions")), bIncludeNames);
+			TestFalse(TEXT("Every namespace has a short description"), Row->GetStringField(TEXT("description")).IsEmpty());
+			TestTrue(TEXT("Every namespace has categories array"), Row->HasTypedField<EJson::Array>(TEXT("categories")));
+			if (Row->GetStringField(TEXT("namespace")) != Namespace) continue;
+			bFoundFixture = true;
+			TestEqual(TEXT("Fixture count unchanged"), Row->GetIntegerField(TEXT("action_count")), 4);
+			const auto& Categories = Row->GetArrayField(TEXT("categories"));
+			if (TestEqual(TEXT("Categories are unique and omit empty"), Categories.Num(), 2))
+			{
+				TestEqual(TEXT("Categories sort first"), Categories[0]->AsString(), FString(TEXT("Alpha")));
+				TestEqual(TEXT("Categories sort last"), Categories[1]->AsString(), FString(TEXT("Zebra")));
+			}
+			if (bIncludeNames)
+			{
+				TArray<FString> Names;
+				for (const auto& Name : Row->GetArrayField(TEXT("actions"))) Names.Add(Name->AsString());
+				TestEqual(TEXT("Opt-in restores every action name"), Names.Num(), 4);
+				for (const TCHAR* Name : {TEXT("first"), TEXT("second"), TEXT("third"), TEXT("uncategorized")})
+					TestTrue(TEXT("Registered name restored"), Names.Contains(Name));
+			}
+		}
+		TestTrue(TEXT("Fixture included in inventory"), bFoundFixture);
 	}
 	return true;
 }

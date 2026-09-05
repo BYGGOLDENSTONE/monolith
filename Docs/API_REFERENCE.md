@@ -94,14 +94,15 @@ Core server management and introspection.
 
 ### `monolith.discover`
 
-List available tool namespaces and their actions. Pass `namespace` to filter; pass `category` to narrow further (e.g. `"CommonUI"` inside `ui`).
+List available tool namespaces with action counts, short descriptions, and sorted categories. Pass `namespace` to list its actions; pass `category` to narrow further (e.g. `"CommonUI"` inside `ui`).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `namespace` | string | optional | Filter to a specific namespace |
 | `category` | string | optional | Filter actions within the namespace by category |
+| `include_action_names` | boolean | optional | Add each namespace's `actions` name array to the inventory; default false |
 
-**Returns:** Per-action param schemas for every registered action. AI clients also receive these in `tools/list` at session start, so most callers never need to call `discover` explicitly.
+**Returns:** With no namespace or filter, `namespaces[]` rows contain `namespace`, `action_count`, `description`, and `categories[]`; action names require `include_action_names=true`. Per-namespace results contain action names and one-line descriptions by default. Use `detail=true` to inline schemas or `describe_query("action_schema", ...)` for one action's full parameter schema. `tools/list` advertises dispatch tools; it does not provide every action's schema.
 
 ---
 

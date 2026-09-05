@@ -868,6 +868,10 @@ static json make_seed_tools()
                     {"type", "string"},
                     {"description", "Optional: filter actions within the namespace by category"}
                 }},
+                {"include_action_names", {
+                    {"type", "boolean"},
+                    {"description", "Optional: include action-name arrays in the namespace inventory (default false)."}
+                }},
                 {"_fields", {
                     {"type", "array"},
                     {"items", {{"type", "string"}}},
