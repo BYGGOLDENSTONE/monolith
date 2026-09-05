@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import uuid
 from unittest import mock
@@ -87,6 +88,9 @@ class EditorFixture:
         self.received_headers = []
         self.received_client_headers = []
         self.evidence_payloads = {}
+        self.release_attempts = []
+        self.release_mode = None
+        self.cleanup_stop = threading.Event()
         self.gates = {}
         self.offline = False
         self.tools = TOOLS
@@ -129,6 +133,50 @@ class EditorFixture:
                     gate.wait(WAIT)
                 if owner.offline:
                     self.reply({"offline": True}, 503)
+                    return
+                if msg.get("params", {}).get("name") == "monolith_coordination":
+                    args = msg["params"].get("arguments", {})
+                    nested = args.get("params")
+                    if isinstance(nested, str):
+                        nested = json.loads(nested)
+                    if isinstance(nested, dict):
+                        args = dict(args, **nested)
+                    operation = args.get("operation", "status")
+                    token = args.get("_lease_token", "lease-" + str(identifier))
+                    shape = args.get("fixture_response", "structured")
+                    if operation == "release":
+                        with owner.condition:
+                            owner.release_attempts.append(token)
+                            owner.condition.notify_all()
+                        if owner.release_mode == "hang":
+                            owner.cleanup_stop.wait(WAIT)
+                            return
+                        if owner.release_mode == "trickle":
+                            try:
+                                self.send_response(200)
+                                self.send_header("Content-Type", "application/json")
+                                self.send_header("Content-Length", "100000")
+                                self.end_headers()
+                                while not owner.cleanup_stop.is_set():
+                                    self.wfile.write(b" ")
+                                    self.wfile.flush()
+                                    owner.cleanup_stop.wait(0.05)
+                            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                                pass
+                            return
+                    data = {"active": operation != "release", "owner": args.get("owner", "fixture-owner")}
+                    if operation in ("acquire", "renew"):
+                        data["_lease_token"] = token
+                    result = {"isError": False, "content": [{"type": "text", "text": json.dumps(data)}]}
+                    if shape != "text_only":
+                        result["structuredContent"] = data
+                    if shape == "tool_error":
+                        result["isError"] = True  # Token-looking error data never establishes ownership.
+                    payload = {"jsonrpc": "2.0", "id": identifier, "result": result}
+                    if shape == "protocol_error":
+                        payload = {"jsonrpc": "2.0", "id": identifier,
+                                   "error": {"code": -32020, "message": "acquire rejected", "data": data}}
+                    self.reply(payload)
                     return
                 mode = msg.get("params", {}).get("arguments", {}).get("fixture_mode")
                 if mode in ("evidence_success", "evidence_tool_error", "evidence_protocol_error"):
@@ -229,7 +277,13 @@ class EditorFixture:
             raise AssertionError("Upstream requests never arrived: %r; received %r" %
                                  (identifiers, self.received))
 
+    def wait_release_attempts(self, count):
+        with self.condition:
+            if not self.condition.wait_for(lambda: len(self.release_attempts) >= count, WAIT):
+                raise AssertionError("Cleanup release attempt never arrived: %r" % self.received)
+
     def release(self):
+        self.cleanup_stop.set()
         self.health_gate.set()
         for gate in self.gates.values():
             gate.set()
@@ -341,7 +395,10 @@ class TransportContract:
     def assert_tool_unknown(self, response, identifier):
         self.assertEqual(response["id"], identifier)
         self.assertTrue(response.get("result", {}).get("isError"), response)
-        self.assertIn("unknown", json.dumps(response).lower())
+        structured = response["result"]["structuredContent"]
+        self.assertEqual(json.loads(response["result"]["content"][0]["text"]), structured)
+        self.assertEqual(structured["data"]["class"], "unknown_outcome")
+        self.assertEqual(structured["data"]["executed"], "unknown")
 
     def assert_request_evidence(self, headers, proxy, client_name):
         request_uuid = headers.get("x-monolith-request-id")
@@ -720,6 +777,156 @@ class TransportContract:
         restarted = self.proxy()
         restarted.send(request("cached", "tools/list"))
         self.assertEqual(restarted.receive()["result"]["tools"], TOOLS)
+
+    @staticmethod
+    def coordination(identifier, operation, shape="flat", **arguments):
+        args = dict(arguments, operation=operation)
+        if shape == "nested":
+            args = {"params": args}
+        elif shape == "string":
+            args = {"params": json.dumps(args)}
+        return {"jsonrpc": "2.0", "id": identifier, "method": "tools/call",
+                "params": {"name": "monolith_coordination", "arguments": args}}
+
+    def test_connection_refused_is_not_sent(self):
+        with socket.socket() as reservation:
+            if os.name == "nt":
+                reservation.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            reservation.bind(("127.0.0.1", 0))  # Keep the port reserved without listening.
+            proxy = self.proxy(MONOLITH_URL="http://127.0.0.1:%d/mcp" % reservation.getsockname()[1])
+            proxy.send(request("refused"))
+            response = proxy.receive()
+            self.assertEqual(response["id"], "refused")
+            self.assertIs(response["result"]["isError"], True)
+            structured = response["result"]["structuredContent"]
+            self.assertEqual(json.loads(response["result"]["content"][0]["text"]), structured)
+            self.assertEqual(structured["data"]["class"], "not_sent")
+            self.assertIs(structured["data"]["executed"], False)
+            self.assertIs(structured["data"]["retryable"], True)
+            proxy.send(request("still-alive", "ping"))
+            self.assertEqual(proxy.receive()["id"], "still-alive")
+            self.assertEqual(self.editor.received, [])
+
+    def test_eof_releases_only_successfully_acquired_tokens(self):
+        for index, (shape, response_shape) in enumerate((("flat", "structured"),
+                                                       ("nested", "structured"),
+                                                       ("string", "text_only"))):
+            with self.subTest(shape=shape, response=response_shape):
+                proxy = self.proxy()
+                identifier = "owned-%d" % index
+                proxy.send(self.coordination(identifier, "acquire", shape=shape,
+                                             owner="fixture", fixture_response=response_shape))
+                self.assertFalse(proxy.receive()["result"]["isError"])
+                proxy.eof()
+                self.assertEqual(proxy.process.wait(WAIT), 0)
+                self.editor.wait_release_attempts(index + 1)
+                for reader in proxy.readers:
+                    reader.join(WAIT)
+                while not proxy.messages.empty():
+                    self.assertIn("method", proxy.messages.get_nowait(), "Cleanup must not emit an unsolicited RPC reply")
+                self.assertEqual(self.editor.release_attempts, ["lease-owned-%d" % n for n in range(index + 1)])
+        for msg, headers in zip(self.editor.received, self.editor.received_headers):
+            if msg.get("params", {}).get("name") == "monolith_coordination" and msg["params"].get("arguments", {}).get("operation") == "release":
+                self.assertEqual(msg.get("method"), "tools/call")
+                self.assertIn("id", msg)  # Tool notifications cannot execute a release.
+                self.assertIsInstance(uuid.UUID(headers["x-monolith-request-id"]), uuid.UUID)
+
+    def test_eof_does_not_claim_supplied_renewed_or_failed_tokens(self):
+        proxy = self.proxy()
+        proxy.send(request("supplied", _lease_token="foreign-supplied"))
+        self.assertEqual(proxy.receive()["id"], "supplied")
+        proxy.send(self.coordination("renewed", "renew", _lease_token="foreign-renewed"))
+        self.assertFalse(proxy.receive()["result"]["isError"])
+        for shape in ("tool_error", "protocol_error"):
+            proxy.send(self.coordination("failed-" + shape, "acquire", owner="fixture", fixture_response=shape))
+            response = proxy.receive()
+            self.assertTrue("error" in response or response["result"]["isError"])
+        proxy.eof()
+        self.assertEqual(proxy.process.wait(WAIT), 0)
+        with self.editor.condition:
+            self.assertFalse(self.editor.condition.wait_for(lambda: bool(self.editor.release_attempts), 0.2))
+        self.assertEqual(self.editor.release_attempts, [])
+
+    def test_successful_explicit_release_removes_owned_token(self):
+        proxy = self.proxy()
+        proxy.send(self.coordination("explicit-owned", "acquire", owner="fixture"))
+        self.assertFalse(proxy.receive()["result"]["isError"])
+        proxy.send(self.coordination("explicit-release", "release", _lease_token="lease-explicit-owned"))
+        self.assertFalse(proxy.receive()["result"]["isError"])
+        proxy.eof()
+        self.assertEqual(proxy.process.wait(WAIT), 0)
+        with self.editor.condition:
+            self.assertFalse(self.editor.condition.wait_for(lambda: len(self.editor.release_attempts) > 1, 0.2))
+        self.assertEqual(self.editor.release_attempts, ["lease-explicit-owned"])
+
+    def test_failed_explicit_release_keeps_token_for_cleanup_attempt(self):
+        proxy = self.proxy()
+        proxy.send(self.coordination("retry-release", "acquire", owner="fixture"))
+        self.assertFalse(proxy.receive()["result"]["isError"])
+        proxy.send(self.coordination("failed-release", "release", _lease_token="lease-retry-release",
+                                     fixture_response="tool_error"))
+        self.assertTrue(proxy.receive()["result"]["isError"])
+        proxy.eof()
+        self.assertEqual(proxy.process.wait(WAIT), 0)
+        self.editor.wait_release_attempts(2)
+        self.assertEqual(self.editor.release_attempts, ["lease-retry-release", "lease-retry-release"])
+
+    def test_eof_records_acquire_that_finishes_after_eof(self):
+        proxy = self.proxy()
+        gate = self.editor.block("late-owned")
+        proxy.send(self.coordination("late-owned", "acquire", owner="fixture"))
+        self.editor.wait_received(["late-owned"])
+        proxy.eof()
+        self.assertIsNone(proxy.process.poll())
+        gate.set()
+        self.assertFalse(proxy.receive()["result"]["isError"])
+        self.assertEqual(proxy.process.wait(WAIT), 0)
+        self.editor.wait_release_attempts(1)
+        self.assertEqual(self.editor.release_attempts, ["lease-late-owned"])
+
+    def test_eof_cleanup_waits_for_running_and_queued_work(self):
+        proxy = self.proxy(MONOLITH_MAX_IN_FLIGHT=1, MONOLITH_MAX_QUEUED=1)
+        proxy.send(self.coordination("drain-owned", "acquire", owner="fixture"))
+        self.assertFalse(proxy.receive()["result"]["isError"])
+        gate = self.editor.block("leased-running")
+        proxy.send(request("leased-running", _lease_token="lease-drain-owned"))
+        self.editor.wait_received(["leased-running"])
+        proxy.send(request("leased-queued", _lease_token="lease-drain-owned"))
+        proxy.send(request("leased-overflow", _lease_token="lease-drain-owned"))
+        self.assertEqual(proxy.receive()["error"]["code"], -32001)
+        proxy.eof()
+        gate.set()
+        self.assertEqual({proxy.receive()["id"], proxy.receive()["id"]}, {"leased-running", "leased-queued"})
+        self.assertEqual(proxy.process.wait(WAIT), 0)
+        self.editor.wait_release_attempts(1)
+        self.assertEqual([msg["id"] for msg in self.editor.received[:3]],
+                         ["drain-owned", "leased-running", "leased-queued"])
+        self.assertEqual(self.editor.release_attempts, ["lease-drain-owned"])
+        self.assertEqual(len(self.editor.received), 4)
+
+    def test_eof_cleanup_has_total_deadline_across_leases_and_trickled_body(self):
+        for index, mode in enumerate(("hang", "trickle")):
+            with self.subTest(cleanup=mode):
+                # The previous handler retains its already-signaled Event; never clear it under that waiter.
+                self.editor.cleanup_stop = threading.Event()
+                proxy = self.proxy()
+                for number in range(3):
+                    identifier = "bounded-%d-%d" % (index, number)
+                    proxy.send(self.coordination(identifier, "acquire", owner="fixture"))
+                    self.assertFalse(proxy.receive()["result"]["isError"])
+                self.editor.release_mode = mode
+                before = len(self.editor.release_attempts)
+                started = time.monotonic()
+                proxy.eof()
+                self.assertEqual(proxy.process.wait(2.75), 0)
+                self.assertLess(time.monotonic() - started, 2.75)
+                self.editor.wait_release_attempts(before + 1)
+                attempts = self.editor.release_attempts[before:]
+                self.assertEqual(len(attempts), len(set(attempts)))
+                self.assertTrue(all(token.startswith("lease-bounded-%d-" % index) for token in attempts))
+                # Receipt is only evidence of an attempt: no confirmed release is claimed.
+                self.editor.cleanup_stop.set()
+                self.editor.release_mode = None
 
     def test_eof_drains_accepted_workers(self):
         proxy = self.proxy(MONOLITH_MAX_IN_FLIGHT=2)

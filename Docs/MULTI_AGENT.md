@@ -43,6 +43,16 @@ module/editor session and is also available through `monolith_status` and
 `/health`; restarting only the HTTP listener keeps it stable. Request UUIDs
 provide correlation, without adding request deduplication or replay behavior.
 
+Transport failures are MCP tool errors with matching JSON text and
+`structuredContent.data` evidence. A proven failure before any request write is
+`class:"not_sent", executed:false, retryable:true`. Once a write may have begun,
+a timeout, reset or invalid response is
+`class:"unknown_outcome", executed:"unknown", retryable:false`. Neither proxy
+automatically retries. The native proxy caps connection attempts at five seconds
+(or the configured timeout when shorter); normal send/receive operations use
+the configured timeout. When the transport cannot prove whether a write began,
+it conservatively reports `unknown_outcome`.
+
 ## Ownership and leases
 
 The lead assigns each `.uasset`, `.umap`, shared header, Build.cs and configuration file to one owner. Use separate source worktrees or distinct files where practical. Asset ownership is a team convention in addition to the global server lease; the lease does not implement per-asset locks.
@@ -84,6 +94,14 @@ Legacy HTTP JSON-RPC batches pin a validated lease through the remaining items. 
 ```
 
 Inspect without a token using `{"operation":"status"}`. TTL is 10–600 seconds. Do not share the token with concurrent workers; ownership of a token permits calls but does not order that owner's requests. Choose a TTL appropriate to the operation, renew with headroom, and avoid handing ownership to another agent while an asynchronous operation is still running.
+
+On stdin EOF, proxies drain accepted requests, then spend at most two seconds
+total attempting releases for tokens they observed in successful `acquire`
+responses. Merely passing or renewing a token does not transfer cleanup
+ownership; an explicitly released token is removed. These final releases are
+best-effort sends and do not wait for confirmation. A crash or forced process
+termination may prevent cleanup, so explicit release and lease expiry remain
+necessary. EOF cleanup does not cancel or roll back accepted calls.
 
 While a lease is active, other clients' unowned calls are rejected. Discovery, status, guide, and `describe_query`'s `action_schema` are exempt from lease ownership for planning; a busy game thread can still delay them. Search across namespaces with `monolith_discover({"filter":"search term"})`. This is a cooperative guard for local clients. It is process-local, disappears on editor restart, and does not control manual editor input, shell writes or other plugins. A lease does not promise rollback, cancellation, atomic multi-call transactions or exactly-once execution. Without an active lease, legacy clients may still operate. To use older Monolith builds without coordination, designate one editor worker.
 

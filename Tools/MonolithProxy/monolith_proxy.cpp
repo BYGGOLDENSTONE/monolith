@@ -35,6 +35,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <optional>
+#include <memory>
 #include <cstdlib>
 #include <cstdio>
 #include <fstream>
@@ -622,10 +623,68 @@ static std::wstring to_wide(const std::string& s)
     return ws;
 }
 
+enum class TransportFailure { NotSent, UnknownOutcome };
+
+// Callback state must survive asynchronous cancellation. The request owns one
+// shared_ptr holder until HANDLE_CLOSING; the caller owns another while waiting.
+struct HttpRequestContext {
+    std::atomic<bool> sending{false};
+    std::atomic<DWORD> async_error{ERROR_SUCCESS};
+    DWORD_PTR callback_context = 0;
+    HANDLE event = nullptr;
+    std::string body;
+    ~HttpRequestContext() { if (event) CloseHandle(event); }
+};
+
+static void CALLBACK request_status_callback(HINTERNET, DWORD_PTR context,
+    DWORD status, LPVOID information, DWORD information_size)
+{
+    if (!context) return;
+    auto* owner = reinterpret_cast<std::shared_ptr<HttpRequestContext>*>(context);
+    if (status == WINHTTP_CALLBACK_STATUS_HANDLE_CLOSING) {
+        // The final callback cannot overlap earlier callbacks for this handle.
+        delete owner;
+        return;
+    }
+    const auto state = *owner;
+    if (status == WINHTTP_CALLBACK_STATUS_SENDING_REQUEST || status == WINHTTP_CALLBACK_STATUS_REQUEST_SENT)
+        state->sending = true;
+    if (status == WINHTTP_CALLBACK_STATUS_REQUEST_ERROR && information && information_size >= sizeof(WINHTTP_ASYNC_RESULT))
+        state->async_error = static_cast<const WINHTTP_ASYNC_RESULT*>(information)->dwError;
+    if (status == WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE ||
+        status == WINHTTP_CALLBACK_STATUS_REQUEST_ERROR) {
+        if (state->event) SetEvent(state->event);
+    }
+}
+
+static bool attach_request_context(HINTERNET request, const std::shared_ptr<HttpRequestContext>& state)
+{
+    const DWORD flags = WINHTTP_CALLBACK_FLAG_HANDLES | WINHTTP_CALLBACK_FLAG_SEND_REQUEST |
+        WINHTTP_CALLBACK_FLAG_SENDREQUEST_COMPLETE | WINHTTP_CALLBACK_FLAG_REQUEST_ERROR;
+    if (WinHttpSetStatusCallback(request, request_status_callback, flags, 0) == WINHTTP_INVALID_STATUS_CALLBACK)
+        return false;
+    auto* owner = new std::shared_ptr<HttpRequestContext>(state);
+    DWORD_PTR context = reinterpret_cast<DWORD_PTR>(owner);
+    if (!WinHttpSetOption(request, WINHTTP_OPTION_CONTEXT_VALUE, &context, sizeof(context))) {
+        delete owner;
+        return false;
+    }
+    state->callback_context = context;
+    return true;
+}
+
+static bool definitely_not_sent(DWORD error, const HttpRequestContext& state)
+{
+    if (state.sending) return false;
+    return error == ERROR_WINHTTP_NAME_NOT_RESOLVED || error == ERROR_WINHTTP_CANNOT_CONNECT;
+}
+
 // POST JSON to Monolith. Returns response body or empty string on failure.
 static std::string post_monolith(const std::string& body, double timeout_sec = TIMEOUT,
-    const std::string& request_uuid = {}, const std::string& client = {})
+    const std::string& request_uuid = {}, const std::string& client = {},
+    TransportFailure* failure = nullptr)
 {
+    if (failure) *failure = TransportFailure::NotSent;
     HINTERNET hSession = WinHttpOpen(
         L"MonolithProxy/1.0",
         WINHTTP_ACCESS_TYPE_NO_PROXY,
@@ -645,11 +704,20 @@ static std::string post_monolith(const std::string& body, double timeout_sec = T
         WINHTTP_DEFAULT_ACCEPT_TYPES, g_monolith_secure ? WINHTTP_FLAG_SECURE : 0);
     if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return {}; }
 
-    // Set timeouts (milliseconds)
-    DWORD timeout_ms = (DWORD)(timeout_sec * 1000);
-    WinHttpSetTimeouts(hRequest, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
+    const auto state = std::make_shared<HttpRequestContext>();
+    const auto close = [&] {
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+    };
+    if (!attach_request_context(hRequest, state)) { close(); return {}; }
+    // WinHttpConnect creates a handle; the actual connection occurs during send.
+    const DWORD timeout_ms = std::max<DWORD>(1, (DWORD)(timeout_sec * 1000));
     DWORD disableFeatures = WINHTTP_DISABLE_REDIRECTS;
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_DISABLE_FEATURE, &disableFeatures, sizeof(disableFeatures));
+    if (!WinHttpSetTimeouts(hRequest, timeout_ms, std::min<DWORD>(5000, timeout_ms), timeout_ms, timeout_ms) ||
+        !WinHttpSetOption(hRequest, WINHTTP_OPTION_DISABLE_FEATURE, &disableFeatures, sizeof(disableFeatures))) {
+        close(); return {};
+    }
 
     // Send
     std::wstring hdrs = L"Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2025-03-26";
@@ -661,30 +729,32 @@ static std::string post_monolith(const std::string& body, double timeout_sec = T
     BOOL ok = WinHttpSendRequest(
         hRequest, hdrs.c_str(), (DWORD)-1,
         (LPVOID)body.c_str(), (DWORD)body.size(),
-        (DWORD)body.size(), 0);
+        (DWORD)body.size(), state->callback_context);
 
+    const DWORD send_error = ok ? ERROR_SUCCESS : GetLastError();
+    if (failure) *failure = (!ok && definitely_not_sent(send_error, *state))
+        ? TransportFailure::NotSent : TransportFailure::UnknownOutcome;
     if (!ok || !WinHttpReceiveResponse(hRequest, nullptr))
     {
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
+        close();
         return {};
     }
 
-    // Read response
+    // A read/query failure is not EOF, even if a valid-looking JSON prefix arrived.
     std::string response;
-    DWORD bytesAvailable = 0;
-    while (WinHttpQueryDataAvailable(hRequest, &bytesAvailable) && bytesAvailable > 0)
+    while (true)
     {
+        DWORD bytesAvailable = 0;
+        if (!WinHttpQueryDataAvailable(hRequest, &bytesAvailable)) { close(); return {}; }
+        if (!bytesAvailable) break;
         std::string chunk(bytesAvailable, '\0');
         DWORD bytesRead = 0;
-        WinHttpReadData(hRequest, &chunk[0], bytesAvailable, &bytesRead);
-        response.append(chunk.c_str(), bytesRead);
+        if (!WinHttpReadData(hRequest, &chunk[0], bytesAvailable, &bytesRead) || !bytesRead) {
+            close(); return {};
+        }
+        response.append(chunk.data(), bytesRead);
     }
-
-    WinHttpCloseHandle(hRequest);
-    WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
+    close();
 
     try {
         auto parsed = json::parse(response);
@@ -784,6 +854,151 @@ static std::string make_tool_error(const json& id, const std::string& message)
         {"isError", true}
     };
     return resp.dump();
+}
+
+static std::string make_transport_error(const json& id, TransportFailure failure,
+    const std::string& request_uuid)
+{
+    const bool not_sent = failure == TransportFailure::NotSent;
+    const std::string message = not_sent
+        ? "Monolith connection failed before the request was sent. Retry after the editor is reachable."
+        : "Monolith transport failed after delivery may have begun. Execution outcome is unknown; inspect editor state before retrying. No automatic retry was sent.";
+    const json data = {{"class", not_sent ? "not_sent" : "unknown_outcome"},
+        {"executed", not_sent ? json(false) : json("unknown")}, {"retryable", not_sent},
+        {"request_id", request_uuid}};
+    const json structured = {{"error", message}, {"code", -32603}, {"data", data}};
+    return make_result(id, {
+        {"isError", true}, {"structuredContent", structured},
+        {"content", json::array({{{"type", "text"}, {"text", structured.dump()}}})}});
+}
+
+static std::mutex g_owned_leases_mutex;
+static std::set<std::string> g_owned_leases;
+
+static void observe_owned_lease(const json& msg, const std::string& response)
+{
+    try {
+        const auto& params = msg.at("params");
+        if (params.value("name", "") != "monolith_coordination") return;
+        json args = params.at("arguments");
+        if (!args.is_object()) return;
+        // Match the server's flat / nested object / JSON-string params normalization.
+        auto nested = args.value("params", json());
+        if (nested.is_string()) {
+            try { nested = json::parse(nested.get<std::string>()); }
+            catch (...) { nested = json(); }
+        }
+        if (nested.is_object()) {
+            args.erase("params");
+            args.update(nested); // Nested params override top-level extras.
+        }
+        const std::string operation = args.value("operation", "status");
+        if (operation != "acquire" && operation != "release") return;
+        const auto envelope = json::parse(response);
+        if (envelope.contains("error") || !envelope.contains("result")) return;
+        const auto& result = envelope["result"];
+        if (!result.is_object() || result.value("isError", false)) return;
+        if (operation == "release") {
+            const auto token = args.find("_lease_token");
+            if (token != args.end() && token->is_string()) {
+                std::lock_guard<std::mutex> lock(g_owned_leases_mutex);
+                g_owned_leases.erase(token->get<std::string>());
+            }
+            return;
+        }
+        std::vector<json> payloads{result.value("structuredContent", json())};
+        if (result.contains("content") && result["content"].is_array()) {
+            for (const auto& item : result["content"]) {
+                if (item.is_object() && item.value("type", "") == "text" &&
+                    item.contains("text") && item["text"].is_string()) {
+                    try { payloads.push_back(json::parse(item["text"].get<std::string>())); }
+                    catch (...) { /* Non-JSON diagnostic text carries no ownership evidence. */ }
+                }
+            }
+        }
+        for (const auto& payload : payloads) {
+            if (!payload.is_object()) continue;
+            const auto token = payload.find("_lease_token");
+            if (token == payload.end() || !token->is_string() || token->get<std::string>().empty()) continue;
+            std::lock_guard<std::mutex> lock(g_owned_leases_mutex);
+            g_owned_leases.insert(token->get<std::string>());
+            return;
+        }
+    } catch (...) { /* Only explicit, well-formed successful ownership evidence is accepted. */ }
+}
+
+using CleanupClock = std::chrono::steady_clock;
+
+// EOF only: complete at most one POST send under the shared deadline. No response
+// is awaited, so this cannot claim that the editor accepted the release.
+static TransportFailure send_cleanup_release(const std::string& body, const std::string& request_uuid,
+    const std::string& client, CleanupClock::time_point deadline)
+{
+    if (CleanupClock::now() >= deadline) return TransportFailure::NotSent;
+    HINTERNET session = WinHttpOpen(L"MonolithProxy/1.0", WINHTTP_ACCESS_TYPE_NO_PROXY,
+        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, WINHTTP_FLAG_ASYNC);
+    if (!session) return TransportFailure::NotSent;
+    const auto host = to_wide(g_monolith_host);
+    HINTERNET connection = WinHttpConnect(session, host.c_str(), (INTERNET_PORT)g_monolith_port, 0);
+    if (!connection) { WinHttpCloseHandle(session); return TransportFailure::NotSent; }
+    const auto path = to_wide(g_monolith_path_mcp);
+    HINTERNET request = WinHttpOpenRequest(connection, L"POST", path.c_str(), nullptr,
+        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, g_monolith_secure ? WINHTTP_FLAG_SECURE : 0);
+    if (!request) { WinHttpCloseHandle(connection); WinHttpCloseHandle(session); return TransportFailure::NotSent; }
+    auto state = std::make_shared<HttpRequestContext>();
+    state->body = body;
+    state->event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    const auto close = [&] {
+        // No other thread invokes a WinHTTP API on this handle; the callback only signals.
+        WinHttpCloseHandle(request);
+        WinHttpCloseHandle(connection);
+        WinHttpCloseHandle(session);
+    };
+    if (!state->event || !attach_request_context(request, state)) { close(); return TransportFailure::NotSent; }
+    const auto remaining_ms = [&]() -> DWORD {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - CleanupClock::now()).count();
+        return left > 0 ? static_cast<DWORD>(left) : 0;
+    };
+    DWORD remaining = remaining_ms();
+    DWORD disabled = WINHTTP_DISABLE_REDIRECTS;
+    if (!remaining || !WinHttpSetTimeouts(request, remaining, std::min<DWORD>(5000, remaining), remaining, remaining) ||
+        !WinHttpSetOption(request, WINHTTP_OPTION_DISABLE_FEATURE, &disabled, sizeof(disabled))) {
+        close(); return TransportFailure::NotSent;
+    }
+    const auto headers = to_wide("Content-Type: application/json\r\nAccept: application/json\r\nMCP-Protocol-Version: 2025-03-26\r\nX-Monolith-Request-Id: " +
+        request_uuid + "\r\nX-Monolith-Client: " + client);
+    TransportFailure outcome = TransportFailure::UnknownOutcome;
+    const BOOL submitted = WinHttpSendRequest(request, headers.c_str(), (DWORD)-1,
+        const_cast<char*>(state->body.data()), (DWORD)state->body.size(), (DWORD)state->body.size(), state->callback_context);
+    if (submitted) {
+        remaining = remaining_ms();
+        if (remaining && WaitForSingleObject(state->event, remaining) == WAIT_OBJECT_0 &&
+            definitely_not_sent(state->async_error.load(), *state)) outcome = TransportFailure::NotSent;
+    } else if (definitely_not_sent(GetLastError(), *state)) {
+        outcome = TransportFailure::NotSent;
+    }
+    // Even after close returns the body/event remain owned until HANDLE_CLOSING.
+    close();
+    return outcome;
+}
+
+static void release_owned_leases_on_eof()
+{
+    const auto deadline = CleanupClock::now() + std::chrono::seconds(2);
+    std::set<std::string> tokens;
+    { std::lock_guard<std::mutex> lock(g_owned_leases_mutex); tokens.swap(g_owned_leases); }
+    for (const auto& token : tokens) {
+        if (CleanupClock::now() >= deadline) break;
+        const std::string uuid = new_request_uuid();
+        const std::string client = client_identity();
+        const json msg = {{"jsonrpc", "2.0"}, {"id", "monolith-eof-" + uuid}, {"method", "tools/call"},
+            {"params", {{"name", "monolith_coordination"},
+                {"arguments", {{"operation", "release"}, {"_lease_token", token}}}}}};
+        const double start = now_seconds();
+        const auto outcome = send_cleanup_release(msg.dump(), uuid, client, deadline);
+        write_call_log_line(msg, make_transport_error(msg["id"], outcome, uuid),
+            (now_seconds() - start) * 1000.0, uuid, client);
+    }
 }
 
 static std::string make_jsonrpc_error(const json& id, int code, const std::string& message)
@@ -1420,16 +1635,13 @@ static std::string handle_tools_call(const json& msg)
     const std::string request_uuid = new_request_uuid();
     const std::string client = client_identity();
     double t0 = now_seconds();
-    std::string resp = post_monolith(forwarded_msg.dump(), TIMEOUT, request_uuid, client);
+    TransportFailure failure = TransportFailure::UnknownOutcome;
+    std::string resp = post_monolith(forwarded_msg.dump(), TIMEOUT, request_uuid, client, &failure);
     double duration_ms = (now_seconds() - t0) * 1000.0;
+    if (resp.empty()) resp = make_transport_error(id, failure, request_uuid);
+    else observe_owned_lease(forwarded_msg, resp);
     write_call_log_line(forwarded_msg, resp, duration_ms, request_uuid, client);
-
-    if (!resp.empty())
-        return resp;
-
-    return make_tool_error(id,
-        "Monolith transport failed for '" + tool_name + "': offline, busy, timeout, or invalid response. "
-        "Execution outcome is unknown. Inspect editor state before retrying a mutation; no automatic retry was sent.");
+    return resp;
 }
 
 // ============================================================================
@@ -1554,9 +1766,13 @@ int main()
             if (code) write_stdout(make_jsonrpc_error(msg["id"], code, code == -32001
                 ? "Proxy queue full; request not executed. Retry with backoff." : "Request id already in flight"));
         }
-    } // Drain accepted requests before stdout and log handles close.
-    { std::lock_guard<std::mutex> lock(g_poll_lock); g_stopping = true; }
-    g_poll_cv.notify_all(); poller.join();
+        // Stop starting health probes as soon as EOF arrives, while accepted work drains.
+        { std::lock_guard<std::mutex> lock(g_poll_lock); g_stopping = true; }
+        g_poll_cv.notify_all();
+    } // Drain accepted requests before observing and releasing acquired leases.
+    try { release_owned_leases_on_eof(); }
+    catch (...) { log_msg("Best-effort EOF lease cleanup stopped after a local failure"); }
+    poller.join();
     if (g_call_log_handle != INVALID_HANDLE_VALUE) CloseHandle(g_call_log_handle);
     return 0;
 }

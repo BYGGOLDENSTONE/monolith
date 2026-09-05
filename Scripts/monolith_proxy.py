@@ -18,6 +18,10 @@ Requirements: Python 3.8+ (stdlib only, no pip install needed)
 from __future__ import annotations
 
 import hashlib
+import http.client
+import selectors
+import socket
+import ssl
 import errno
 import json
 import os
@@ -30,6 +34,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 import urllib.error
 import urllib.request
+import urllib.parse
 from datetime import datetime, timezone
 from io import TextIOWrapper
 from pathlib import Path
@@ -79,6 +84,9 @@ _stop_poll = threading.Event()
 _call_log_enabled = False           # resolved once at startup
 _call_log_handle = None             # binary append-mode file handle
 _call_log_lock = threading.Lock()
+
+_owned_leases = {}  # Tokens observed in successful acquire responses only.
+_owned_leases_lock = threading.Lock()
 
 CORE_QUERY_TOOLS = [
     "blueprint_query",
@@ -272,12 +280,70 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _direct_opener():
-    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+class _TransportTrace:
+    def __init__(self):
+        self.may_have_written = False
+        self.peer = None
+        self.tls_context = None
+
+
+class _ObservedConnection:
+    def __init__(self, *args, trace, **kwargs):
+        self.trace = trace
+        super().__init__(*args, **kwargs)
+
+    def send(self, data):
+        # HTTPConnection.send otherwise hides connect and sendall in one call.
+        # A failed connect/TLS handshake cannot have written the HTTP request.
+        if self.sock is None:
+            self.connect()
+        self.trace.peer = (self.sock.family, self.sock.getpeername())
+        self.trace.tls_context = getattr(self, "_context", None)
+        # sendall may write a prefix before raising; conservatively unknown.
+        self.trace.may_have_written = True
+        return super().send(data)
+
+
+class _ObservedHTTPConnection(_ObservedConnection, http.client.HTTPConnection):
+    pass
+
+
+class _ObservedHTTPSConnection(_ObservedConnection, http.client.HTTPSConnection):
+    pass
+
+
+class _ObservedHTTPHandler(urllib.request.HTTPHandler):
+    def __init__(self, trace):
+        super().__init__()
+        self.trace = trace
+
+    def http_open(self, req):
+        def connection(host, **kwargs):
+            return _ObservedHTTPConnection(host, trace=self.trace, **kwargs)
+        return self.do_open(connection, req)
+
+
+class _ObservedHTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, trace):
+        super().__init__()
+        self.trace = trace
+
+    def https_open(self, req):
+        def connection(host, **kwargs):
+            return _ObservedHTTPSConnection(host, trace=self.trace, **kwargs)
+        return self.do_open(connection, req, context=self._context)
+
+
+def _direct_opener(trace=None):
+    handlers = [urllib.request.ProxyHandler({}), _NoRedirect()]
+    if trace is not None:
+        handlers.extend((_ObservedHTTPHandler(trace), _ObservedHTTPSHandler(trace)))
+    return urllib.request.build_opener(*handlers)
 
 
 def _post_monolith(body: str, timeout: float = TIMEOUT,
-                   request_uuid: str | None = None, client: str | None = None) -> str | None:
+                   request_uuid: str | None = None, client: str | None = None,
+                   trace: _TransportTrace | None = None) -> str | None:
     """POST JSON-RPC to Monolith. Returns response body or None on failure."""
     try:
         headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
@@ -292,7 +358,7 @@ def _post_monolith(body: str, timeout: float = TIMEOUT,
             method="POST",
         )
         try:
-            upstream = _direct_opener().open(req, timeout=timeout)
+            upstream = _direct_opener(trace).open(req, timeout=timeout)
         except urllib.error.HTTPError as rejection:
             # HTTP rejection bodies still carry JSON-RPC errors. Validate them
             # exactly like successful HTTP responses rather than losing evidence.
@@ -322,7 +388,7 @@ def _post_monolith(body: str, timeout: float = TIMEOUT,
                 parsed["id"] = request.get("id")
                 return json.dumps(parsed)
             return response
-    except (urllib.error.URLError, OSError, TimeoutError, ValueError) as e:
+    except (urllib.error.URLError, OSError, TimeoutError, ValueError, http.client.HTTPException) as e:
         _log(f"Monolith unreachable: {e}")
         return None
 
@@ -348,6 +414,167 @@ def _tool_error(id, message: str) -> str:
             "isError": True,
         },
     })
+
+
+def _transport_error(identifier, request_uuid, may_have_written, tool_name):
+    if may_have_written:
+        error_class = "unknown_outcome"
+        message = (f"Monolith transport failed for '{tool_name}'. Execution outcome is unknown. "
+                   "Inspect editor state before retrying a mutation; no automatic retry was sent.")
+    else:
+        error_class = "not_sent"
+        message = (f"Monolith transport failed before sending '{tool_name}'. The request did not execute; "
+                   "retry when the editor connection is available. No automatic retry was sent.")
+    structured = {"error": message, "code": -32603,
+                  "data": {"class": error_class, "executed": "unknown" if may_have_written else False,
+                           "retryable": not may_have_written, "request_id": request_uuid}}
+    return _result(identifier, {"isError": True, "structuredContent": structured,
+                               "content": [{"type": "text", "text": json.dumps(structured)}]})
+
+
+def _observe_lease(msg, response, trace):
+    params = msg.get("params", {})
+    if params.get("name") != "monolith_coordination":
+        return
+    args = params.get("arguments", {})
+    if not isinstance(args, dict):
+        return
+    nested = args.get("params")
+    if isinstance(nested, str):
+        try:
+            nested = json.loads(nested)
+        except (ValueError, TypeError, RecursionError):
+            nested = None
+    if isinstance(nested, dict):
+        # Core tools overlay nested object/string params on top-level extras.
+        args = dict(args, **nested)
+    operation = args.get("operation")
+    if operation not in ("acquire", "release"):
+        return
+    payload = json.loads(response)
+    result = payload.get("result")
+    if "error" in payload or not isinstance(result, dict) or result.get("isError"):
+        return
+    if operation == "release":
+        token = args.get("_lease_token")
+        if isinstance(token, str):
+            with _owned_leases_lock:
+                _owned_leases.pop(token, None)
+        return
+    values = [result.get("structuredContent")]
+    # Older/text-only successful responses still carry the action's JSON object.
+    content_items = result.get("content", [])
+    for content in content_items if isinstance(content_items, list) else []:
+        if isinstance(content, dict) and content.get("type") == "text":
+            try:
+                values.append(json.loads(content.get("text", "")))
+            except (ValueError, TypeError):
+                pass
+    for value in values:
+        token = value.get("_lease_token") if isinstance(value, dict) else None
+        if isinstance(token, str) and token and trace.peer is not None:
+            with _owned_leases_lock:
+                _owned_leases[token] = (trace.peer, trace.tls_context)
+            return
+
+
+def _wait_socket(sock, events, deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("EOF release deadline expired")
+    with selectors.DefaultSelector() as selector:
+        selector.register(sock, events)
+        if not selector.select(remaining):
+            raise TimeoutError("EOF release deadline expired")
+
+
+def _send_eof_release(body, peer, tls_context, request_uuid, client, deadline, trace):
+    # Reuse the successful acquire's numeric peer: no uncancellable DNS at EOF.
+    # All connect/TLS/send operations are nonblocking and share one deadline.
+    family, address = peer
+    parts = urllib.parse.urlsplit(MONOLITH_URL)
+    host = parts.hostname.encode("idna").decode("ascii")
+    host_header = f"[{host}]" if ":" in host else host
+    if parts.port is not None:
+        host_header += f":{parts.port}"
+    target = urllib.parse.urlunsplit(("", "", parts.path or "/", parts.query, ""))
+    encoded_body = body.encode("utf-8")
+    headers = (f"POST {target} HTTP/1.1\r\nHost: {host_header}\r\n"
+               "Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\n"
+               "MCP-Protocol-Version: 2025-03-26\r\nConnection: close\r\n"
+               f"X-Monolith-Request-Id: {request_uuid}\r\nX-Monolith-Client: {client}\r\n"
+               f"Content-Length: {len(encoded_body)}\r\n\r\n").encode("ascii")
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        sock.setblocking(False)
+        error = sock.connect_ex(address)
+        pending = {0, errno.EINPROGRESS, errno.EWOULDBLOCK, errno.EALREADY,
+                   getattr(errno, "WSAEWOULDBLOCK", 10035)}
+        if error not in pending:
+            raise OSError(error, "EOF release connect failed")
+        if error:
+            _wait_socket(sock, selectors.EVENT_WRITE, deadline)
+            error = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+            if error:
+                raise OSError(error, "EOF release connect failed")
+        if parts.scheme == "https":
+            # Context was created and used by the successful HTTPS acquire.
+            # Preserve certificate validation and the original hostname/SNI.
+            if tls_context is None:
+                raise ValueError("No validated TLS context for EOF release")
+            sock = tls_context.wrap_socket(sock, server_hostname=host, do_handshake_on_connect=False)
+            while True:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("EOF release deadline expired")
+                try:
+                    sock.do_handshake()
+                    break
+                except ssl.SSLWantReadError:
+                    _wait_socket(sock, selectors.EVENT_READ, deadline)
+                except ssl.SSLWantWriteError:
+                    _wait_socket(sock, selectors.EVENT_WRITE, deadline)
+        pending_data = memoryview(headers + encoded_body)
+        while pending_data:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("EOF release deadline expired")
+            try:
+                # Even a failed write may have submitted a prefix.
+                trace.may_have_written = True
+                written = sock.send(pending_data)
+                if written == 0:
+                    raise ConnectionError("EOF release socket closed during send")
+                pending_data = pending_data[written:]
+            except ssl.SSLWantReadError:
+                _wait_socket(sock, selectors.EVENT_READ, deadline)
+            except (ssl.SSLWantWriteError, BlockingIOError):
+                _wait_socket(sock, selectors.EVENT_WRITE, deadline)
+        # Best-effort submission only; no response wait or success assertion.
+    finally:
+        sock.close()
+
+
+def _release_owned_leases():
+    with _owned_leases_lock:
+        leases = list(_owned_leases.items())
+        _owned_leases.clear()
+    deadline = time.monotonic() + 2.0
+    for token, (peer, tls_context) in leases:
+        if time.monotonic() >= deadline:
+            break
+        request_uuid = str(uuid.uuid4())
+        client = _client_identity()
+        msg = {"jsonrpc": "2.0", "id": "proxy-eof-" + request_uuid, "method": "tools/call",
+               "params": {"name": "monolith_coordination",
+                          "arguments": {"operation": "release", "_lease_token": token}}}
+        trace = _TransportTrace()
+        started = time.perf_counter()
+        try:
+            _send_eof_release(json.dumps(msg), peer, tls_context, request_uuid, client, deadline, trace)
+        except (OSError, ValueError) as exc:
+            _log(f"Best-effort EOF release transport failed: {type(exc).__name__}")
+        # No response was read, so a submitted release always remains unknown.
+        response = _transport_error(msg["id"], request_uuid, trace.may_have_written, "monolith_coordination")
+        _write_call_log_line(msg, response, (time.perf_counter() - started) * 1000.0, request_uuid, client)
 
 
 def _jsonrpc_error(id, code: int, message: str) -> str:
@@ -740,19 +967,17 @@ def handle_tools_call(msg: dict) -> str:
     """Forward tools/call to Monolith. Graceful error if down."""
     request_uuid = str(uuid.uuid4())
     client = _client_identity()
+    trace = _TransportTrace()
     t0 = time.perf_counter()
-    resp = _post_monolith(json.dumps(msg), request_uuid=request_uuid, client=client)
+    resp = _post_monolith(json.dumps(msg), request_uuid=request_uuid, client=client, trace=trace)
     duration_ms = (time.perf_counter() - t0) * 1000.0
-    _write_call_log_line(msg, resp, duration_ms, request_uuid, client)
-
     if resp:
-        return resp
-    tool_name = msg.get("params", {}).get("name", "unknown")
-    return _tool_error(
-        msg.get("id"),
-        f"Monolith transport failed for '{tool_name}': editor offline, busy, timeout, or invalid response. "
-        "Execution outcome is unknown. Inspect editor state before retrying a mutation; no automatic retry was sent.",
-    )
+        _observe_lease(msg, resp, trace)
+    else:
+        resp = _transport_error(msg.get("id"), request_uuid, trace.may_have_written,
+                                msg.get("params", {}).get("name", "unknown"))
+    _write_call_log_line(msg, resp, duration_ms, request_uuid, client)
+    return resp
 
 
 def main() -> None:
@@ -851,8 +1076,11 @@ def main() -> None:
                     _write(stdout, _jsonrpc_error(msg["id"], code, message))
                     continue
                 (metadata_pool if metadata else pool).submit(dispatch, msg, metadata)
+            # EOF: stop new health polls before accepted workers finish draining.
+            _stop_poll.set()
     finally:
         _stop_poll.set()
+        _release_owned_leases()
         poller.join(timeout=4)
         if _call_log_handle is not None:
             _call_log_handle.close()
