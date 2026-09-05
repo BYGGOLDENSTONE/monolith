@@ -101,7 +101,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateUserDefinedSt
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
 	if (SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required parameter: save_path")).WithErrorMessage(TEXT("Missing required parameter: save_path"));
 	}
 
 	// Defensive: reject malformed paths (e.g. "//Game/...") before they reach the Asset
@@ -121,7 +121,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateUserDefinedSt
 	const TArray<TSharedPtr<FJsonValue>>* FieldsArray = nullptr;
 	if (!Params->TryGetArrayField(TEXT("fields"), FieldsArray) || !FieldsArray || FieldsArray->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: fields (array of {name, type, default_value?})"));
+		return FMonolithActionResult::InvalidParam(TEXT("fields"), TEXT("Missing or empty required parameter: fields (array of {name, type, default_value?})")).WithErrorMessage(TEXT("Missing or empty required parameter: fields (array of {name, type, default_value?})"));
 	}
 
 	// Extract asset name from save path
@@ -285,7 +285,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateUserDefinedEn
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
 	if (SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required parameter: save_path")).WithErrorMessage(TEXT("Missing required parameter: save_path"));
 	}
 
 	// Defensive: reject malformed paths (e.g. "//Game/...") before they reach the Asset
@@ -305,7 +305,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateUserDefinedEn
 	const TArray<TSharedPtr<FJsonValue>>* ValuesArray = nullptr;
 	if (!Params->TryGetArrayField(TEXT("values"), ValuesArray) || !ValuesArray || ValuesArray->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: values (array of strings)"));
+		return FMonolithActionResult::InvalidParam(TEXT("values"), TEXT("Missing or empty required parameter: values (array of strings)")).WithErrorMessage(TEXT("Missing or empty required parameter: values (array of strings)"));
 	}
 
 	// Extract asset name from save path
@@ -488,7 +488,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateDataTable(con
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
 	if (SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required parameter: save_path")).WithErrorMessage(TEXT("Missing required parameter: save_path"));
 	}
 
 	// Defensive: reject malformed paths (e.g. "//Game/...") before they reach the Asset
@@ -508,7 +508,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateDataTable(con
 	FString RowStructName = Params->GetStringField(TEXT("row_struct"));
 	if (RowStructName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: row_struct"));
+		return FMonolithActionResult::InvalidParam(TEXT("row_struct"), TEXT("Missing required parameter: row_struct")).WithErrorMessage(TEXT("Missing required parameter: row_struct"));
 	}
 
 	// Resolve the row struct
@@ -594,26 +594,26 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleAddDataTableRow(con
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path"));
 	}
 
 	FString RowName = Params->GetStringField(TEXT("row_name"));
 	if (RowName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: row_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("row_name"), TEXT("Missing required parameter: row_name")).WithErrorMessage(TEXT("Missing required parameter: row_name"));
 	}
 
 	const TSharedPtr<FJsonObject>* ValuesObj = nullptr;
 	if (!Params->TryGetObjectField(TEXT("values"), ValuesObj) || !ValuesObj || !(*ValuesObj).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: values (JSON object of column->value)"));
+		return FMonolithActionResult::InvalidParam(TEXT("values"), TEXT("Missing required parameter: values (JSON object of column->value)")).WithErrorMessage(TEXT("Missing required parameter: values (JSON object of column->value)"));
 	}
 
 	// Load the DataTable
 	UDataTable* DataTable = FMonolithAssetUtils::LoadAssetByPath<UDataTable>(AssetPath);
 	if (!DataTable)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("DataTable not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("DataTable"), AssetPath).WithErrorMessage(FString::Printf(TEXT("DataTable not found: %s"), *AssetPath));
 	}
 
 	const UScriptStruct* RowStruct = DataTable->GetRowStruct();
@@ -773,7 +773,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleGetDataTableRows(co
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path"));
 	}
 
 	FString RowNameFilter;
@@ -783,7 +783,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleGetDataTableRows(co
 	UDataTable* DataTable = FMonolithAssetUtils::LoadAssetByPath<UDataTable>(AssetPath);
 	if (!DataTable)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("DataTable not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("DataTable"), AssetPath).WithErrorMessage(FString::Printf(TEXT("DataTable not found: %s"), *AssetPath));
 	}
 
 	const UScriptStruct* RowStruct = DataTable->GetRowStruct();
@@ -844,7 +844,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateDataAsset(con
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
 	if (SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required parameter: save_path")).WithErrorMessage(TEXT("Missing required parameter: save_path"));
 	}
 
 	// Defensive: reject malformed paths (e.g. "//Game/...") before they reach the Asset
@@ -864,7 +864,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateDataAsset(con
 	FString ClassName = Params->GetStringField(TEXT("class_name"));
 	if (ClassName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: class_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("class_name"), TEXT("Missing required parameter: class_name")).WithErrorMessage(TEXT("Missing required parameter: class_name"));
 	}
 
 	// Extract asset name from save path
@@ -1035,7 +1035,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleSeedDataAsset(const
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
 	if (SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required parameter: save_path")).WithErrorMessage(TEXT("Missing required parameter: save_path"));
 	}
 
 	// Defensive: reject malformed paths (e.g. "//Game/...") before they reach the Asset
@@ -1055,13 +1055,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleSeedDataAsset(const
 	FString ClassName = Params->GetStringField(TEXT("class_name"));
 	if (ClassName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: class_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("class_name"), TEXT("Missing required parameter: class_name")).WithErrorMessage(TEXT("Missing required parameter: class_name"));
 	}
 
 	const TSharedPtr<FJsonObject>* TreePtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("tree"), TreePtr) || !TreePtr || !(*TreePtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: tree (JSON object of property->value)"));
+		return FMonolithActionResult::InvalidParam(TEXT("tree"), TEXT("Missing required parameter: tree (JSON object of property->value)")).WithErrorMessage(TEXT("Missing required parameter: tree (JSON object of property->value)"));
 	}
 	TSharedPtr<FJsonObject> Tree = *TreePtr;
 

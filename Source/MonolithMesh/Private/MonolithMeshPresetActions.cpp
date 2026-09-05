@@ -565,19 +565,19 @@ FMonolithActionResult FMonolithMeshPresetActions::CreateStorytellingPattern(cons
 	FString Name;
 	if (!Params->TryGetStringField(TEXT("name"), Name) || Name.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required param: name")).WithErrorMessage(TEXT("Missing required param: name"));
 	}
 
 	FString Description;
 	if (!Params->TryGetStringField(TEXT("description"), Description))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: description"));
+		return FMonolithActionResult::InvalidParam(TEXT("description"), TEXT("Missing required param: description")).WithErrorMessage(TEXT("Missing required param: description"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* ElementsArr;
 	if (!Params->TryGetArrayField(TEXT("elements"), ElementsArr) || ElementsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: elements"));
+		return FMonolithActionResult::InvalidParam(TEXT("elements"), TEXT("Missing or empty required param: elements")).WithErrorMessage(TEXT("Missing or empty required param: elements"));
 	}
 
 	bool bOverwrite = false;
@@ -815,13 +815,13 @@ FMonolithActionResult FMonolithMeshPresetActions::CreateAcousticProfile(const TS
 	FString Name;
 	if (!Params->TryGetStringField(TEXT("name"), Name) || Name.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required param: name")).WithErrorMessage(TEXT("Missing required param: name"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* SurfacesArr;
 	if (!Params->TryGetArrayField(TEXT("surfaces"), SurfacesArr) || SurfacesArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: surfaces"));
+		return FMonolithActionResult::InvalidParam(TEXT("surfaces"), TEXT("Missing or empty required param: surfaces")).WithErrorMessage(TEXT("Missing or empty required param: surfaces"));
 	}
 
 	bool bOverwrite = false;
@@ -922,13 +922,13 @@ FMonolithActionResult FMonolithMeshPresetActions::CreateTensionProfile(const TSh
 	FString Name;
 	if (!Params->TryGetStringField(TEXT("name"), Name) || Name.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required param: name")).WithErrorMessage(TEXT("Missing required param: name"));
 	}
 
 	const TSharedPtr<FJsonObject>* FactorsPtr;
 	if (!Params->TryGetObjectField(TEXT("factors"), FactorsPtr) || !FactorsPtr || !(*FactorsPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: factors"));
+		return FMonolithActionResult::InvalidParam(TEXT("factors"), TEXT("Missing required param: factors")).WithErrorMessage(TEXT("Missing required param: factors"));
 	}
 
 	if ((*FactorsPtr)->Values.Num() == 0)
@@ -1155,7 +1155,7 @@ FMonolithActionResult FMonolithMeshPresetActions::ExportGenrePreset(const TShare
 	FString Name;
 	if (!Params->TryGetStringField(TEXT("name"), Name) || Name.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required param: name")).WithErrorMessage(TEXT("Missing required param: name"));
 	}
 
 	bool bOverwrite = false;
@@ -1331,7 +1331,7 @@ FMonolithActionResult FMonolithMeshPresetActions::ImportGenrePreset(const TShare
 	FString PresetName;
 	if (!Params->TryGetStringField(TEXT("preset_name"), PresetName) || PresetName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: preset_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("preset_name"), TEXT("Missing required param: preset_name")).WithErrorMessage(TEXT("Missing required param: preset_name"));
 	}
 
 	FString MergeMode = TEXT("skip_existing");

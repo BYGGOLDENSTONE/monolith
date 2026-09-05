@@ -134,7 +134,7 @@ FMonolithActionResult FMonolithLogicDriverAssetActions::HandleCreateStateMachine
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
 	if (SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'save_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param 'save_path'")).WithErrorMessage(TEXT("Missing required param 'save_path'"));
 	}
 
 	// Determine asset name
@@ -251,7 +251,7 @@ FMonolithActionResult FMonolithLogicDriverAssetActions::HandleGetStateMachine(co
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 
 	FString LoadError;
@@ -327,7 +327,7 @@ FMonolithActionResult FMonolithLogicDriverAssetActions::HandleDeleteStateMachine
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 
 	// Verify asset exists and is an SM Blueprint
@@ -371,13 +371,13 @@ FMonolithActionResult FMonolithLogicDriverAssetActions::HandleDuplicateStateMach
 	FString SourcePath = Params->GetStringField(TEXT("source_path"));
 	if (SourcePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'source_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("source_path"), TEXT("Missing required param 'source_path'")).WithErrorMessage(TEXT("Missing required param 'source_path'"));
 	}
 
 	FString DestPath = Params->GetStringField(TEXT("dest_path"));
 	if (DestPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'dest_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("dest_path"), TEXT("Missing required param 'dest_path'")).WithErrorMessage(TEXT("Missing required param 'dest_path'"));
 	}
 
 	// Verify source exists and is an SM Blueprint
@@ -424,9 +424,9 @@ FMonolithActionResult FMonolithLogicDriverAssetActions::HandleCreateNodeBlueprin
 	FString AssetName = Params->GetStringField(TEXT("name"));
 	FString NodeType = Params->GetStringField(TEXT("node_type")).ToLower();
 
-	if (SavePath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'save_path'"));
-	if (AssetName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'name'"));
-	if (NodeType.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'node_type'"));
+	if (SavePath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param 'save_path'")).WithErrorMessage(TEXT("Missing required param 'save_path'"));
+	if (AssetName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required param 'name'")).WithErrorMessage(TEXT("Missing required param 'name'"));
+	if (NodeType.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_type"), TEXT("Missing required param 'node_type'")).WithErrorMessage(TEXT("Missing required param 'node_type'"));
 
 	if (NodeType != TEXT("state") && NodeType != TEXT("transition")
 		&& NodeType != TEXT("conduit") && NodeType != TEXT("state_machine"))
@@ -537,7 +537,7 @@ FMonolithActionResult FMonolithLogicDriverAssetActions::HandleGetNodeBlueprint(c
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 
 	UClass* NodeBPClass = MonolithLD::GetSMNodeBlueprintClass();

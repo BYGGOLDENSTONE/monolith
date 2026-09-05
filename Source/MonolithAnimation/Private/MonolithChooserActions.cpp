@@ -357,7 +357,7 @@ FMonolithActionResult FMonolithChooserActions::HandleInspectChooser(const TShare
 	UChooserTable* Table = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(AssetPath);
 	if (!Table)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("ChooserTable"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
 	}
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
@@ -508,7 +508,7 @@ FMonolithActionResult FMonolithChooserActions::HandleDuplicateChooserTree(const 
 	const FString DestFolder = Params->GetStringField(TEXT("destination_folder"));
 	if (DestFolder.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: destination_folder"));
+		return FMonolithActionResult::InvalidParam(TEXT("destination_folder"), TEXT("Missing required parameter: destination_folder")).WithErrorMessage(TEXT("Missing required parameter: destination_folder"));
 	}
 
 	// Normalize an asset reference to a comparable package path: strip any
@@ -954,13 +954,13 @@ FMonolithActionResult FMonolithChooserActions::HandleSetContextObjectClass(const
 
 	if (ClassPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: class_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("class_path"), TEXT("Missing required parameter: class_path")).WithErrorMessage(TEXT("Missing required parameter: class_path"));
 	}
 
 	UChooserTable* Table = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(AssetPath);
 	if (!Table)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("ChooserTable"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
 	}
 
 	UClass* NewClass = LoadClass<UObject>(nullptr, *ClassPath);
@@ -1052,19 +1052,19 @@ FMonolithActionResult FMonolithChooserActions::HandleSetResultAssetReference(con
 	double RowVal = 0.0;
 	if (!Params->TryGetNumberField(TEXT("row_or_column"), RowVal))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: row_or_column"));
+		return FMonolithActionResult::InvalidParam(TEXT("row_or_column"), TEXT("Missing required parameter: row_or_column")).WithErrorMessage(TEXT("Missing required parameter: row_or_column"));
 	}
 	const int32 Row = static_cast<int32>(RowVal);
 
 	if (NewAssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path_value"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path_value"), TEXT("Missing required parameter: asset_path_value")).WithErrorMessage(TEXT("Missing required parameter: asset_path_value"));
 	}
 
 	UChooserTable* Table = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(AssetPath);
 	if (!Table)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("ChooserTable"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
 	}
 
 #if WITH_EDITORONLY_DATA
@@ -1125,19 +1125,19 @@ FMonolithActionResult FMonolithChooserActions::HandleSetEvaluateChooserResultRef
 	double RowVal = 0.0;
 	if (!Params->TryGetNumberField(TEXT("row"), RowVal))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: row"));
+		return FMonolithActionResult::InvalidParam(TEXT("row"), TEXT("Missing required parameter: row")).WithErrorMessage(TEXT("Missing required parameter: row"));
 	}
 	const int32 Row = static_cast<int32>(RowVal);
 
 	if (ChildChooserPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: child_chooser_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("child_chooser_path"), TEXT("Missing required parameter: child_chooser_path")).WithErrorMessage(TEXT("Missing required parameter: child_chooser_path"));
 	}
 
 	UChooserTable* Table = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(AssetPath);
 	if (!Table)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("ChooserTable"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
 	}
 
 #if WITH_EDITORONLY_DATA
@@ -1160,7 +1160,7 @@ FMonolithActionResult FMonolithChooserActions::HandleSetEvaluateChooserResultRef
 	UChooserTable* ChildTable = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(ChildChooserPath);
 	if (!ChildTable)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("child ChooserTable"), ChildChooserPath).WithErrorMessage(FString::Printf(
 			TEXT("child ChooserTable not found: %s"), *ChildChooserPath));
 	}
 
@@ -1196,7 +1196,7 @@ FMonolithActionResult FMonolithChooserActions::HandleValidateChooser(const TShar
 	UChooserTable* Table = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(AssetPath);
 	if (!Table)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("ChooserTable"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
 	}
 
 	// Force-compile to surface validation state.

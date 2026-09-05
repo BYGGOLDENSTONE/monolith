@@ -1034,7 +1034,7 @@ FMonolithActionResult FMonolithGASCueActions::HandleBatchCreateCues(const TShare
 	const TArray<TSharedPtr<FJsonValue>>* CuesArray;
 	if (!Params->TryGetArrayField(TEXT("cues"), CuesArray) || CuesArray->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: cues"));
+		return FMonolithActionResult::InvalidParam(TEXT("cues"), TEXT("Missing or empty required parameter: cues")).WithErrorMessage(TEXT("Missing or empty required parameter: cues"));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> Results;

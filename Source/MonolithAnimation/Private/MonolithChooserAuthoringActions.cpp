@@ -638,7 +638,7 @@ FMonolithActionResult FMonolithChooserAuthoringActions::HandleAddChooserColumn(c
 	UChooserTable* Table = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(AssetPath);
 	if (!Table)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("ChooserTable"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
 	}
 
 #if WITH_EDITORONLY_DATA
@@ -728,7 +728,7 @@ FMonolithActionResult FMonolithChooserAuthoringActions::HandleAddChooserRow(cons
 	UChooserTable* Table = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(AssetPath);
 	if (!Table)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("ChooserTable"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
 	}
 
 #if WITH_EDITORONLY_DATA
@@ -840,11 +840,11 @@ FMonolithActionResult FMonolithChooserAuthoringActions::HandleSetChooserCell(con
 	double ColIdxD = 0.0, RowIdxD = 0.0;
 	if (!Params->TryGetNumberField(TEXT("column_index"), ColIdxD))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: column_index"));
+		return FMonolithActionResult::InvalidParam(TEXT("column_index"), TEXT("Missing required parameter: column_index")).WithErrorMessage(TEXT("Missing required parameter: column_index"));
 	}
 	if (!Params->TryGetNumberField(TEXT("row_index"), RowIdxD))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: row_index"));
+		return FMonolithActionResult::InvalidParam(TEXT("row_index"), TEXT("Missing required parameter: row_index")).WithErrorMessage(TEXT("Missing required parameter: row_index"));
 	}
 	const int32 ColIdx = static_cast<int32>(ColIdxD);
 	const int32 RowIdx = static_cast<int32>(RowIdxD);
@@ -852,7 +852,7 @@ FMonolithActionResult FMonolithChooserAuthoringActions::HandleSetChooserCell(con
 	UChooserTable* Table = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(AssetPath);
 	if (!Table)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("ChooserTable"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ChooserTable not found: %s"), *AssetPath));
 	}
 
 #if WITH_EDITORONLY_DATA

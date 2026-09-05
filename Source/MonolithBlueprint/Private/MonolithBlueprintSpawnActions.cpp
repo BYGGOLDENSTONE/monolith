@@ -255,7 +255,7 @@ FMonolithActionResult FMonolithBlueprintSpawnActions::HandleSpawnBlueprintActor(
 	FString BlueprintPath;
 	if (!Params->TryGetStringField(TEXT("blueprint"), BlueprintPath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: blueprint"));
+		return FMonolithActionResult::InvalidParam(TEXT("blueprint"), TEXT("Missing required param: blueprint")).WithErrorMessage(TEXT("Missing required param: blueprint"));
 	}
 
 	// Normalize and load class
@@ -404,14 +404,14 @@ FMonolithActionResult FMonolithBlueprintSpawnActions::HandleBatchSpawnBlueprintA
 	FString BlueprintPath;
 	if (!Params->TryGetStringField(TEXT("blueprint"), BlueprintPath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: blueprint"));
+		return FMonolithActionResult::InvalidParam(TEXT("blueprint"), TEXT("Missing required param: blueprint")).WithErrorMessage(TEXT("Missing required param: blueprint"));
 	}
 
 	// Required: count
 	double CountD = 0;
 	if (!Params->TryGetNumberField(TEXT("count"), CountD) || CountD < 1)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: count (must be >= 1)"));
+		return FMonolithActionResult::InvalidParam(TEXT("count"), TEXT("Missing or invalid required param: count (must be >= 1)")).WithErrorMessage(TEXT("Missing or invalid required param: count (must be >= 1)"));
 	}
 	int32 Count = FMath::RoundToInt32(CountD);
 	if (Count > 1000)

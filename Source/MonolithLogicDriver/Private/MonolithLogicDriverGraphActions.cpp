@@ -209,7 +209,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetSMStructure(con
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 
 	int32 Depth = -1;
@@ -240,11 +240,11 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetNodeDetails(con
 	FString NodeGuid = Params->GetStringField(TEXT("node_guid"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 	if (NodeGuid.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'node_guid'"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Missing required param 'node_guid'")).WithErrorMessage(TEXT("Missing required param 'node_guid'"));
 	}
 
 	FString LoadError;
@@ -263,7 +263,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetNodeDetails(con
 	UEdGraphNode* Node = MonolithLD::FindNodeByGuid(RootGraph, NodeGuid);
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
+		return FMonolithActionResult::NotFound(TEXT("Node"), NodeGuid).WithErrorMessage(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
 	}
 
 	// Get detailed node JSON from the helper
@@ -319,11 +319,11 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetNodeConnections
 	FString NodeGuid = Params->GetStringField(TEXT("node_guid"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 	if (NodeGuid.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'node_guid'"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Missing required param 'node_guid'")).WithErrorMessage(TEXT("Missing required param 'node_guid'"));
 	}
 
 	FString LoadError;
@@ -342,7 +342,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetNodeConnections
 	UEdGraphNode* Node = MonolithLD::FindNodeByGuid(RootGraph, NodeGuid);
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
+		return FMonolithActionResult::NotFound(TEXT("Node"), NodeGuid).WithErrorMessage(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> Inbound;
@@ -388,11 +388,11 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleFindNodesByType(co
 	FString NodeType = Params->GetStringField(TEXT("node_type"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 	if (NodeType.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'node_type'"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_type"), TEXT("Missing required param 'node_type'")).WithErrorMessage(TEXT("Missing required param 'node_type'"));
 	}
 
 	// Validate node_type
@@ -443,8 +443,8 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleFindNodesByClass(c
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	FString ClassName = Params->GetStringField(TEXT("class_name"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
-	if (ClassName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'class_name'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
+	if (ClassName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("class_name"), TEXT("Missing required param 'class_name'")).WithErrorMessage(TEXT("Missing required param 'class_name'"));
 
 	FString LoadError;
 	UBlueprint* SMBlueprint = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -478,7 +478,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleFindNodesByClass(c
 FMonolithActionResult FMonolithLogicDriverGraphActions::HandleGetSMStatistics(const TSharedPtr<FJsonObject>& Params)
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 
 	FString LoadError;
 	UBlueprint* SMBlueprint = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -609,7 +609,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddState(const TSh
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 
 	FString LoadError;
 	UBlueprint* BP = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -642,9 +642,9 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddTransition(cons
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	FString SourceGuid = Params->GetStringField(TEXT("source_guid"));
 	FString TargetGuid = Params->GetStringField(TEXT("target_guid"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
-	if (SourceGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'source_guid'"));
-	if (TargetGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'target_guid'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
+	if (SourceGuid.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("source_guid"), TEXT("Missing required param 'source_guid'")).WithErrorMessage(TEXT("Missing required param 'source_guid'"));
+	if (TargetGuid.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("target_guid"), TEXT("Missing required param 'target_guid'")).WithErrorMessage(TEXT("Missing required param 'target_guid'"));
 
 	FString LoadError;
 	UBlueprint* BP = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -654,10 +654,10 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddTransition(cons
 	if (!RootGraph) return FMonolithActionResult::Error(TEXT("No root SM graph found"));
 
 	UEdGraphNode* SourceNode = MonolithLD::FindNodeByGuid(RootGraph, SourceGuid);
-	if (!SourceNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Source node not found: %s"), *SourceGuid));
+	if (!SourceNode) return FMonolithActionResult::NotFound(TEXT("Source node"), SourceGuid).WithErrorMessage(FString::Printf(TEXT("Source node not found: %s"), *SourceGuid));
 
 	UEdGraphNode* TargetNode = MonolithLD::FindNodeByGuid(RootGraph, TargetGuid);
-	if (!TargetNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Target node not found: %s"), *TargetGuid));
+	if (!TargetNode) return FMonolithActionResult::NotFound(TEXT("Target node"), TargetGuid).WithErrorMessage(FString::Printf(TEXT("Target node not found: %s"), *TargetGuid));
 
 	UClass* TransClass = MonolithLD::GetSMGraphNodeTransitionClass();
 	if (!TransClass) return FMonolithActionResult::Error(TEXT("SMGraphNode_TransitionEdge class not found"));
@@ -712,7 +712,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddTransition(cons
 FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddConduit(const TSharedPtr<FJsonObject>& Params)
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 
 	FString LoadError;
 	UBlueprint* BP = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -743,7 +743,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddConduit(const T
 FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddStateMachineNode(const TSharedPtr<FJsonObject>& Params)
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 
 	FString LoadError;
 	UBlueprint* BP = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -783,7 +783,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddStateMachineNod
 FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAddAnyStateNode(const TSharedPtr<FJsonObject>& Params)
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 
 	FString LoadError;
 	UBlueprint* BP = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -812,8 +812,8 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleRemoveNode(const T
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	FString NodeGuid = Params->GetStringField(TEXT("node_guid"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
-	if (NodeGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'node_guid'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
+	if (NodeGuid.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Missing required param 'node_guid'")).WithErrorMessage(TEXT("Missing required param 'node_guid'"));
 
 	FString LoadError;
 	UBlueprint* BP = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -823,7 +823,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleRemoveNode(const T
 	if (!RootGraph) return FMonolithActionResult::Error(TEXT("No root SM graph found"));
 
 	UEdGraphNode* Node = MonolithLD::FindNodeByGuid(RootGraph, NodeGuid);
-	if (!Node) return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
+	if (!Node) return FMonolithActionResult::NotFound(TEXT("Node"), NodeGuid).WithErrorMessage(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
 
 	// Don't allow removing the entry node
 	FString NodeType = MonolithLD::GetNodeType(Node);
@@ -861,13 +861,13 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetNodeProperties(
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	FString NodeGuid = Params->GetStringField(TEXT("node_guid"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
-	if (NodeGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'node_guid'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
+	if (NodeGuid.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Missing required param 'node_guid'")).WithErrorMessage(TEXT("Missing required param 'node_guid'"));
 
 	const TSharedPtr<FJsonObject>* PropertiesObj = nullptr;
 	if (!Params->TryGetObjectField(TEXT("properties"), PropertiesObj) || !PropertiesObj || !(*PropertiesObj).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param 'properties' (must be an object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("properties"), TEXT("Missing or invalid required param 'properties' (must be an object)")).WithErrorMessage(TEXT("Missing or invalid required param 'properties' (must be an object)"));
 	}
 
 	FString LoadError;
@@ -878,7 +878,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetNodeProperties(
 	if (!RootGraph) return FMonolithActionResult::Error(TEXT("No root SM graph found"));
 
 	UEdGraphNode* Node = MonolithLD::FindNodeByGuid(RootGraph, NodeGuid);
-	if (!Node) return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
+	if (!Node) return FMonolithActionResult::NotFound(TEXT("Node"), NodeGuid).WithErrorMessage(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
 
 	TArray<FString> SetProps;
 	TArray<FString> FailedProps;
@@ -935,8 +935,8 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetInitialState(co
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	FString NodeGuid = Params->GetStringField(TEXT("node_guid"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
-	if (NodeGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'node_guid'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
+	if (NodeGuid.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Missing required param 'node_guid'")).WithErrorMessage(TEXT("Missing required param 'node_guid'"));
 
 	FString LoadError;
 	UBlueprint* BP = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -946,7 +946,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetInitialState(co
 	if (!RootGraph) return FMonolithActionResult::Error(TEXT("No root SM graph found"));
 
 	UEdGraphNode* TargetNode = MonolithLD::FindNodeByGuid(RootGraph, NodeGuid);
-	if (!TargetNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
+	if (!TargetNode) return FMonolithActionResult::NotFound(TEXT("Node"), NodeGuid).WithErrorMessage(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
 
 	// Find the entry node — it's the one whose type is "entry"
 	UEdGraphNode* EntryNode = nullptr;
@@ -1017,8 +1017,8 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetEndState(const 
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	FString NodeGuid = Params->GetStringField(TEXT("node_guid"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
-	if (NodeGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'node_guid'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
+	if (NodeGuid.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Missing required param 'node_guid'")).WithErrorMessage(TEXT("Missing required param 'node_guid'"));
 
 	bool bIsEndState = true;
 	if (Params->HasField(TEXT("is_end_state")))
@@ -1034,7 +1034,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetEndState(const 
 	if (!RootGraph) return FMonolithActionResult::Error(TEXT("No root SM graph found"));
 
 	UEdGraphNode* Node = MonolithLD::FindNodeByGuid(RootGraph, NodeGuid);
-	if (!Node) return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
+	if (!Node) return FMonolithActionResult::NotFound(TEXT("Node"), NodeGuid).WithErrorMessage(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
 
 	// Set bIsEndState via reflection
 	FString ValueStr = bIsEndState ? TEXT("True") : TEXT("False");
@@ -1064,9 +1064,9 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetNodeClass(const
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	FString NodeGuid = Params->GetStringField(TEXT("node_guid"));
 	FString ClassPath = Params->GetStringField(TEXT("class_path"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
-	if (NodeGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'node_guid'"));
-	if (ClassPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'class_path'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
+	if (NodeGuid.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Missing required param 'node_guid'")).WithErrorMessage(TEXT("Missing required param 'node_guid'"));
+	if (ClassPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("class_path"), TEXT("Missing required param 'class_path'")).WithErrorMessage(TEXT("Missing required param 'class_path'"));
 
 	FString LoadError;
 	UBlueprint* BP = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -1076,7 +1076,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleSetNodeClass(const
 	if (!RootGraph) return FMonolithActionResult::Error(TEXT("No root SM graph found"));
 
 	UEdGraphNode* Node = MonolithLD::FindNodeByGuid(RootGraph, NodeGuid);
-	if (!Node) return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
+	if (!Node) return FMonolithActionResult::NotFound(TEXT("Node"), NodeGuid).WithErrorMessage(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
 
 	// Resolve the class
 	UClass* NodeInstanceClass = FindFirstObject<UClass>(*ClassPath, EFindFirstObjectOptions::NativeFirst);
@@ -1141,9 +1141,9 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleRenameNode(const T
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	FString NodeGuid = Params->GetStringField(TEXT("node_guid"));
 	FString NewName = Params->GetStringField(TEXT("new_name"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
-	if (NodeGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'node_guid'"));
-	if (NewName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'new_name'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
+	if (NodeGuid.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Missing required param 'node_guid'")).WithErrorMessage(TEXT("Missing required param 'node_guid'"));
+	if (NewName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("new_name"), TEXT("Missing required param 'new_name'")).WithErrorMessage(TEXT("Missing required param 'new_name'"));
 
 	FString LoadError;
 	UBlueprint* BP = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -1153,7 +1153,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleRenameNode(const T
 	if (!RootGraph) return FMonolithActionResult::Error(TEXT("No root SM graph found"));
 
 	UEdGraphNode* Node = MonolithLD::FindNodeByGuid(RootGraph, NodeGuid);
-	if (!Node) return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
+	if (!Node) return FMonolithActionResult::NotFound(TEXT("Node"), NodeGuid).WithErrorMessage(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
 
 	FString OldName = MonolithLD::GetNodeName(Node);
 
@@ -1174,10 +1174,10 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleMoveNode(const TSh
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	FString NodeGuid = Params->GetStringField(TEXT("node_guid"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
-	if (NodeGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'node_guid'"));
-	if (!Params->HasField(TEXT("position_x"))) return FMonolithActionResult::Error(TEXT("Missing required param 'position_x'"));
-	if (!Params->HasField(TEXT("position_y"))) return FMonolithActionResult::Error(TEXT("Missing required param 'position_y'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
+	if (NodeGuid.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Missing required param 'node_guid'")).WithErrorMessage(TEXT("Missing required param 'node_guid'"));
+	if (!Params->HasField(TEXT("position_x"))) return FMonolithActionResult::InvalidParam(TEXT("position_x"), TEXT("Missing required param 'position_x'")).WithErrorMessage(TEXT("Missing required param 'position_x'"));
+	if (!Params->HasField(TEXT("position_y"))) return FMonolithActionResult::InvalidParam(TEXT("position_y"), TEXT("Missing required param 'position_y'")).WithErrorMessage(TEXT("Missing required param 'position_y'"));
 
 	int32 PosX = static_cast<int32>(Params->GetNumberField(TEXT("position_x")));
 	int32 PosY = static_cast<int32>(Params->GetNumberField(TEXT("position_y")));
@@ -1190,7 +1190,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleMoveNode(const TSh
 	if (!RootGraph) return FMonolithActionResult::Error(TEXT("No root SM graph found"));
 
 	UEdGraphNode* Node = MonolithLD::FindNodeByGuid(RootGraph, NodeGuid);
-	if (!Node) return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
+	if (!Node) return FMonolithActionResult::NotFound(TEXT("Node"), NodeGuid).WithErrorMessage(FString::Printf(TEXT("Node not found with GUID '%s'"), *NodeGuid));
 
 	int32 OldX = Node->NodePosX;
 	int32 OldY = Node->NodePosY;
@@ -1214,7 +1214,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleMoveNode(const TSh
 FMonolithActionResult FMonolithLogicDriverGraphActions::HandleAutoArrangeGraph(const TSharedPtr<FJsonObject>& Params)
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 
 	FString FormatterMode = TEXT("default");
 	if (Params->HasField(TEXT("formatter")))
@@ -1443,7 +1443,7 @@ FMonolithActionResult FMonolithLogicDriverGraphActions::HandleCompileStateMachin
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 
 	FString LoadError;

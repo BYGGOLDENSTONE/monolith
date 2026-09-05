@@ -579,7 +579,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleFindNodeSlice(const
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString GraphErr;
@@ -642,7 +642,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleRemoveNodeSlice(con
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString GraphErr;
@@ -885,7 +885,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleDuplicateReparentAn
 	UAnimBlueprint* SourceABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(SourcePath);
 	if (!SourceABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source Animation Blueprint not found: %s"), *SourcePath));
+		return FMonolithActionResult::NotFound(TEXT("Source Animation Blueprint"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source Animation Blueprint not found: %s"), *SourcePath));
 	}
 
 	FString ParentErr;
@@ -1167,7 +1167,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleRebuildEvaluateChoo
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AssetPath));
 	}
 
 	UClass* EvalClass = ResolveEvaluateChooser2Class();
@@ -1181,7 +1181,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleRebuildEvaluateChoo
 	UChooserTable* Chooser = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(ChooserPath);
 	if (!Chooser)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Chooser table not found: %s"), *ChooserPath));
+		return FMonolithActionResult::NotFound(TEXT("Chooser table"), ChooserPath).WithErrorMessage(FString::Printf(TEXT("Chooser table not found: %s"), *ChooserPath));
 	}
 
 	FString GraphErr;
@@ -1237,7 +1237,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleReplaceEvaluateChoo
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AssetPath));
 	}
 
 	UClass* EvalClass = ResolveEvaluateChooser2Class();
@@ -1357,7 +1357,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleAddEvaluateChooserN
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
 	}
 
 	UClass* EvalClass = ResolveEvaluateChooser2Class();
@@ -1371,7 +1371,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleAddEvaluateChooserN
 	UChooserTable* Chooser = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(ChooserPath);
 	if (!Chooser)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Chooser table not found: %s"), *ChooserPath));
+		return FMonolithActionResult::NotFound(TEXT("Chooser table"), ChooserPath).WithErrorMessage(FString::Printf(TEXT("Chooser table not found: %s"), *ChooserPath));
 	}
 
 	FString GraphErr;
@@ -1444,7 +1444,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleWireChooserToMotion
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
 	}
 
 	FString GraphErr;
@@ -1547,7 +1547,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleBindChooserDatabase
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
 	}
 
 	UClass* EvalClass = ResolveEvaluateChooser2Class();
@@ -1561,7 +1561,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleBindChooserDatabase
 	UChooserTable* Chooser = FMonolithAssetUtils::LoadAssetByPath<UChooserTable>(ChooserPath);
 	if (!Chooser)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Chooser table not found: %s"), *ChooserPath));
+		return FMonolithActionResult::NotFound(TEXT("Chooser table"), ChooserPath).WithErrorMessage(FString::Printf(TEXT("Chooser table not found: %s"), *ChooserPath));
 	}
 
 	// --- 1) Ensure the thread-safe FUNCTION graph exists. ---
@@ -1949,7 +1949,7 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleBindThreadsafeUpdat
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
 	}
 
 	// --- 0) Resolve + validate the target UFunction (v1a known-signature guard). ---

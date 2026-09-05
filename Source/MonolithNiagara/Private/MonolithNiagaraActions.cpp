@@ -1773,6 +1773,25 @@ void FMonolithNiagaraActions::AddStaticSwitchEnumMetadata(TSharedRef<FJsonObject
 // Core Helpers
 // ============================================================================
 
+static TArray<FString> NA_HlslNodeNames(const TArray<UNiagaraNodeCustomHlsl*>& Nodes)
+{
+	TArray<FString> Names;
+	for (const UNiagaraNodeCustomHlsl* Node : Nodes) if (Node) Names.Add(Node->NodeGuid.ToString());
+	return Names;
+}
+
+static FMonolithActionResult NA_EmitterNotFound(UNiagaraSystem* System, const FString& Needle)
+{
+	TArray<FString> Names;
+	if (System)
+	{
+		for (const FNiagaraEmitterHandle& Handle : System->GetEmitterHandles()) Names.Add(Handle.GetName().ToString());
+	}
+	return Needle.IsEmpty()
+		? FMonolithActionResult::InvalidParam(TEXT("emitter"), TEXT("Emitter name or GUID is required"))
+		: FMonolithActionResult::NotFound(TEXT("emitter"), Needle, Names);
+}
+
 UNiagaraSystem* FMonolithNiagaraActions::LoadSystem(const FString& SystemPath)
 {
 	UNiagaraSystem* System = FMonolithAssetUtils::LoadAssetByPath<UNiagaraSystem>(SystemPath);
@@ -2146,6 +2165,26 @@ UNiagaraNodeOutput* FMonolithNiagaraActions::FindOutputNode(UNiagaraSystem* Syst
 	UNiagaraGraph* Graph = GetGraphForUsage(System, EmitterHandleId, Usage);
 	if (!Graph) return nullptr;
 	return Graph->FindEquivalentOutputNode(Usage, UsageId);
+}
+
+FMonolithActionResult FMonolithNiagaraActions::ModuleNotFound(UNiagaraSystem* System, const FString& EmitterHandleId, const FString& Needle)
+{
+	if (Needle.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("module_node"), TEXT("Module name or GUID is required"));
+	TArray<FString> Names;
+	TSet<UNiagaraGraph*> Visited;
+	for (ENiagaraScriptUsage Usage : { ENiagaraScriptUsage::SystemSpawnScript, ENiagaraScriptUsage::ParticleUpdateScript })
+	{
+		UNiagaraGraph* Graph = GetGraphForUsage(System, EmitterHandleId, Usage);
+		if (!Graph || Visited.Contains(Graph)) continue;
+		Visited.Add(Graph);
+		TArray<UNiagaraNodeFunctionCall*> Nodes;
+		Graph->GetNodesOfClass<UNiagaraNodeFunctionCall>(Nodes);
+		for (UNiagaraNodeFunctionCall* Node : Nodes)
+		{
+			if (Node) Names.AddUnique(Node->GetFunctionName());
+		}
+	}
+	return FMonolithActionResult::NotFound(TEXT("module"), Needle, Names);
 }
 
 UNiagaraNodeFunctionCall* FMonolithNiagaraActions::FindModuleNode(UNiagaraSystem* System, const FString& EmitterHandleId,
@@ -3491,11 +3530,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddEmitter(const TSharedPtr
 	if (EmitterAssetPath.IsEmpty()) EmitterAssetPath = Params->GetStringField(TEXT("template"));
 	if (EmitterAssetPath.IsEmpty()) EmitterAssetPath = Params->GetStringField(TEXT("template_path"));
 	if (EmitterAssetPath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param 'emitter_asset': provide a NiagaraEmitter asset path"));
+		return FMonolithActionResult::InvalidParam(TEXT("emitter_asset"), TEXT("Missing required param 'emitter_asset': provide a NiagaraEmitter asset path")).WithErrorMessage(TEXT("Missing required param 'emitter_asset': provide a NiagaraEmitter asset path"));
 	FString EmitterName = Params->HasField(TEXT("name")) ? Params->GetStringField(TEXT("name")) : FString();
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	FString WritablePathError;
 	if (!MonolithCore::EnsureWritablePackagePath(System->GetPackage()->GetName(), WritablePathError))
@@ -3504,7 +3543,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddEmitter(const TSharedPtr
 	}
 
 	UNiagaraEmitter* EmitterAsset = FMonolithAssetUtils::LoadAssetByPath<UNiagaraEmitter>(EmitterAssetPath);
-	if (!EmitterAsset) return FMonolithActionResult::Error(FString::Printf(
+	if (!EmitterAsset) return FMonolithAssetUtils::AssetNotFound(TEXT("emitter_asset"), EmitterAssetPath, UNiagaraEmitter::StaticClass()).WithErrorMessage(FString::Printf(
 		TEXT("Failed to load emitter asset '%s'. Ensure path points to a NiagaraEmitter (not a NiagaraSystem)."), *EmitterAssetPath));
 
 	// Validate the emitter has versions (empty version array causes array-out-of-bounds in AddEmitterHandle)
@@ -3622,10 +3661,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveEmitter(const TShared
 	FString EmitterHandleId = Params->GetStringField(TEXT("emitter"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 Index = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (Index == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter handle not found"));
+	if (Index == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter handle not found"));
 
 	const FNiagaraEmitterHandle& Handle = System->GetEmitterHandles()[Index];
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "RemoveEmitter", "Remove Emitter"));
@@ -3645,7 +3684,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleDuplicateEmitter(const TSha
 	FString NewName = Params->HasField(TEXT("new_name")) ? Params->GetStringField(TEXT("new_name")) : FString();
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 Index = FindEmitterHandleIndex(System, SourceHandleId);
 	if (Index == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Source emitter not found"));
@@ -3672,10 +3711,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetEmitterEnabled(const TSh
 	bool bEnabled = Params->GetBoolField(TEXT("enabled"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 Index = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (Index == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter handle not found"));
+	if (Index == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter handle not found"));
 
 	TArray<FNiagaraEmitterHandle>& Handles = System->GetEmitterHandles();
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetEmEnabled", "Set Emitter Enabled"));
@@ -3692,7 +3731,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleReorderEmitters(const TShar
 	const TArray<TSharedPtr<FJsonValue>>& OrderArr = Params->GetArrayField(TEXT("order"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	const TArray<FNiagaraEmitterHandle>& Current = System->GetEmitterHandles();
 	if (OrderArr.Num() != Current.Num())
@@ -3726,13 +3765,13 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetEmitterProperty(const TS
 	if (PropertyName.IsEmpty()) PropertyName = Params->GetStringField(TEXT("property_name"));
 	TSharedPtr<FJsonValue> JV = Params->TryGetField(TEXT("value"));
 	if (!JV.IsValid())
-		return FMonolithActionResult::Error(TEXT("Missing required field: value"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 Index = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (Index == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter handle not found"));
+	if (Index == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter handle not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[Index].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -3826,7 +3865,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRequestCompile(const TShare
 {
 	FString SystemPath = NA_GetAssetPath(Params);
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	bool bForce = Params->HasField(TEXT("force")) && Params->GetBoolField(TEXT("force"));
 	bool bSync = Params->HasField(TEXT("synchronous")) && Params->GetBoolField(TEXT("synchronous"));
@@ -3970,7 +4009,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetOrderedModules(const TSh
 	FString ScriptUsage = Params->GetStringField(TEXT("usage"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	// Determine which usages to query
 	TArray<ENiagaraScriptUsage> UsagesToQuery;
@@ -4134,14 +4173,14 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetModuleInputs(const TShar
 	if (ModuleNodeGuid.IsEmpty()) ModuleNodeGuid = Params->GetStringField(TEXT("module"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	if (!EmitterHandleId.IsEmpty() && FindEmitterHandleIndex(System, EmitterHandleId) == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *EmitterHandleId));
+		return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(FString::Printf(TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *EmitterHandleId));
 
 	ENiagaraScriptUsage FoundUsage = ENiagaraScriptUsage::ParticleUpdateScript;
 	UNiagaraNodeFunctionCall* ModuleNode = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!ModuleNode) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!ModuleNode) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	// Use the engine's full input enumeration (includes data inputs from the script, not just pins on the node)
 	TArray<FNiagaraVariable> Inputs;
@@ -4279,7 +4318,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetModuleGraph(const TShare
 	const bool bIncludeLinks = Params->HasField(TEXT("links")) && Params->GetBoolField(TEXT("links"));
 
 	UNiagaraScript* Script = LoadObject<UNiagaraScript>(nullptr, *ScriptPath);
-	if (!Script) return FMonolithActionResult::Error(TEXT("Failed to load script"));
+	if (!Script) return FMonolithAssetUtils::AssetNotFound(TEXT("script"), ScriptPath, UNiagaraScript::StaticClass()).WithErrorMessage(TEXT("Failed to load script"));
 
 	UNiagaraScriptSource* Src = Cast<UNiagaraScriptSource>(Script->GetLatestSource());
 	if (!Src || !Src->NodeGraph) return FMonolithActionResult::Error(TEXT("No graph available"));
@@ -4383,7 +4422,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetCustomHLSLText(const TSh
 	FString NodeGuidStr = Params->HasField(TEXT("node_guid")) ? Params->GetStringField(TEXT("node_guid")) : FString();
 
 	UNiagaraScript* Script = LoadObject<UNiagaraScript>(nullptr, *ScriptPath);
-	if (!Script) return FMonolithActionResult::Error(TEXT("Failed to load script"));
+	if (!Script) return FMonolithAssetUtils::AssetNotFound(TEXT("script"), ScriptPath, UNiagaraScript::StaticClass()).WithErrorMessage(TEXT("Failed to load script"));
 
 	UNiagaraScriptSource* Src = Cast<UNiagaraScriptSource>(Script->GetLatestSource());
 	if (!Src || !Src->NodeGraph) return FMonolithActionResult::Error(TEXT("No graph available"));
@@ -4391,7 +4430,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetCustomHLSLText(const TSh
 	FGuid TargetGuid;
 	const bool bHasGuid = !NodeGuidStr.IsEmpty() && FGuid::Parse(NodeGuidStr, TargetGuid);
 	if (!NodeGuidStr.IsEmpty() && !bHasGuid)
-		return FMonolithActionResult::Error(TEXT("Invalid node_guid GUID"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Invalid node_guid GUID"));
 
 	TArray<UNiagaraNodeCustomHlsl*> HlslNodes;
 	Src->NodeGraph->GetNodesOfClass<UNiagaraNodeCustomHlsl>(HlslNodes);
@@ -4410,7 +4449,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetCustomHLSLText(const TSh
 			}
 		}
 		if (!TargetNode)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("CustomHlsl node '%s' not found"), *NodeGuidStr));
+			return FMonolithActionResult::NotFound(TEXT("node"), NodeGuidStr, NA_HlslNodeNames(HlslNodes)).WithErrorMessage(FString::Printf(TEXT("CustomHlsl node '%s' not found"), *NodeGuidStr));
 	}
 	else if (HlslNodes.Num() == 1)
 	{
@@ -4450,10 +4489,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetCustomHLSLText(const TSh
 	FString NodeGuidStr = Params->HasField(TEXT("node_guid")) ? Params->GetStringField(TEXT("node_guid")) : FString();
 
 	if (HlslText.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required field: hlsl"));
+		return FMonolithActionResult::InvalidParam(TEXT("hlsl"), TEXT("Missing required field: hlsl"));
 
 	UNiagaraScript* Script = LoadObject<UNiagaraScript>(nullptr, *ScriptPath);
-	if (!Script) return FMonolithActionResult::Error(TEXT("Failed to load script"));
+	if (!Script) return FMonolithAssetUtils::AssetNotFound(TEXT("script"), ScriptPath, UNiagaraScript::StaticClass()).WithErrorMessage(TEXT("Failed to load script"));
 
 	UNiagaraScriptSource* Src = Cast<UNiagaraScriptSource>(Script->GetLatestSource());
 	if (!Src || !Src->NodeGraph) return FMonolithActionResult::Error(TEXT("No graph available"));
@@ -4461,7 +4500,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetCustomHLSLText(const TSh
 	FGuid TargetGuid;
 	const bool bHasGuid = !NodeGuidStr.IsEmpty() && FGuid::Parse(NodeGuidStr, TargetGuid);
 	if (!NodeGuidStr.IsEmpty() && !bHasGuid)
-		return FMonolithActionResult::Error(TEXT("Invalid node_guid GUID"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_guid"), TEXT("Invalid node_guid GUID"));
 
 	TArray<UNiagaraNodeCustomHlsl*> HlslNodes;
 	Src->NodeGraph->GetNodesOfClass<UNiagaraNodeCustomHlsl>(HlslNodes);
@@ -4480,7 +4519,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetCustomHLSLText(const TSh
 			}
 		}
 		if (!TargetNode)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("CustomHlsl node '%s' not found"), *NodeGuidStr));
+			return FMonolithActionResult::NotFound(TEXT("node"), NodeGuidStr, NA_HlslNodeNames(HlslNodes)).WithErrorMessage(FString::Printf(TEXT("CustomHlsl node '%s' not found"), *NodeGuidStr));
 	}
 	else if (HlslNodes.Num() == 1)
 	{
@@ -4536,36 +4575,13 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddModule(const TSharedPtr<
 	int32 Index = Params->HasField(TEXT("index")) ? static_cast<int32>(Params->GetNumberField(TEXT("index"))) : -1;
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraScript* ModScript = LoadObject<UNiagaraScript>(nullptr, *ModuleScriptPath);
 	if (!ModScript)
 	{
-		// Wave 6.4: fuzzy suggestions on module load failure
-		FString RequestedName = FPaths::GetBaseFilename(ModuleScriptPath);
-		IAssetRegistry& AR = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
-		FARFilter SugFilter;
-		SugFilter.ClassPaths.Add(UNiagaraScript::StaticClass()->GetClassPathName());
-		SugFilter.bRecursiveClasses = true;
-		TArray<FAssetData> SugAssets;
-		AR.GetAssets(SugFilter, SugAssets);
-		TArray<FString> Suggestions;
-		for (const FAssetData& AD : SugAssets)
-		{
-			FString N = AD.AssetName.ToString();
-			if (N.Contains(RequestedName, ESearchCase::IgnoreCase) || RequestedName.Contains(N, ESearchCase::IgnoreCase))
-			{
-				Suggestions.Add(FString::Printf(TEXT("%s (%s)"), *N, *AD.GetSoftObjectPath().ToString()));
-				if (Suggestions.Num() >= 5) break;
-			}
-		}
-		if (Suggestions.Num() > 0)
-		{
-			return FMonolithActionResult::Error(FString::Printf(
-				TEXT("Failed to load module script '%s'. Did you mean: %s"),
-				*ModuleScriptPath, *FString::Join(Suggestions, TEXT("; "))));
-		}
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load module script '%s'"), *ModuleScriptPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("script"), ModuleScriptPath, UNiagaraScript::StaticClass())
+			.WithErrorMessage(FString::Printf(TEXT("Failed to load module script '%s'"), *ModuleScriptPath));
 	}
 
 	ENiagaraScriptUsage Usage;
@@ -4725,10 +4741,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveModule(const TSharedP
 	FString ModuleNodeGuid = Params->GetStringField(TEXT("module_node"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	FGuid EmitterGuid;
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
@@ -4751,12 +4767,12 @@ FMonolithActionResult FMonolithNiagaraActions::HandleMoveModule(const TSharedPtr
 	int32 NewIndex = static_cast<int32>(Params->GetNumberField(TEXT("new_index")));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	ENiagaraScriptUsage FoundUsage;
 	FGuid FoundUsageId;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage, &FoundUsageId);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	UNiagaraNodeOutput* OutputNode = FindOutputNode(System, EmitterHandleId, FoundUsage, FoundUsageId);
 	if (!OutputNode) return FMonolithActionResult::Error(TEXT("No output node"));
@@ -4832,10 +4848,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetModuleEnabled(const TSha
 	bool bEnabled = Params->GetBoolField(TEXT("enabled"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetModEn", "Set Module Enabled"));
 	System->Modify();
@@ -4857,17 +4873,17 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetModuleInputValue(const T
 	if (InputName.IsEmpty()) InputName = Params->GetStringField(TEXT("input_name"));
 	TSharedPtr<FJsonValue> JV = Params->TryGetField(TEXT("value"));
 	if (!JV.IsValid())
-		return FMonolithActionResult::Error(TEXT("Missing required field: value"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	if (!EmitterHandleId.IsEmpty() && FindEmitterHandleIndex(System, EmitterHandleId) == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *EmitterHandleId));
+		return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(FString::Printf(TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *EmitterHandleId));
 
 	ENiagaraScriptUsage FoundUsage = ENiagaraScriptUsage::ParticleUpdateScript;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	// Use the engine's full input enumeration (matches HandleGetModuleInputs)
 	TArray<FNiagaraVariable> Inputs;
@@ -5039,14 +5055,14 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetModuleInputBinding(const
 	FString BindingPath = Params->GetStringField(TEXT("binding"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	if (!EmitterHandleId.IsEmpty() && FindEmitterHandleIndex(System, EmitterHandleId) == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *EmitterHandleId));
+		return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(FString::Printf(TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *EmitterHandleId));
 
 	ENiagaraScriptUsage FoundUsage = ENiagaraScriptUsage::ParticleUpdateScript;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	// Use the engine's full input enumeration (matches HandleGetModuleInputs)
 	TArray<FNiagaraVariable> Inputs;
@@ -5150,13 +5166,13 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetModuleInputDI(const TSha
 	}
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	if (!EmitterHandleId.IsEmpty() && FindEmitterHandleIndex(System, EmitterHandleId) == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *EmitterHandleId));
+		return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(FString::Printf(TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *EmitterHandleId));
 
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	FString DIDiagnostic;
 	UClass* DIUClass = MonolithNiagaraHelpers::ResolveNiagaraDataInterfaceClass(DIClass, &DIDiagnostic);
@@ -5961,7 +5977,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetAllParameters(const TSha
 {
 	FString SystemPath = NA_GetAssetPath(Params);
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	FString EmitterFilter = Params->HasField(TEXT("emitter")) ? Params->GetStringField(TEXT("emitter")) : TEXT("");
 	FString ScopeFilter = Params->HasField(TEXT("scope")) ? Params->GetStringField(TEXT("scope")) : TEXT("");
@@ -6009,7 +6025,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetUserParameters(const TSh
 {
 	FString SystemPath = NA_GetAssetPath(Params);
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	// Use ReadParameterVariables (live store entries) instead of GetUserParameters()
 	// which the engine warns returns STALE redirect-map keys.
@@ -6025,7 +6041,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetParameterValue(const TSh
 	FString ParamName = Params->GetStringField(TEXT("parameter"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	FNiagaraUserRedirectionParameterStore& US = System->GetExposedParameters();
 	TArray<FNiagaraVariable> UP;
@@ -6071,7 +6087,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleTraceParameterBinding(const
 	FString ParamName = Params->GetStringField(TEXT("parameter"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	FString Search = ParamName;
 	if (Search.StartsWith(TEXT("User."))) Search = Search.Mid(5); // Strip "User." prefix — store names are unprefixed
@@ -6160,7 +6176,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddUserParameter(const TSha
 		return FMonolithActionResult::Error(TEXT("Parameter type is required — pass as \"type\" field. Valid types: float, int, bool, vec2, vec3, vec4, color, position, quat, matrix"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	bool bTypeFellBack = false;
 	FNiagaraTypeDefinition TD = ResolveNiagaraType(TypeName, &bTypeFellBack);
@@ -6408,7 +6424,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveUserParameter(const T
 	FString ParamName = Params->GetStringField(TEXT("name"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	FString Search = ParamName;
 	if (Search.StartsWith(TEXT("User."))) Search = Search.Mid(5); // Strip "User." prefix — store names are unprefixed
@@ -6437,10 +6453,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetParameterDefault(const T
 	FString ParamName = Params->GetStringField(TEXT("parameter"));
 	TSharedPtr<FJsonValue> JV = Params->TryGetField(TEXT("value"));
 	if (!JV.IsValid())
-		return FMonolithActionResult::Error(TEXT("Missing required field: value"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	FString Search = ParamName;
 	if (Search.StartsWith(TEXT("User."))) Search = Search.Mid(5); // Strip "User." prefix — store names are unprefixed
@@ -6577,7 +6593,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetCurveValue(const TShared
 	if (InputName.IsEmpty()) InputName = Params->GetStringField(TEXT("input_name"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	// Bug 1 fix: "keys" arrives as a parsed JSON array — don't serialize to string then re-parse.
 	TSharedPtr<FJsonValue> KeysField = Params->TryGetField(TEXT("keys"));
@@ -6613,7 +6629,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetCurveValue(const TShared
 	FString CurveStr = TEXT("(") + FString::Join(KS, TEXT(",")) + TEXT(")");
 
 	if (!EmitterHandleId.IsEmpty() && FindEmitterHandleIndex(System, EmitterHandleId) == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *EmitterHandleId));
+		return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(FString::Printf(TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *EmitterHandleId));
 
 	// Bug fix: use the engine's full GetStackFunctionInputs API (same as get_module_inputs)
 	// instead of the local pin-scan helper, which returns display names that don't match
@@ -6720,13 +6736,13 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddRenderer(const TSharedPt
 	if (RendererClassStr.IsEmpty()) RendererClassStr = Params->GetStringField(TEXT("renderer_type"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UClass* RC = ResolveRendererClass(RendererClassStr);
 	if (!RC) return FMonolithActionResult::Error(TEXT("Unknown renderer class"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	const FNiagaraEmitterHandle& Handle = System->GetEmitterHandles()[EIdx];
 	FVersionedNiagaraEmitterData* ED = Handle.GetEmitterData();
@@ -6756,7 +6772,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveRenderer(const TShare
 	int32 RendererIndex = static_cast<int32>(Params->GetNumberField(TEXT("renderer_index")));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	FVersionedNiagaraEmitterData* ED = nullptr;
 	UNiagaraRendererProperties* Rend = GetRenderer(System, EmitterHandleId, RendererIndex, &ED);
@@ -6783,7 +6799,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetRendererMaterial(const T
 	FString MaterialPath = Params->GetStringField(TEXT("material"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraRendererProperties* Rend = GetRenderer(System, EmitterHandleId, RendererIndex);
 	if (!Rend) return FMonolithActionResult::Error(TEXT("Renderer not found"));
@@ -6794,7 +6810,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetRendererMaterial(const T
 	if (!bClear)
 	{
 		Mat = LoadObject<UMaterialInterface>(nullptr, *MaterialPath);
-		if (!Mat) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load material '%s'"), *MaterialPath));
+		if (!Mat) return FMonolithAssetUtils::AssetNotFound(TEXT("material"), MaterialPath, UMaterialInterface::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load material '%s'"), *MaterialPath));
 	}
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetRendMat", "Set Renderer Material"));
@@ -6829,16 +6845,16 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetRendererProperty(const T
 	if (PropertyName.IsEmpty()) PropertyName = Params->GetStringField(TEXT("property_name"));
 	TSharedPtr<FJsonValue> JV = Params->TryGetField(TEXT("value"));
 	if (!JV.IsValid())
-		return FMonolithActionResult::Error(TEXT("Missing required field: value"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraRendererProperties* Rend = GetRenderer(System, EmitterHandleId, RendererIndex);
 	if (!Rend) return FMonolithActionResult::Error(TEXT("Renderer not found"));
 
 	FProperty* Prop = Rend->GetClass()->FindPropertyByName(FName(*PropertyName));
-	if (!Prop) return FMonolithActionResult::Error(FString::Printf(TEXT("Property '%s' not found"), *PropertyName));
+	if (!Prop) return FMonolithActionResult::NotFound(TEXT("Property"), PropertyName).WithErrorMessage(FString::Printf(TEXT("Property '%s' not found"), *PropertyName));
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetRendProp", "Set Renderer Property"));
 	System->Modify();
@@ -6896,7 +6912,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetRendererBindings(const T
 	int32 RendererIndex = static_cast<int32>(Params->GetNumberField(TEXT("renderer_index")));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraRendererProperties* Rend = GetRenderer(System, EmitterHandleId, RendererIndex);
 	if (!Rend) return FMonolithActionResult::Error(TEXT("Renderer not found"));
@@ -6933,7 +6949,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetRendererBinding(const TS
 	FString AttributePath = Params->GetStringField(TEXT("attribute"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraRendererProperties* Rend = GetRenderer(System, EmitterHandleId, RendererIndex);
 	if (!Rend) return FMonolithActionResult::Error(TEXT("Renderer not found"));
@@ -6972,7 +6988,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleBatchExecute(const TSharedP
 	FString SystemPath = NA_GetAssetPath(Params);
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	// Bug 1 fix: "operations" arrives as a parsed JSON array — don't serialize to string then re-parse.
 	// TryGetField returns the array value directly; if it was sent as a pre-serialized string we fall back.
@@ -7362,10 +7378,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetCompiledGPUHLSL(const TS
 	FString EmitterHandleId = Params->GetStringField(TEXT("emitter"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[EIdx].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -7415,7 +7431,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleListEmitters(const TSharedP
 	FString SystemPath = NA_GetAssetPath(Params);
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	const TArray<FNiagaraEmitterHandle>& Handles = System->GetEmitterHandles();
 	TArray<TSharedPtr<FJsonValue>> EmitterArr;
@@ -7468,10 +7484,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleListRenderers(const TShared
 	FString EmitterHandleId = Params->GetStringField(TEXT("emitter"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[EIdx].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -7609,7 +7625,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetSystemDiagnostics(const 
 {
 	FString SystemPath = NA_GetAssetPath(Params);
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	// Optionally force a synchronous compile first (default: true)
 	bool bCompileFirst = true;
@@ -7957,10 +7973,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleListRendererProperties(cons
 	int32 RendererIndex = static_cast<int32>(Params->GetNumberField(TEXT("renderer_index")));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[EIdx].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -8025,7 +8041,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetSystemProperty(const TSh
 	if (PropertyName.IsEmpty()) PropertyName = Params->GetStringField(TEXT("property_name"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	FString ResolvedName = PropertyName;
 	if (const FString* Alias = SystemPropertyAliases.Find(PropertyName))
@@ -8082,10 +8098,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetSystemProperty(const TSh
 	if (PropertyName.IsEmpty()) PropertyName = Params->GetStringField(TEXT("property_name"));
 	TSharedPtr<FJsonValue> JV = Params->TryGetField(TEXT("value"));
 	if (!JV.IsValid())
-		return FMonolithActionResult::Error(TEXT("Missing required field: value"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetSysProp", "Set System Property"));
 	System->Modify();
@@ -8144,17 +8160,17 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetStaticSwitchValue(const 
 	if (InputName.IsEmpty()) InputName = Params->GetStringField(TEXT("input_name"));
 	TSharedPtr<FJsonValue> JV = Params->TryGetField(TEXT("value"));
 	if (!JV.IsValid())
-		return FMonolithActionResult::Error(TEXT("Missing required field: value"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	if (!EmitterHandleId.IsEmpty() && FindEmitterHandleIndex(System, EmitterHandleId) == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Emitter '%s' not found"), *EmitterHandleId));
+		return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(FString::Printf(TEXT("Emitter '%s' not found"), *EmitterHandleId));
 
 	ENiagaraScriptUsage FoundUsage;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	// Enumerate static switch inputs from the module's script graph (NOT GetStackFunctionInputs which only returns data inputs)
 	UNiagaraGraph* CalledGraph = MN->GetCalledGraph();
@@ -8272,7 +8288,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetSystemSummary(const TSha
 {
 	FString SystemPath = NA_GetAssetPath(Params);
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 	EMonolithSemanticDetailLevel DetailLevel = EMonolithSemanticDetailLevel::Compact;
 	FString DetailError;
 	if (!TryParseSemanticDetailLevel(Params, DetailLevel, DetailError))
@@ -8409,7 +8425,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetEmitterSummary(const TSh
 	FString EmitterHandleId = Params->GetStringField(TEXT("emitter"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 	EMonolithSemanticDetailLevel DetailLevel = EMonolithSemanticDetailLevel::Compact;
 	FString DetailError;
 	if (!TryParseSemanticDetailLevel(Params, DetailLevel, DetailError))
@@ -8418,7 +8434,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetEmitterSummary(const TSh
 	}
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	const FNiagaraEmitterHandle& Handle = System->GetEmitterHandles()[EIdx];
 	FVersionedNiagaraEmitterData* ED = Handle.GetEmitterData();
@@ -8494,10 +8510,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleListEmitterProperties(const
 	FString EmitterHandleId = Params->GetStringField(TEXT("emitter"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[EIdx].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -8534,11 +8550,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetModuleInputValue(const T
 	FString InputName = Params->GetStringField(TEXT("input"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	ENiagaraScriptUsage FoundUsage;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	// Get all inputs via engine API
 	TArray<FNiagaraVariable> Inputs;
@@ -8730,11 +8746,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleConfigureCurveKeys(const TS
 	FString InterpStr = Params->HasField(TEXT("interp")) ? Params->GetStringField(TEXT("interp")).ToLower() : TEXT("cubic");
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	ENiagaraScriptUsage FoundUsage;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	// Resolve input
 	TArray<FNiagaraVariable> Inputs;
@@ -8771,7 +8787,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleConfigureCurveKeys(const TS
 		}
 		if (bMatch) { InputType = In.GetType(); MatchedFullName = In.GetName(); bFound = true; break; }
 	}
-	if (!bFound) return FMonolithActionResult::Error(FString::Printf(TEXT("Input '%s' not found"), *InputName));
+	if (!bFound) return FMonolithActionResult::NotFound(TEXT("Input"), InputName).WithErrorMessage(FString::Printf(TEXT("Input '%s' not found"), *InputName));
 	if (!InputType.IsDataInterface()) return FMonolithActionResult::Error(FString::Printf(
 		TEXT("Input '%s' is a plain value type (%s), not a DataInterface curve. Use set_curve_value to animate it: "
 			 "{\"op\": \"set_curve_value\", \"input\": \"%s\", \"keys\": [{\"time\": 0, \"value\": 0}, ...]}"),
@@ -8957,11 +8973,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleConfigureDataInterface(cons
 		return FMonolithActionResult::Error(TEXT("Missing or empty 'properties' object"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	ENiagaraScriptUsage FoundUsage;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	// Resolve input
 	TArray<FNiagaraVariable> Inputs;
@@ -8998,7 +9014,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleConfigureDataInterface(cons
 		}
 		if (bMatch) { InputType = In.GetType(); MatchedFullName = In.GetName(); bInputFound = true; break; }
 	}
-	if (!bInputFound) return FMonolithActionResult::Error(FString::Printf(TEXT("Input '%s' not found"), *InputName));
+	if (!bInputFound) return FMonolithActionResult::NotFound(TEXT("Input"), InputName).WithErrorMessage(FString::Printf(TEXT("Input '%s' not found"), *InputName));
 
 	UNiagaraDataInterface* DI = FindDIFromOverridePin(MN, MatchedFullName, InputType);
 	if (!DI) return FMonolithActionResult::Error(TEXT("No DataInterface found on this input. Use set_module_input_di to create one first."));
@@ -9148,7 +9164,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleDuplicateSystem(const TShar
 	}
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load source system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load source system"));
 
 	// Parse save_path into package path + asset name
 	const FString DestPath = FPackageName::GetLongPackagePath(SavePath);
@@ -9199,7 +9215,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetFixedBounds(const TShare
 	}
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetBounds", "Set Fixed Bounds"));
 	System->Modify();
@@ -9239,7 +9255,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetEffectType(const TShared
 	if (EffectTypePath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: effect_type"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetET", "Set Effect Type"));
 	System->Modify();
@@ -9271,7 +9287,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleCreateEmitter(const TShared
 	if (EmitterName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: name"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	// Use the Minimal emitter template
 	static const FString MinimalTemplate = TEXT("/Niagara/DefaultAssets/Templates/Emitters/Minimal");
@@ -9321,7 +9337,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleExportSystemSpec(const TSha
 	bool bIncludeValues = !Params->HasField(TEXT("include_values")) || Params->GetBoolField(TEXT("include_values"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	TSharedRef<FJsonObject> Spec = MakeShared<FJsonObject>();
 
@@ -9644,11 +9660,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddDynamicInput(const TShar
 	if (DynInputPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: dynamic_input_script"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	ENiagaraScriptUsage FoundUsage;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	// Resolve input
 	TArray<FNiagaraVariable> Inputs;
@@ -9685,11 +9701,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddDynamicInput(const TShar
 		}
 		if (bMatch) { InputType = In.GetType(); MatchedFullName = In.GetName(); bInputFound = true; break; }
 	}
-	if (!bInputFound) return FMonolithActionResult::Error(FString::Printf(TEXT("Input '%s' not found"), *InputName));
+	if (!bInputFound) return FMonolithActionResult::NotFound(TEXT("Input"), InputName).WithErrorMessage(FString::Printf(TEXT("Input '%s' not found"), *InputName));
 
 	// Load the dynamic input script
 	UNiagaraScript* DynScript = LoadObject<UNiagaraScript>(nullptr, *DynInputPath);
-	if (!DynScript) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load dynamic input script: %s"), *DynInputPath));
+	if (!DynScript) return FMonolithAssetUtils::AssetNotFound(TEXT("script"), DynInputPath, UNiagaraScript::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load dynamic input script: %s"), *DynInputPath));
 
 	// Get or create override pin
 	FNiagaraParameterHandle AH = FNiagaraParameterHandle::CreateAliasedModuleParameterHandle(
@@ -9782,11 +9798,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetDynamicInputValue(const 
 	if (DynNodeGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: dynamic_input_node"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	// Find the dynamic input node by GUID across emitter graphs
 	UNiagaraNodeFunctionCall* DynNode = FindFunctionCallNode(System, EmitterHandleId, DynNodeGuid);
-	if (!DynNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Dynamic input node '%s' not found"), *DynNodeGuid));
+	if (!DynNode) return FMonolithActionResult::NotFound(TEXT("Dynamic input node"), DynNodeGuid).WithErrorMessage(FString::Printf(TEXT("Dynamic input node '%s' not found"), *DynNodeGuid));
 
 	// Reuse set_module_input_value logic — construct params and delegate
 	TSharedRef<FJsonObject> SubParams = MakeShared<FJsonObject>();
@@ -9883,10 +9899,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddEventHandler(const TShar
 	if (EventName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: event_name"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[EIdx].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -9906,7 +9922,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddEventHandler(const TShar
 	if (!SourceEmitterStr.IsEmpty())
 	{
 		int32 SrcIdx = FindEmitterHandleIndex(System, SourceEmitterStr);
-		if (SrcIdx == INDEX_NONE) return FMonolithActionResult::Error(FString::Printf(TEXT("Source emitter '%s' not found"), *SourceEmitterStr));
+		if (SrcIdx == INDEX_NONE) return NA_EmitterNotFound(System, SourceEmitterStr).WithErrorMessage(FString::Printf(TEXT("Source emitter '%s' not found"), *SourceEmitterStr));
 		SourceEmitterGuid = System->GetEmitterHandles()[SrcIdx].GetId();
 	}
 
@@ -9969,7 +9985,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleValidateSystem(const TShare
 {
 	FString SystemPath = NA_GetAssetPath(Params);
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 	const TArray<FNiagaraEmitterHandle>& Handles = System->GetEmitterHandles();
 	TArray<FMonolithNiagaraTopologyEdge> TopologyEdges;
 	CollectTopologyEdges(System, TopologyEdges);
@@ -10401,11 +10417,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddSimulationStage(const TS
 {
 	FString SystemPath = NA_GetAssetPath(Params);
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load system '%s'"), *SystemPath));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load system '%s'"), *SystemPath));
 
 	FString EmitterName = Params->GetStringField(TEXT("emitter"));
 	int32 HandleIdx = FindEmitterHandleIndex(System, EmitterName);
-	if (HandleIdx == INDEX_NONE) return FMonolithActionResult::Error(FString::Printf(TEXT("Emitter '%s' not found"), *EmitterName));
+	if (HandleIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterName).WithErrorMessage(FString::Printf(TEXT("Emitter '%s' not found"), *EmitterName));
 
 	FNiagaraEmitterHandle& Handle = System->GetEmitterHandles()[HandleIdx];
 	FVersionedNiagaraEmitter VersionedEmitter = Handle.GetInstance();
@@ -10800,11 +10816,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleListDynamicInputs(const TSh
 	FString ModuleNodeGuid = Params->GetStringField(TEXT("module_node"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	ENiagaraScriptUsage FoundUsage;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	// Get module inputs
 	TArray<FNiagaraVariable> Inputs;
@@ -10980,11 +10996,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetDynamicInputTree(const T
 	int32 MaxDepth = Params->HasField(TEXT("max_depth")) ? static_cast<int32>(Params->GetNumberField(TEXT("max_depth"))) : 10;
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	ENiagaraScriptUsage FoundUsage;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	int32 EmitterIdx = FindEmitterHandleIndex(System, EmitterHandleId);
 
@@ -11092,7 +11108,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveDynamicInput(const TS
 	FString DynNodeGuid = Params->GetStringField(TEXT("dynamic_input_node"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UEdGraphPin* OverridePin = nullptr;
 	UEdGraph* Graph = nullptr;
@@ -11101,7 +11117,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveDynamicInput(const TS
 	{
 		// Mode 2: find by dynamic input node GUID — locate the pin it's connected to
 		UNiagaraNodeFunctionCall* DynNode = FindFunctionCallNode(System, EmitterHandleId, DynNodeGuid);
-		if (!DynNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Dynamic input node '%s' not found"), *DynNodeGuid));
+		if (!DynNode) return FMonolithActionResult::NotFound(TEXT("Dynamic input node"), DynNodeGuid).WithErrorMessage(FString::Printf(TEXT("Dynamic input node '%s' not found"), *DynNodeGuid));
 
 		Graph = DynNode->GetGraph();
 
@@ -11127,7 +11143,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveDynamicInput(const TS
 		// Mode 1: module_node + input
 		ENiagaraScriptUsage FoundUsage;
 		UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-		if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+		if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 		Graph = MN->GetGraph();
 
@@ -11226,10 +11242,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetDynamicInputValue(const 
 	if (InputName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: input"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraNodeFunctionCall* DynNode = FindFunctionCallNode(System, EmitterHandleId, DynNodeGuid);
-	if (!DynNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Dynamic input node '%s' not found"), *DynNodeGuid));
+	if (!DynNode) return FMonolithActionResult::NotFound(TEXT("Dynamic input node"), DynNodeGuid).WithErrorMessage(FString::Printf(TEXT("Dynamic input node '%s' not found"), *DynNodeGuid));
 
 	// Determine usage for the resolver — walk PM chain to find the output node
 	ENiagaraScriptUsage FoundUsage = ENiagaraScriptUsage::ParticleUpdateScript; // sensible default
@@ -11353,7 +11369,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetDynamicInputInputs(const
 	if (ScriptPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: script_path"));
 
 	UNiagaraScript* Script = LoadObject<UNiagaraScript>(nullptr, *ScriptPath);
-	if (!Script) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load script: %s"), *ScriptPath));
+	if (!Script) return FMonolithAssetUtils::AssetNotFound(TEXT("script"), ScriptPath, UNiagaraScript::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load script: %s"), *ScriptPath));
 
 	UNiagaraScriptSource* Src = Cast<UNiagaraScriptSource>(Script->GetLatestSource());
 	if (!Src || !Src->NodeGraph) return FMonolithActionResult::Error(TEXT("Script has no graph"));
@@ -11465,7 +11481,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetRendererMesh(const TShar
 	if (MeshPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: mesh"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraRendererProperties* Rend = GetRenderer(System, EmitterHandleId, RendererIndex);
 	if (!Rend) return FMonolithActionResult::Error(TEXT("Renderer not found"));
@@ -11474,7 +11490,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetRendererMesh(const TShar
 	if (!MeshRend) return FMonolithActionResult::Error(TEXT("Renderer is not a MeshRenderer. Use add_renderer with class 'mesh' first."));
 
 	UStaticMesh* SM = LoadObject<UStaticMesh>(nullptr, *MeshPath);
-	if (!SM) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load StaticMesh: %s"), *MeshPath));
+	if (!SM) return FMonolithAssetUtils::AssetNotFound(TEXT("static_mesh"), MeshPath, UStaticMesh::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load StaticMesh: %s"), *MeshPath));
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetRendMesh", "Set Renderer Mesh"));
 	System->Modify();
@@ -11539,7 +11555,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleConfigureRibbon(const TShar
 	FString Preset = Params->HasField(TEXT("preset")) ? Params->GetStringField(TEXT("preset")).ToLower() : FString();
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraRendererProperties* Rend = GetRenderer(System, EmitterHandleId, RendererIndex);
 	if (!Rend) return FMonolithActionResult::Error(TEXT("Renderer not found"));
@@ -11699,7 +11715,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleConfigureSubUV(const TShare
 		return FMonolithActionResult::Error(TEXT("columns and rows must be positive integers"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	UNiagaraRendererProperties* Rend = GetRenderer(System, EmitterHandleId, RendererIndex);
 	if (!Rend) return FMonolithActionResult::Error(TEXT("Renderer not found"));
@@ -11827,13 +11843,13 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRenameEmitter(const TShared
 	FString NewName = Params->GetStringField(TEXT("name"));
 
 	if (NewName.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param 'name'"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required param 'name'")).WithErrorMessage(TEXT("Missing required param 'name'"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 Index = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (Index == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter handle not found"));
+	if (Index == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter handle not found"));
 
 	FString OldName = System->GetEmitterHandles()[Index].GetName().ToString();
 
@@ -11866,13 +11882,13 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetEmitterProperty(const TS
 	if (PropertyName.IsEmpty()) PropertyName = Params->GetStringField(TEXT("property_name"));
 
 	if (PropertyName.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param 'property'"));
+		return FMonolithActionResult::InvalidParam(TEXT("property"), TEXT("Missing required param 'property'")).WithErrorMessage(TEXT("Missing required param 'property'"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 Index = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (Index == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter handle not found"));
+	if (Index == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter handle not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[Index].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -12059,7 +12075,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetNPC(const TSharedPtr<FJs
 	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: asset_path"));
 
 	UNiagaraParameterCollection* NPC = FMonolithAssetUtils::LoadAssetByPath<UNiagaraParameterCollection>(AssetPath);
-	if (!NPC) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load NPC at '%s'"), *AssetPath));
+	if (!NPC) return FMonolithAssetUtils::AssetNotFound(TEXT("parameter_collection"), AssetPath, UNiagaraParameterCollection::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load NPC at '%s'"), *AssetPath));
 
 	// Read namespace via reflection
 	FString NamespaceStr;
@@ -12108,7 +12124,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddNPCParameter(const TShar
 	if (TypeName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: type"));
 
 	UNiagaraParameterCollection* NPC = FMonolithAssetUtils::LoadAssetByPath<UNiagaraParameterCollection>(AssetPath);
-	if (!NPC) return FMonolithActionResult::Error(TEXT("Failed to load NPC"));
+	if (!NPC) return FMonolithAssetUtils::AssetNotFound(TEXT("parameter_collection"), AssetPath, UNiagaraParameterCollection::StaticClass()).WithErrorMessage(TEXT("Failed to load NPC"));
 
 	FNiagaraTypeDefinition TD = ResolveNiagaraType(TypeName);
 
@@ -12140,7 +12156,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveNPCParameter(const TS
 	if (ParamName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: name"));
 
 	UNiagaraParameterCollection* NPC = FMonolithAssetUtils::LoadAssetByPath<UNiagaraParameterCollection>(AssetPath);
-	if (!NPC) return FMonolithActionResult::Error(TEXT("Failed to load NPC"));
+	if (!NPC) return FMonolithAssetUtils::AssetNotFound(TEXT("parameter_collection"), AssetPath, UNiagaraParameterCollection::StaticClass()).WithErrorMessage(TEXT("Failed to load NPC"));
 
 	// Find the parameter by name — NPC params may be stored with namespace prefix
 	TArray<FNiagaraVariable> NPCParams = NPC->GetParameters();
@@ -12167,7 +12183,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveNPCParameter(const TS
 			}
 		}
 	}
-	if (!Found) return FMonolithActionResult::Error(FString::Printf(TEXT("Parameter '%s' not found in NPC"), *ParamName));
+	if (!Found) return FMonolithActionResult::NotFound(TEXT("Parameter"), ParamName).WithErrorMessage(FString::Printf(TEXT("Parameter '%s' not found in NPC"), *ParamName));
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "RemoveNPCParam", "Remove NPC Parameter"));
 	NPC->Modify();
@@ -12192,10 +12208,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetNPCDefault(const TShared
 
 	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: asset_path"));
 	if (ParamName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: name"));
-	if (!ValueJV.IsValid()) return FMonolithActionResult::Error(TEXT("Missing required field: value"));
+	if (!ValueJV.IsValid()) return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
 	UNiagaraParameterCollection* NPC = FMonolithAssetUtils::LoadAssetByPath<UNiagaraParameterCollection>(AssetPath);
-	if (!NPC) return FMonolithActionResult::Error(TEXT("Failed to load NPC"));
+	if (!NPC) return FMonolithAssetUtils::AssetNotFound(TEXT("parameter_collection"), AssetPath, UNiagaraParameterCollection::StaticClass()).WithErrorMessage(TEXT("Failed to load NPC"));
 
 	UNiagaraParameterCollectionInstance* DefaultInst = NPC->GetDefaultInstance();
 	if (!DefaultInst) return FMonolithActionResult::Error(TEXT("Failed to get NPC default instance"));
@@ -12212,7 +12228,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetNPCDefault(const TShared
 			break;
 		}
 	}
-	if (!Found) return FMonolithActionResult::Error(FString::Printf(TEXT("Parameter '%s' not found in NPC"), *ParamName));
+	if (!Found) return FMonolithActionResult::NotFound(TEXT("Parameter"), ParamName).WithErrorMessage(FString::Printf(TEXT("Parameter '%s' not found in NPC"), *ParamName));
 
 	const FNiagaraTypeDefinition& TD = Found->GetType();
 	bool bSet = false;
@@ -12421,7 +12437,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetEffectType(const TShared
 	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: asset_path"));
 
 	UNiagaraEffectType* ET = FMonolithAssetUtils::LoadAssetByPath<UNiagaraEffectType>(AssetPath);
-	if (!ET) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load effect type at '%s'"), *AssetPath));
+	if (!ET) return FMonolithAssetUtils::AssetNotFound(TEXT("effect_type"), AssetPath, UNiagaraEffectType::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load effect type at '%s'"), *AssetPath));
 
 	TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
 	R->SetStringField(TEXT("asset_path"), ET->GetPathName());
@@ -12469,13 +12485,13 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetEffectTypeProperty(const
 
 	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: asset_path"));
 	if (PropertyName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: property"));
-	if (!JV.IsValid()) return FMonolithActionResult::Error(TEXT("Missing required field: value"));
+	if (!JV.IsValid()) return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
 	UNiagaraEffectType* ET = FMonolithAssetUtils::LoadAssetByPath<UNiagaraEffectType>(AssetPath);
-	if (!ET) return FMonolithActionResult::Error(TEXT("Failed to load effect type"));
+	if (!ET) return FMonolithAssetUtils::AssetNotFound(TEXT("effect_type"), AssetPath, UNiagaraEffectType::StaticClass()).WithErrorMessage(TEXT("Failed to load effect type"));
 
 	FProperty* Prop = ET->GetClass()->FindPropertyByName(FName(*PropertyName));
-	if (!Prop) return FMonolithActionResult::Error(FString::Printf(TEXT("Property '%s' not found on UNiagaraEffectType"), *PropertyName));
+	if (!Prop) return FMonolithActionResult::NotFound(TEXT("Property"), PropertyName).WithErrorMessage(FString::Printf(TEXT("Property '%s' not found on UNiagaraEffectType"), *PropertyName));
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetEffectTypeProp", "Set Effect Type Property"));
 	ET->Modify();
@@ -12545,7 +12561,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetAvailableParameters(cons
 	if (SystemPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: asset_path"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	TArray<TSharedPtr<FJsonValue>> All;
 
@@ -12898,10 +12914,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetEventHandlers(const TSha
 	FString EmitterHandleId = Params->GetStringField(TEXT("emitter"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[EIdx].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -12972,7 +12988,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetEventHandlerProperty(con
 	FString EmitterHandleId = Params->GetStringField(TEXT("emitter"));
 	FString PropertyName = Params->GetStringField(TEXT("property"));
 	TSharedPtr<FJsonValue> JV = Params->TryGetField(TEXT("value"));
-	if (!JV.IsValid()) return FMonolithActionResult::Error(TEXT("Missing required field: value"));
+	if (!JV.IsValid()) return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
 	int32 HandlerIndex = Params->HasField(TEXT("handler_index")) ? static_cast<int32>(Params->GetNumberField(TEXT("handler_index"))) : -1;
 	FString UsageIdStr = Params->HasField(TEXT("usage_id")) ? Params->GetStringField(TEXT("usage_id")) : FString();
@@ -12981,10 +12997,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetEventHandlerProperty(con
 		return FMonolithActionResult::Error(TEXT("Must provide handler_index or usage_id"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[EIdx].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -12998,7 +13014,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetEventHandlerProperty(con
 			return FMonolithActionResult::Error(TEXT("Invalid usage_id GUID"));
 		Handler = ED->GetEventHandlerByIdUnsafe(UsageId);
 		if (!Handler)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Event handler with usage_id '%s' not found"), *UsageIdStr));
+			return FMonolithActionResult::NotFound(TEXT("Event handler with usage_id"), UsageIdStr).WithErrorMessage(FString::Printf(TEXT("Event handler with usage_id '%s' not found"), *UsageIdStr));
 	}
 	else
 	{
@@ -13109,10 +13125,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveEventHandler(const TS
 		return FMonolithActionResult::Error(TEXT("Must provide handler_index or usage_id"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FNiagaraEmitterHandle& EmitterHandle = System->GetEmitterHandles()[EIdx];
 	FVersionedNiagaraEmitterData* ED = EmitterHandle.GetEmitterData();
@@ -13174,10 +13190,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetSimulationStages(const T
 	FString EmitterHandleId = Params->GetStringField(TEXT("emitter"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[EIdx].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -13274,7 +13290,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetSimulationStageProperty(
 	FString EmitterHandleId = Params->GetStringField(TEXT("emitter"));
 	FString PropertyName = Params->GetStringField(TEXT("property"));
 	TSharedPtr<FJsonValue> JV = Params->TryGetField(TEXT("value"));
-	if (!JV.IsValid()) return FMonolithActionResult::Error(TEXT("Missing required field: value"));
+	if (!JV.IsValid()) return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required field: value"));
 
 	int32 StageIndex = Params->HasField(TEXT("stage_index")) ? static_cast<int32>(Params->GetNumberField(TEXT("stage_index"))) : -1;
 	FString StageName = Params->HasField(TEXT("stage_name")) ? Params->GetStringField(TEXT("stage_name")) : FString();
@@ -13283,10 +13299,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetSimulationStageProperty(
 		return FMonolithActionResult::Error(TEXT("Must provide stage_index or stage_name"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FVersionedNiagaraEmitterData* ED = System->GetEmitterHandles()[EIdx].GetEmitterData();
 	if (!ED) return FMonolithActionResult::Error(TEXT("No emitter data"));
@@ -13312,7 +13328,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetSimulationStageProperty(
 			}
 		}
 		if (!TargetStage)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Simulation stage '%s' not found"), *StageName));
+			return FMonolithActionResult::NotFound(TEXT("Simulation stage"), StageName).WithErrorMessage(FString::Printf(TEXT("Simulation stage '%s' not found"), *StageName));
 	}
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetSimStageProp", "Set Simulation Stage Property"));
@@ -13443,10 +13459,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveSimulationStage(const
 		return FMonolithActionResult::Error(TEXT("Must provide stage_index or stage_name"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	FNiagaraEmitterHandle& EmitterHandle = System->GetEmitterHandles()[EIdx];
 	FVersionedNiagaraEmitterData* ED = EmitterHandle.GetEmitterData();
@@ -13477,7 +13493,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRemoveSimulationStage(const
 			}
 		}
 		if (!TargetStage)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Simulation stage '%s' not found"), *StageName));
+			return FMonolithActionResult::NotFound(TEXT("Simulation stage"), StageName).WithErrorMessage(FString::Printf(TEXT("Simulation stage '%s' not found"), *StageName));
 	}
 
 	FString RemovedName = TargetStage->SimulationStageName.ToString();
@@ -13508,11 +13524,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetModuleOutputParameters(c
 	FString ModuleNodeGuid = Params->GetStringField(TEXT("module_node"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	ENiagaraScriptUsage FoundUsage;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	// GetStackFunctionOutputVariables is NOT exported (no NIAGARAEDITOR_API).
 	// Alternative: inspect the module's script graph for output variables via the output node,
@@ -13654,9 +13670,9 @@ FMonolithActionResult FMonolithNiagaraActions::HandleDiffSystems(const TSharedPt
 	if (PathB.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: asset_path_b"));
 
 	UNiagaraSystem* SysA = LoadSystem(PathA);
-	if (!SysA) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load system A: %s"), *PathA));
+	if (!SysA) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), PathA, UNiagaraSystem::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load system A: %s"), *PathA));
 	UNiagaraSystem* SysB = LoadSystem(PathB);
-	if (!SysB) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load system B: %s"), *PathB));
+	if (!SysB) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), PathB, UNiagaraSystem::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load system B: %s"), *PathB));
 
 	TSharedPtr<FJsonObject> SpecA = ExportSpecForDiff(SysA);
 	TSharedPtr<FJsonObject> SpecB = ExportSpecForDiff(SysB);
@@ -13961,10 +13977,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSaveEmitterAsTemplate(const
 	}
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	const FNiagaraEmitterHandle& Handle = System->GetEmitterHandles()[EIdx];
 	FVersionedNiagaraEmitter VE = Handle.GetInstance();
@@ -14042,7 +14058,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleCloneModuleOverrides(const 
 	if (TgtModuleGuid.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: target_module"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	ENiagaraScriptUsage SrcUsage, TgtUsage;
 	UNiagaraNodeFunctionCall* SrcNode = FindModuleNode(System, SrcEmitterId, SrcModuleGuid, &SrcUsage);
@@ -14183,7 +14199,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSaveSystem(const TSharedPtr
 {
 	FString AssetPath = NA_GetAssetPath(Params);
 	if (AssetPath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param: asset_path")).WithErrorMessage(TEXT("Missing required param: asset_path"));
 	FString InputPathError;
 	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, InputPathError))
 	{
@@ -14195,7 +14211,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSaveSystem(const TSharedPtr
 	// Load via FMonolithAssetUtils which handles path normalization
 	UObject* LoadedAsset = FMonolithAssetUtils::LoadAssetByPath<UObject>(AssetPath);
 	if (!LoadedAsset)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, UObject::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 
 	// Verify it's a Niagara asset type
 	bool bIsNiagara = LoadedAsset->IsA<UNiagaraSystem>()
@@ -14253,14 +14269,14 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetStaticSwitchValue(const 
 	FString InputName = Params->HasField(TEXT("input")) ? Params->GetStringField(TEXT("input")) : FString();
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	if (!EmitterHandleId.IsEmpty() && FindEmitterHandleIndex(System, EmitterHandleId) == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Emitter '%s' not found"), *EmitterHandleId));
+		return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(FString::Printf(TEXT("Emitter '%s' not found"), *EmitterHandleId));
 
 	ENiagaraScriptUsage FoundUsage;
 	UNiagaraNodeFunctionCall* MN = FindModuleNode(System, EmitterHandleId, ModuleNodeGuid, &FoundUsage);
-	if (!MN) return FMonolithActionResult::Error(TEXT("Module node not found"));
+	if (!MN) return ModuleNotFound(System, EmitterHandleId, ModuleNodeGuid).WithErrorMessage(TEXT("Module node not found"));
 
 	UNiagaraGraph* CalledGraph = MN->GetCalledGraph();
 	if (!CalledGraph)
@@ -14552,7 +14568,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleImportSystemSpec(const TSha
 {
 	FString SystemPath = NA_GetAssetPath(Params);
 	if (SystemPath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param: asset_path")).WithErrorMessage(TEXT("Missing required param: asset_path"));
 
 	// Parse spec (same logic as create_system_from_spec)
 	TSharedPtr<FJsonValue> SpecField = Params->TryGetField(TEXT("spec"));
@@ -14581,7 +14597,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleImportSystemSpec(const TSha
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
 	if (!System)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load system '%s'"), *SystemPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load system '%s'"), *SystemPath));
 
 	TArray<FString> Errors;
 	int32 FailCount = 0;
@@ -14735,7 +14751,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetDIProperties(const TShar
 {
 	FString DIClassName = Params->GetStringField(TEXT("di_class"));
 	if (DIClassName.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: di_class"));
+		return FMonolithActionResult::InvalidParam(TEXT("di_class"), TEXT("Missing required param: di_class")).WithErrorMessage(TEXT("Missing required param: di_class"));
 
 	FString DIDiagnostic;
 	UClass* DIC = MonolithNiagaraHelpers::ResolveNiagaraDataInterfaceClass(DIClassName, &DIDiagnostic);
@@ -14806,10 +14822,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleClearEmitterModules(const T
 	FString UsageFilter = Params->HasField(TEXT("usage")) ? Params->GetStringField(TEXT("usage")).ToLower() : TEXT("all");
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	// Determine which usages to clear
 	TArray<ENiagaraScriptUsage> TargetUsages;
@@ -14893,11 +14909,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetModuleScriptInputs(const
 {
 	FString ScriptPath = Params->GetStringField(TEXT("script_path"));
 	if (ScriptPath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: script_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("script_path"), TEXT("Missing required param: script_path")).WithErrorMessage(TEXT("Missing required param: script_path"));
 
 	UNiagaraScript* Script = LoadObject<UNiagaraScript>(nullptr, *ScriptPath);
 	if (!Script)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load script '%s'"), *ScriptPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("script"), ScriptPath, UNiagaraScript::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load script '%s'"), *ScriptPath));
 
 	// Get the latest source and cast to UNiagaraScriptSource to access the NodeGraph
 	UNiagaraScriptSourceBase* SourceBase = const_cast<UNiagaraScriptSourceBase*>(Script->GetLatestSource());
@@ -14995,11 +15011,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetScalabilitySettings(cons
 {
 	FString AssetPath = NA_GetAssetPath(Params);
 	if (AssetPath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param: asset_path")).WithErrorMessage(TEXT("Missing required param: asset_path"));
 
 	UNiagaraEffectType* EffectType = LoadObject<UNiagaraEffectType>(nullptr, *AssetPath);
 	if (!EffectType)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load effect type '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("effect_type"), AssetPath, UNiagaraEffectType::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load effect type '%s'"), *AssetPath));
 
 	const FNiagaraSystemScalabilitySettingsArray& SSArr = EffectType->GetSystemScalabilitySettings();
 
@@ -15073,11 +15089,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSetScalabilitySettings(cons
 {
 	FString AssetPath = NA_GetAssetPath(Params);
 	if (AssetPath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param: asset_path")).WithErrorMessage(TEXT("Missing required param: asset_path"));
 
 	UNiagaraEffectType* EffectType = LoadObject<UNiagaraEffectType>(nullptr, *AssetPath);
 	if (!EffectType)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load effect type '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("effect_type"), AssetPath, UNiagaraEffectType::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load effect type '%s'"), *AssetPath));
 
 	const TArray<TSharedPtr<FJsonValue>>& SettingsJsonArr = Params->GetArrayField(TEXT("settings"));
 	if (SettingsJsonArr.Num() == 0)
@@ -15258,7 +15274,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleDuplicateModule(const TShar
 
 	// Load system and find source module
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	ENiagaraScriptUsage SrcUsage;
 	FGuid SrcUsageId;
@@ -15345,10 +15361,10 @@ FMonolithActionResult FMonolithNiagaraActions::HandleGetEmitterParent(const TSha
 		return FMonolithActionResult::Error(TEXT("asset_path and emitter are required"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = FindEmitterHandleIndex(System, EmitterHandleId);
-	if (EIdx == INDEX_NONE) return FMonolithActionResult::Error(TEXT("Emitter not found"));
+	if (EIdx == INDEX_NONE) return NA_EmitterNotFound(System, EmitterHandleId).WithErrorMessage(TEXT("Emitter not found"));
 
 	const FNiagaraEmitterHandle& Handle = System->GetEmitterHandles()[EIdx];
 	FVersionedNiagaraEmitter VersionedEmitter = Handle.GetInstance();
@@ -15400,7 +15416,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRenameUserParameter(const T
 		return FMonolithActionResult::Error(TEXT("Old and new names are the same"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	// Find the parameter in the user store
 	FNiagaraUserRedirectionParameterStore& US = System->GetExposedParameters();
@@ -15419,7 +15435,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleRenameUserParameter(const T
 		}
 	}
 	if (!bFound)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("User parameter '%s' not found"), *OldName));
+		return FMonolithActionResult::NotFound(TEXT("User parameter"), OldName).WithErrorMessage(FString::Printf(TEXT("User parameter '%s' not found"), *OldName));
 
 	// Check new name doesn't already exist
 	for (const FNiagaraVariable& P : UP)
@@ -15934,7 +15950,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleFindSimilarSystems(const TS
 	const int32 Limit = ReadLimit(Params, 10);
 
 	UNiagaraSystem* RefSys = LoadSystem(RefPath);
-	if (!RefSys) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load reference system '%s'"), *RefPath));
+	if (!RefSys) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), RefPath, UNiagaraSystem::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load reference system '%s'"), *RefPath));
 
 	const int32 RefEmitters = RefSys->GetEmitterHandles().Num();
 	TSet<FString> RefRenderers; CollectSystemRendererClasses(RefSys, RefRenderers);
@@ -16111,7 +16127,7 @@ FMonolithActionResult FMonolithNiagaraActions::HandleListSystemDataInterfaces(co
 	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required field: asset_path"));
 
 	UNiagaraSystem* Sys = LoadSystem(AssetPath);
-	if (!Sys) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load system '%s'"), *AssetPath));
+	if (!Sys) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), AssetPath, UNiagaraSystem::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load system '%s'"), *AssetPath));
 
 	TArray<TSharedPtr<FJsonValue>> DIs;
 	TSet<FString> Seen; // dedupe by variable+class so repeated DI bindings collapse

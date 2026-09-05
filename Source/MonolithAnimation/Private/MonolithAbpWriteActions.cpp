@@ -842,6 +842,32 @@ UEdGraph* ResolveTargetGraph(UAnimBlueprint* ABP, const FString& GraphName, cons
 	return nullptr;
 }
 
+static FMonolithActionResult TargetGraphNotFound(UAnimBlueprint* ABP, const FString& GraphName,
+	const FString& StateName, const FString& Message)
+{
+	TArray<UEdGraph*> Graphs;
+	ABP->GetAllGraphs(Graphs);
+	TArray<FString> Candidates;
+	for (const UEdGraph* Graph : Graphs)
+	{
+		if (!Graph) continue;
+		if (StateName.IsEmpty()) Candidates.AddUnique(Graph->GetName());
+		else for (const UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (const UAnimStateNode* State = Cast<UAnimStateNode>(Node))
+			{
+				if (State->GetStateName() == StateName && !Cast<UAnimationStateGraph>(State->BoundGraph))
+				{
+					return FMonolithActionResult::PreconditionFailed(Message, TEXT("Repair the state's inner animation graph"));
+				}
+				Candidates.AddUnique(State->GetStateName());
+			}
+		}
+	}
+	return FMonolithActionResult::NotFound(StateName.IsEmpty() ? TEXT("Graph") : TEXT("State"),
+		StateName.IsEmpty() ? GraphName : StateName, Candidates).WithErrorMessage(Message);
+}
+
 /** Find a node by UObject name across all graphs in an ABP, or within a specific graph. */
 UEdGraphNode* FindNodeByName(UAnimBlueprint* ABP, const FString& NodeName, UEdGraph* InGraph = nullptr)
 {
@@ -1260,7 +1286,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimGraphNode(const TSh
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<float>(TempVal);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// Resolve the node class
 	FString ClassError;
@@ -1273,7 +1299,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimGraphNode(const TSh
 	// Resolve the target graph
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, StateName, GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, StateName, GraphError);
 
 	// ---- BlendStack-derived nodes (MotionMatching, MotionMatchingInteraction) ----
 	// These own a UPROPERTY BoundGraph and CreateGraph() does check(BoundGraph == nullptr)
@@ -1473,13 +1499,13 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleConnectAnimGraphPins(const
 		bCompile = Params->GetBoolField(TEXT("compile"));
 	}
 
-	if (SourceNode.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: source_node"));
-	if (SourcePin.IsEmpty())  return FMonolithActionResult::Error(TEXT("Missing required parameter: source_pin"));
-	if (TargetNode.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: target_node"));
-	if (TargetPin.IsEmpty())  return FMonolithActionResult::Error(TEXT("Missing required parameter: target_pin"));
+	if (SourceNode.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("source_node"), TEXT("Missing required parameter: source_node")).WithErrorMessage(TEXT("Missing required parameter: source_node"));
+	if (SourcePin.IsEmpty())  return FMonolithActionResult::InvalidParam(TEXT("source_pin"), TEXT("Missing required parameter: source_pin")).WithErrorMessage(TEXT("Missing required parameter: source_pin"));
+	if (TargetNode.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("target_node"), TEXT("Missing required parameter: target_node")).WithErrorMessage(TEXT("Missing required parameter: target_node"));
+	if (TargetPin.IsEmpty())  return FMonolithActionResult::InvalidParam(TEXT("target_pin"), TEXT("Missing required parameter: target_pin")).WithErrorMessage(TEXT("Missing required parameter: target_pin"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// Optionally resolve to a specific graph for scoping the search
 	UEdGraph* ScopeGraph = nullptr;
@@ -1494,13 +1520,13 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleConnectAnimGraphPins(const
 	UEdGraphNode* SrcNode = FindNodeByName(ABP, SourceNode, ScopeGraph);
 	if (!SrcNode)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source node '%s' not found in ABP"), *SourceNode));
+		return FMonolithActionResult::NotFound(TEXT("Source node"), SourceNode).WithErrorMessage(FString::Printf(TEXT("Source node '%s' not found in ABP"), *SourceNode));
 	}
 
 	UEdGraphNode* DstNode = FindNodeByName(ABP, TargetNode, ScopeGraph);
 	if (!DstNode)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Target node '%s' not found in ABP"), *TargetNode));
+		return FMonolithActionResult::NotFound(TEXT("Target node"), TargetNode).WithErrorMessage(FString::Printf(TEXT("Target node '%s' not found in ABP"), *TargetNode));
 	}
 
 	// Find output pin on source
@@ -1605,16 +1631,16 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleSetStateAnimation(const TS
 		bClearExisting = Params->GetBoolField(TEXT("clear_existing"));
 	}
 
-	if (MachineName.IsEmpty())  return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
-	if (StateName.IsEmpty())    return FMonolithActionResult::Error(TEXT("Missing required parameter: state_name"));
-	if (AnimAssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: anim_asset_path"));
+	if (MachineName.IsEmpty())  return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
+	if (StateName.IsEmpty())    return FMonolithActionResult::InvalidParam(TEXT("state_name"), TEXT("Missing required parameter: state_name")).WithErrorMessage(TEXT("Missing required parameter: state_name"));
+	if (AnimAssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("anim_asset_path"), TEXT("Missing required parameter: anim_asset_path")).WithErrorMessage(TEXT("Missing required parameter: anim_asset_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// Find the state machine and state
 	UAnimationStateMachineGraph* SMGraph = FindSMGraphByName(ABP, MachineName);
-	if (!SMGraph) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
+	if (!SMGraph) return FMonolithActionResult::NotFound(TEXT("State machine"), MachineName).WithErrorMessage(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
 
 	UAnimStateNode* StateNode = FindStateByName(SMGraph, StateName);
 	if (!StateNode) return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found in machine '%s'"), *StateName, *MachineName));
@@ -1627,7 +1653,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleSetStateAnimation(const TS
 
 	// Load the animation asset
 	UAnimationAsset* AnimAsset = FMonolithAssetUtils::LoadAssetByPath<UAnimationAsset>(AnimAssetPath);
-	if (!AnimAsset) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AnimAssetPath));
+	if (!AnimAsset) return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AnimAssetPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AnimAssetPath));
 
 	// Determine node class using the engine's own mapping
 	UClass* NodeClass = GetNodeClassForAsset(AnimAsset->GetClass());
@@ -1776,14 +1802,14 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddVariableGet(const TShar
 	if (Params->TryGetNumberField(TEXT("position_x"), TempVal)) PosX = static_cast<float>(TempVal);
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<float>(TempVal);
 
-	if (VarName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: variable_name"));
+	if (VarName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("variable_name"), TEXT("Missing required parameter: variable_name")).WithErrorMessage(TEXT("Missing required parameter: variable_name"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, StateName, GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, StateName, GraphError);
 
 	// Validate variable exists on skeleton class (BP-declared or C++ UPROPERTY)
 	const FName VarFName(*VarName);
@@ -1995,11 +2021,11 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleSetAnimGraphNodeProperty(c
 	FString GraphName    = Params->HasField(TEXT("graph_name")) ? Params->GetStringField(TEXT("graph_name")) : TEXT("");
 	FString StateName    = Params->HasField(TEXT("state_name")) ? Params->GetStringField(TEXT("state_name")) : TEXT("");
 
-	if (NodeId.IsEmpty())       return FMonolithActionResult::Error(TEXT("Missing required parameter: node_id"));
-	if (PropertyPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: property_path"));
+	if (NodeId.IsEmpty())       return FMonolithActionResult::InvalidParam(TEXT("node_id"), TEXT("Missing required parameter: node_id")).WithErrorMessage(TEXT("Missing required parameter: node_id"));
+	if (PropertyPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("property_path"), TEXT("Missing required parameter: property_path")).WithErrorMessage(TEXT("Missing required parameter: property_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// Optional graph scope. A SUPPLIED scope is AUTHORITATIVE: if it does not resolve to
 	// exactly one graph this errors out. It used to silently fall through to the global
@@ -2116,13 +2142,13 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleConfigurePoseHistoryNode(c
 {
 	const FString AbpPath = Params->GetStringField(TEXT("abp_path"));
 	const FString NodeId  = Params->GetStringField(TEXT("node_id"));
-	if (NodeId.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: node_id"));
+	if (NodeId.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_id"), TEXT("Missing required parameter: node_id")).WithErrorMessage(TEXT("Missing required parameter: node_id"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AbpPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AbpPath));
 
 	UEdGraphNode* FoundNode = FindNodeByName(ABP, NodeId, nullptr);
-	if (!FoundNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
+	if (!FoundNode) return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
 
 	UAnimGraphNode_Base* AnimNode = Cast<UAnimGraphNode_Base>(FoundNode);
 	if (!AnimNode) return FMonolithActionResult::Error(FString::Printf(
@@ -2218,13 +2244,13 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleConfigureMotionMatchingNod
 {
 	const FString AbpPath = Params->GetStringField(TEXT("abp_path"));
 	const FString NodeId  = Params->GetStringField(TEXT("node_id"));
-	if (NodeId.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: node_id"));
+	if (NodeId.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_id"), TEXT("Missing required parameter: node_id")).WithErrorMessage(TEXT("Missing required parameter: node_id"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AbpPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AbpPath));
 
 	UEdGraphNode* FoundNode = FindNodeByName(ABP, NodeId, nullptr);
-	if (!FoundNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
+	if (!FoundNode) return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
 
 	UAnimGraphNode_Base* AnimNode = Cast<UAnimGraphNode_Base>(FoundNode);
 	if (!AnimNode) return FMonolithActionResult::Error(FString::Printf(
@@ -2341,13 +2367,13 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleBuildMotionMatchingNode(co
 	FString ChooserPath;
 	Params->TryGetStringField(TEXT("chooser_path"), ChooserPath);
 
-	if (DatabasePath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: database_path"));
+	if (DatabasePath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("database_path"), TEXT("Missing required parameter: database_path")).WithErrorMessage(TEXT("Missing required parameter: database_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AbpPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AbpPath));
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(DatabasePath);
-	if (!Database) return FMonolithActionResult::Error(FString::Printf(TEXT("UPoseSearchDatabase not found: %s"), *DatabasePath));
+	if (!Database) return FMonolithActionResult::NotFound(TEXT("UPoseSearchDatabase"), DatabasePath).WithErrorMessage(FString::Printf(TEXT("UPoseSearchDatabase not found: %s"), *DatabasePath));
 
 	// --- Spawn the Pose History node via existing add_anim_graph_node internals (alias from 4.1) ---
 	TSharedPtr<FJsonObject> HistParams = MakeShared<FJsonObject>();
@@ -2511,14 +2537,14 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleGetAnimGraphOutputConnecti
 	FString GraphName = Params->HasField(TEXT("graph_name")) ? Params->GetStringField(TEXT("graph_name")) : TEXT("AnimGraph");
 	if (GraphName.IsEmpty()) GraphName = TEXT("AnimGraph");
 
-	if (AbpPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: abp_path"));
+	if (AbpPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("abp_path"), TEXT("Missing required parameter: abp_path")).WithErrorMessage(TEXT("Missing required parameter: abp_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AbpPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AbpPath));
 
 	FString GraphError;
 	UEdGraph* Graph = ResolveTargetGraph(ABP, GraphName, TEXT(""), GraphError);
-	if (!Graph) return FMonolithActionResult::Error(GraphError);
+	if (!Graph) return TargetGraphNotFound(ABP, GraphName, TEXT(""), GraphError);
 
 	TArray<UAnimGraphNode_Root*> Roots;
 	Graph->GetNodesOfClass<UAnimGraphNode_Root>(Roots);
@@ -2584,11 +2610,11 @@ FMonolithActionResult ApplyAdditiveImpl(const TSharedPtr<FJsonObject>& Params, b
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<float>(TempVal);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, StateName, GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, StateName, GraphError);
 
 	UClass* NodeClass = bMeshSpace
 		? UAnimGraphNode_ApplyMeshSpaceAdditive::StaticClass()
@@ -2729,15 +2755,15 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddSlotNode(const TSharedP
 	if (SlotName.IsEmpty())
 	{
 		// A slot node with no name silently passes the source pose through — refuse.
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: slot_name (an unnamed slot node is a no-op pass-through)"));
+		return FMonolithActionResult::InvalidParam(TEXT("slot_name"), TEXT("Missing required parameter: slot_name (an unnamed slot node is a no-op pass-through)")).WithErrorMessage(TEXT("Missing required parameter: slot_name (an unnamed slot node is a no-op pass-through)"));
 	}
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, StateName, GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, StateName, GraphError);
 
 	// Non-fatal slot-name validation: montage slots are often registered after graph authoring,
 	// so an unknown slot is a warning, not an error.
@@ -2836,7 +2862,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddSaveCachedPose(const TS
 	if (Params->TryGetNumberField(TEXT("position_x"), TempVal)) PosX = static_cast<float>(TempVal);
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<float>(TempVal);
 
-	if (CacheName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: cache_name"));
+	if (CacheName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("cache_name"), TEXT("Missing required parameter: cache_name")).WithErrorMessage(TEXT("Missing required parameter: cache_name"));
 
 	// Save nodes are sink nodes restricted to the main AnimGraph — reject a state target up front,
 	// but the engine's IsCompatibleWithGraph below is authoritative.
@@ -2846,18 +2872,18 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddSaveCachedPose(const TS
 	}
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, TEXT(""), GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, TEXT(""), GraphError);
 
 	// The Save node sinks the cached pose — wire the source into the 'Pose' input via the helper.
 	UEdGraphNode* Src = nullptr;
 	if (!SourceNode.IsEmpty())
 	{
 		Src = FindNodeByName(ABP, SourceNode, TargetGraph);
-		if (!Src) return FMonolithActionResult::Error(FString::Printf(TEXT("Source node '%s' not found in target graph"), *SourceNode));
+		if (!Src) return FMonolithActionResult::NotFound(TEXT("Source node"), SourceNode).WithErrorMessage(FString::Printf(TEXT("Source node '%s' not found in target graph"), *SourceNode));
 	}
 
 	FString SpawnError;
@@ -2916,14 +2942,14 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddUseCachedPose(const TSh
 	if (Params->TryGetNumberField(TEXT("position_x"), TempVal)) PosX = static_cast<float>(TempVal);
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<float>(TempVal);
 
-	if (CacheName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: cache_name"));
+	if (CacheName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("cache_name"), TEXT("Missing required parameter: cache_name")).WithErrorMessage(TEXT("Missing required parameter: cache_name"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, TEXT(""), GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, TEXT(""), GraphError);
 
 	// Validate that a Save node with this CacheName exists in the graph — the classic failure mode
 	// (mismatched names -> silent wrong compile) is exactly what this guards against.
@@ -3000,14 +3026,14 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleSetOutputPoseSource(const 
 	bool bBreakExisting = true;
 	if (Params->HasField(TEXT("break_existing"))) bBreakExisting = Params->GetBoolField(TEXT("break_existing"));
 
-	if (SourceNode.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: source_node"));
+	if (SourceNode.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("source_node"), TEXT("Missing required parameter: source_node")).WithErrorMessage(TEXT("Missing required parameter: source_node"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, TEXT(""), GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, TEXT(""), GraphError);
 
 	// Locate the Output Pose (Root) node — same lookup the read-only reader uses.
 	TArray<UAnimGraphNode_Root*> Roots;
@@ -3111,15 +3137,15 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleSetStateResultSource(const
 	bool bBreakExisting = true;
 	if (Params->HasField(TEXT("break_existing"))) bBreakExisting = Params->GetBoolField(TEXT("break_existing"));
 
-	if (MachineName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
-	if (StateName.IsEmpty())   return FMonolithActionResult::Error(TEXT("Missing required parameter: state_name"));
-	if (SourceNode.IsEmpty())  return FMonolithActionResult::Error(TEXT("Missing required parameter: source_node"));
+	if (MachineName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
+	if (StateName.IsEmpty())   return FMonolithActionResult::InvalidParam(TEXT("state_name"), TEXT("Missing required parameter: state_name")).WithErrorMessage(TEXT("Missing required parameter: state_name"));
+	if (SourceNode.IsEmpty())  return FMonolithActionResult::InvalidParam(TEXT("source_node"), TEXT("Missing required parameter: source_node")).WithErrorMessage(TEXT("Missing required parameter: source_node"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UAnimationStateMachineGraph* SMGraph = FindSMGraphByName(ABP, MachineName);
-	if (!SMGraph) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' not found"), *MachineName));
+	if (!SMGraph) return FMonolithActionResult::NotFound(TEXT("State machine"), MachineName).WithErrorMessage(FString::Printf(TEXT("State machine '%s' not found"), *MachineName));
 
 	UAnimStateNode* StateNode = FindStateByName(SMGraph, StateName);
 	if (!StateNode) return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found in state machine '%s'"), *StateName, *MachineName));
@@ -3220,7 +3246,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddBlendByInt(const TShare
 	double NumVal = 0.0;
 	if (!Params->TryGetNumberField(TEXT("num_poses"), NumVal))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: num_poses"));
+		return FMonolithActionResult::InvalidParam(TEXT("num_poses"), TEXT("Missing required parameter: num_poses")).WithErrorMessage(TEXT("Missing required parameter: num_poses"));
 	}
 	const int32 NumPoses = static_cast<int32>(NumVal);
 	if (NumPoses < 2)  return FMonolithActionResult::Error(TEXT("num_poses must be >= 2 (a blend list needs at least two poses)"));
@@ -3232,11 +3258,11 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddBlendByInt(const TShare
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<float>(TempVal);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, StateName, GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, StateName, GraphError);
 
 	FString SpawnError;
 	UAnimGraphNode_Base* NewNode = SpawnAndWirePoseInput(
@@ -3377,7 +3403,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddBlendByEnum(const TShar
 
 	if (EnumPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: enum_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("enum_path"), TEXT("Missing required parameter: enum_path")).WithErrorMessage(TEXT("Missing required parameter: enum_path"));
 	}
 
 	double TempVal;
@@ -3481,7 +3507,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddBlendByEnum(const TShar
 
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, StateName, GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, StateName, GraphError);
 
 	FString SpawnError;
 	UAnimGraphNode_Base* NewNode = SpawnAndWirePoseInput(
@@ -3636,8 +3662,8 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleSetSyncGroup(const TShared
 	const FString GraphName = Params->HasField(TEXT("graph_name")) ? Params->GetStringField(TEXT("graph_name")) : TEXT("");
 	const FString StateName = Params->HasField(TEXT("state_name")) ? Params->GetStringField(TEXT("state_name")) : TEXT("");
 
-	if (NodeId.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: node_id"));
-	if (!Params->HasField(TEXT("group_name"))) return FMonolithActionResult::Error(TEXT("Missing required parameter: group_name"));
+	if (NodeId.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_id"), TEXT("Missing required parameter: node_id")).WithErrorMessage(TEXT("Missing required parameter: node_id"));
+	if (!Params->HasField(TEXT("group_name"))) return FMonolithActionResult::InvalidParam(TEXT("group_name"), TEXT("Missing required parameter: group_name")).WithErrorMessage(TEXT("Missing required parameter: group_name"));
 
 	// Role / method default to CanBeLeader / SyncGroup; reject unknown spellings.
 	EAnimGroupRole::Type Role = EAnimGroupRole::CanBeLeader;
@@ -3663,7 +3689,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleSetSyncGroup(const TShared
 	}
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// Optional graph scope (mirror set_anim_graph_node_property's lookup).
 	UEdGraph* ScopeGraph = nullptr;
@@ -3674,7 +3700,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleSetSyncGroup(const TShared
 	}
 
 	UEdGraphNode* FoundNode = FindNodeByName(ABP, NodeId, ScopeGraph);
-	if (!FoundNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
+	if (!FoundNode) return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
 
 	UAnimGraphNode_Base* AnimNode = Cast<UAnimGraphNode_Base>(FoundNode);
 	if (!AnimNode)
@@ -3768,19 +3794,19 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleSetLayeredBlendBones(const
 	const FString GraphName = Params->HasField(TEXT("graph_name")) ? Params->GetStringField(TEXT("graph_name")) : TEXT("");
 	const FString StateName = Params->HasField(TEXT("state_name")) ? Params->GetStringField(TEXT("state_name")) : TEXT("");
 
-	if (NodeId.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: node_id"));
+	if (NodeId.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("node_id"), TEXT("Missing required parameter: node_id")).WithErrorMessage(TEXT("Missing required parameter: node_id"));
 
 	const TArray<TSharedPtr<FJsonValue>>* LayersArray = nullptr;
 	if (!Params->TryGetArrayField(TEXT("layers"), LayersArray) || !LayersArray)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: layers (array of { bones: [{ bone, depth }] })"));
+		return FMonolithActionResult::InvalidParam(TEXT("layers"), TEXT("Missing required parameter: layers (array of { bones: [{ bone, depth }] })")).WithErrorMessage(TEXT("Missing required parameter: layers (array of { bones: [{ bone, depth }] })"));
 	}
 	const int32 NumLayers = LayersArray->Num();
 	if (NumLayers < 1) return FMonolithActionResult::Error(TEXT("layers must contain at least one layer"));
 	if (NumLayers > 32) return FMonolithActionResult::Error(TEXT("layers is capped at 32"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UEdGraph* ScopeGraph = nullptr;
 	if (!StateName.IsEmpty() || (!GraphName.IsEmpty() && !GraphName.Equals(TEXT("AnimGraph"), ESearchCase::IgnoreCase)))
@@ -3790,7 +3816,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleSetLayeredBlendBones(const
 	}
 
 	UEdGraphNode* FoundNode = FindNodeByName(ABP, NodeId, ScopeGraph);
-	if (!FoundNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
+	if (!FoundNode) return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
 
 	UAnimGraphNode_LayeredBoneBlend* LayerNode = Cast<UAnimGraphNode_LayeredBoneBlend>(FoundNode);
 	if (!LayerNode)
@@ -3952,16 +3978,16 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleBuildFootIkPass(const TSha
 	FString LeftCurve  = Params->HasField(TEXT("left_contact_curve"))  ? Params->GetStringField(TEXT("left_contact_curve"))  : TEXT("contact_l");
 	FString RightCurve = Params->HasField(TEXT("right_contact_curve")) ? Params->GetStringField(TEXT("right_contact_curve")) : TEXT("contact_r");
 
-	if (AbpPath.IsEmpty())       return FMonolithActionResult::Error(TEXT("Missing required parameter: abp_path"));
+	if (AbpPath.IsEmpty())       return FMonolithActionResult::InvalidParam(TEXT("abp_path"), TEXT("Missing required parameter: abp_path")).WithErrorMessage(TEXT("Missing required parameter: abp_path"));
 	if (LeftFootBone.IsEmpty() || RightFootBone.IsEmpty() || PelvisBone.IsEmpty())
 		return FMonolithActionResult::Error(TEXT("left_foot_bone, right_foot_bone and pelvis_bone are all required"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AbpPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AbpPath));
 
 	FString GraphError;
 	UEdGraph* Graph = ResolveTargetGraph(ABP, GraphName, TEXT(""), GraphError);
-	if (!Graph) return FMonolithActionResult::Error(GraphError);
+	if (!Graph) return TargetGraphNotFound(ABP, GraphName, TEXT(""), GraphError);
 
 	// --- Capture the current Output Pose source (the node feeding Root 'Result') ---
 	TArray<UAnimGraphNode_Root*> Roots;
@@ -4137,10 +4163,10 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAssignPostProcessAnimRig(c
 	FString PostAbpPath;
 	Params->TryGetStringField(TEXT("post_process_abp_path"), PostAbpPath);
 
-	if (MeshPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: mesh_path"));
+	if (MeshPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("mesh_path"), TEXT("Missing required parameter: mesh_path")).WithErrorMessage(TEXT("Missing required parameter: mesh_path"));
 
 	USkeletalMesh* Mesh = FMonolithAssetUtils::LoadAssetByPath<USkeletalMesh>(MeshPath);
-	if (!Mesh) return FMonolithActionResult::Error(FString::Printf(TEXT("SkeletalMesh not found: %s"), *MeshPath));
+	if (!Mesh) return FMonolithAssetUtils::AssetNotFound(TEXT("SkeletalMesh"), MeshPath, USkeletalMesh::StaticClass()).WithErrorMessage(FString::Printf(TEXT("SkeletalMesh not found: %s"), *MeshPath));
 
 	TSubclassOf<UAnimInstance> PostClass = nullptr;
 	const bool bClearing = PostAbpPath.IsEmpty() || PostAbpPath.Equals(TEXT("None"), ESearchCase::IgnoreCase);
@@ -4253,7 +4279,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimControlRigNode(cons
 	const FString GraphName = Params->HasField(TEXT("graph_name")) ? Params->GetStringField(TEXT("graph_name")) : TEXT("AnimGraph");
 	const FString StateName = Params->HasField(TEXT("state_name")) ? Params->GetStringField(TEXT("state_name")) : TEXT("");
 
-	if (ControlRigClassSpec.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: control_rig_class"));
+	if (ControlRigClassSpec.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("control_rig_class"), TEXT("Missing required parameter: control_rig_class")).WithErrorMessage(TEXT("Missing required parameter: control_rig_class"));
 
 	double TempVal;
 	float PosX = 200.f, PosY = 0.f;
@@ -4261,7 +4287,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimControlRigNode(cons
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<float>(TempVal);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// Resolve the Control Rig class up-front so a bad class never spawns a node.
 	FString ClassError;
@@ -4270,7 +4296,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimControlRigNode(cons
 
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, StateName, GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, StateName, GraphError);
 
 	// Spawn the node and (optionally) wire source_node's pose-out into the node's pose input.
 	// FAnimNode_ControlRig's pose input pin is "Source" (FAnimNode_ControlRigBase pose link).
@@ -4278,7 +4304,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimControlRigNode(cons
 	if (!SourceNode.IsEmpty())
 	{
 		Src = FindNodeByName(ABP, SourceNode, TargetGraph);
-		if (!Src) return FMonolithActionResult::Error(FString::Printf(TEXT("source_node '%s' not found in target graph"), *SourceNode));
+		if (!Src) return FMonolithActionResult::NotFound(TEXT("source_node"), SourceNode).WithErrorMessage(FString::Printf(TEXT("source_node '%s' not found in target graph"), *SourceNode));
 	}
 
 	FString SpawnError;
@@ -4368,7 +4394,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddLinkedAnimLayer(const T
 	FString InstanceClassSpec;  Params->TryGetStringField(TEXT("instance_class"), InstanceClassSpec);
 	const FString GraphName = Params->HasField(TEXT("graph_name")) ? Params->GetStringField(TEXT("graph_name")) : TEXT("AnimGraph");
 
-	if (LayerName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: layer_name"));
+	if (LayerName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("layer_name"), TEXT("Missing required parameter: layer_name")).WithErrorMessage(TEXT("Missing required parameter: layer_name"));
 
 	double TempVal;
 	float PosX = 200.f, PosY = 0.f;
@@ -4376,7 +4402,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddLinkedAnimLayer(const T
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<float>(TempVal);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// Resolve the interface + GUID from the ABP's implemented anim-layer interface graphs, exactly as
 	// the engine's GetInterfaceForLayer/GetGuidForLayer do: match the interface graph whose name is the
@@ -4504,7 +4530,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddLinkedAnimLayer(const T
 
 	FString GraphError;
 	UEdGraph* TargetGraph = ResolveTargetGraph(ABP, GraphName, TEXT(""), GraphError);
-	if (!TargetGraph) return FMonolithActionResult::Error(GraphError);
+	if (!TargetGraph) return TargetGraphNotFound(ABP, GraphName, TEXT(""), GraphError);
 
 	// Spawn pristine via FGraphNodeCreator — the LinkedAnimLayer custom-property machinery makes the
 	// template/duplicate path unsafe (mirrors SpawnAndWirePoseInput's BoundGraph branch).
@@ -4680,7 +4706,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimLayerGraph(const TS
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	FString LayerName; Params->TryGetStringField(TEXT("layer_name"), LayerName);
 	LayerName.TrimStartAndEndInline();
-	if (LayerName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: layer_name"));
+	if (LayerName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("layer_name"), TEXT("Missing required parameter: layer_name")).WithErrorMessage(TEXT("Missing required parameter: layer_name"));
 
 	// UE_BLUEPRINT_INVALID_NAME_CHARACTERS is the set FKismetNameValidator applies to Blueprint member
 	// names. CreateNewGraph validates nothing itself — it hands the name straight to NewObject — so an
@@ -4699,7 +4725,7 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimLayerGraph(const TS
 	}
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// --- Validation. Mirrors the editor's own visibility guard for CGT_NewAnimationLayer
 	//     (FBlueprintEditor::NewDocument_IsVisibleForType) plus the ABP factory's gates. Two of these

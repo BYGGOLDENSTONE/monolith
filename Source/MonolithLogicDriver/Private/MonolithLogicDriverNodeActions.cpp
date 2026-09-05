@@ -477,7 +477,7 @@ FMonolithActionResult FMonolithLogicDriverNodeActions::HandleSetTransitionCondit
 	FString ConditionType = Params->GetStringField(TEXT("condition_type"));
 	if (ConditionType.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'condition_type'"));
+		return FMonolithActionResult::InvalidParam(TEXT("condition_type"), TEXT("Missing required param 'condition_type'")).WithErrorMessage(TEXT("Missing required param 'condition_type'"));
 	}
 
 	// Get optional condition params
@@ -631,7 +631,7 @@ FMonolithActionResult FMonolithLogicDriverNodeActions::HandleSetTransitionCondit
 FMonolithActionResult FMonolithLogicDriverNodeActions::HandleGetExposedProperties(const TSharedPtr<FJsonObject>& Params)
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 
 	FString LoadError;
 	UBlueprint* SMBlueprint = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -736,7 +736,7 @@ FMonolithActionResult FMonolithLogicDriverNodeActions::HandleSetExposedProperty(
 	if (!Lookup.bSuccess) return Lookup.Error;
 
 	FString PropertyName = Params->GetStringField(TEXT("property_name"));
-	if (PropertyName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'property_name'"));
+	if (PropertyName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("property_name"), TEXT("Missing required param 'property_name'")).WithErrorMessage(TEXT("Missing required param 'property_name'"));
 
 	FString Value = Params->GetStringField(TEXT("value"));
 
@@ -854,7 +854,7 @@ FMonolithActionResult FMonolithLogicDriverNodeActions::HandleSetStateTags(const 
 
 	if (!Params->HasField(TEXT("gameplay_tags")))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'gameplay_tags'"));
+		return FMonolithActionResult::InvalidParam(TEXT("gameplay_tags"), TEXT("Missing required param 'gameplay_tags'")).WithErrorMessage(TEXT("Missing required param 'gameplay_tags'"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>& TagArray = Params->GetArrayField(TEXT("gameplay_tags"));

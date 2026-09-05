@@ -77,13 +77,13 @@ FMonolithActionResult FMonolithAIPerceptionScaffoldActions::HandleAddPerceptionT
 	FString ActorBPPath;
 	if (!Params->TryGetStringField(TEXT("actor_bp_path"), ActorBPPath) || ActorBPPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: actor_bp_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_bp_path"), TEXT("Missing required parameter: actor_bp_path")).WithErrorMessage(TEXT("Missing required parameter: actor_bp_path"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* SensesArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("senses"), SensesArr) || !SensesArr || SensesArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: senses (array). Supported: [\"Sight\", \"Hearing\", \"Damage\"]."));
+		return FMonolithActionResult::InvalidParam(TEXT("senses"), TEXT("Missing or empty required parameter: senses (array). Supported: [\"Sight\", \"Hearing\", \"Damage\"].")).WithErrorMessage(TEXT("Missing or empty required parameter: senses (array). Supported: [\"Sight\", \"Hearing\", \"Damage\"]."));
 	}
 
 	// Parse + validate sense names up front so we error before mutating the BP.

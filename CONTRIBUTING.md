@@ -259,6 +259,13 @@ The complete class vocabulary is `invalid_param`, `not_found`,
 `engine_error`, `lease_busy`, `invalid_lease`, `not_sent`, and `unknown_outcome`.
 Classify by failure semantics, not by parsing the human-readable message.
 
+When migrating an existing error, `.WithErrorMessage(original)` preserves its
+detailed diagnostic while adopting the helper's code and structured fields.
+`python Scripts/codemod_error_classes.py --report errors.json` previews mechanical
+not-found and missing-parameter migrations; `--write` applies them. Review the
+reported action context, especially errors after mutations: the script skips
+recognized side effects but is not a C++ data-flow analyzer.
+
 Use `Error(message, code)` when preserving an existing protocol code. Include
 `MonolithJsonUtils.h` and use its named constants:
 
@@ -286,6 +293,13 @@ the action result into the MCP response, including `structuredContent` for tool
 errors; handlers should not construct JSON-RPC envelopes themselves.
 
 ### Asset Loading
+
+For a failed asset lookup, use `FMonolithAssetUtils::AssetNotFound(kind, path,
+ExpectedClass)` to suggest nearby assets of the expected class. It reads registry
+metadata without loading candidates or scanning the disk. Suggestions use at
+most 256 package names from the same folder, with a bounded nearby-folder fallback
+when that folder has no candidates. An empty suggestion list is valid when no
+matching metadata is available.
 
 Before creating or saving an asset, call `MonolithCore::EnsureWritablePackagePath`
 from `MonolithPackagePathValidator.h` and propagate a rejected path through

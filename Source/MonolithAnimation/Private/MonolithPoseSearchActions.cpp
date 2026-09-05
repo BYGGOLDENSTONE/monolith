@@ -271,7 +271,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleGetPoseSearchSchema(cons
 
 	UPoseSearchSchema* Schema = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchSchema>(AssetPath);
 	if (!Schema)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchSchema"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -372,7 +372,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleGetPoseSearchDatabase(co
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(AssetPath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -439,11 +439,11 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleAddDatabaseSequence(cons
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(AssetPath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
 
 	UObject* AnimAsset = FMonolithAssetUtils::LoadAssetByPath<UObject>(AnimPath);
 	if (!AnimAsset)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AnimPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AnimPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AnimPath));
 
 	// Check if already in database
 	if (Database->Contains(AnimAsset))
@@ -483,7 +483,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleRemoveDatabaseSequence(c
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(AssetPath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
 
 	const int32 NumAssets = Database->GetNumAnimationAssets();
 	if (SequenceIndex < 0 || SequenceIndex >= NumAssets)
@@ -524,7 +524,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleGetDatabaseStats(const T
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(AssetPath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -652,7 +652,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleCreatePoseSearchSchema(c
 	FString SkeletonPath = Params->GetStringField(TEXT("skeleton_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	FString AssetName;
 	int32 LastSlash;
@@ -723,7 +723,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleCreatePoseSearchDatabase
 	FString SchemaPath = Params->GetStringField(TEXT("schema_path"));
 
 	UPoseSearchSchema* Schema = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchSchema>(SchemaPath);
-	if (!Schema) return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *SchemaPath));
+	if (!Schema) return FMonolithActionResult::NotFound(TEXT("PoseSearchSchema"), SchemaPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *SchemaPath));
 
 	FString AssetName;
 	int32 LastSlash;
@@ -825,7 +825,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleSetDatabaseSequencePrope
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(AssetPath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
 
 	const int32 NumAssets = Database->GetNumAnimationAssets();
 	if (SeqIndex < 0 || SeqIndex >= NumAssets)
@@ -924,7 +924,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleAddSchemaChannel(const T
 
 	UPoseSearchSchema* Schema = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchSchema>(AssetPath);
 	if (!Schema)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchSchema"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *AssetPath));
 
 	UClass* ChannelClass = ResolveChannelClass(ChannelType);
 	if (!ChannelClass)
@@ -1003,7 +1003,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleRemoveSchemaChannel(cons
 
 	UPoseSearchSchema* Schema = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchSchema>(AssetPath);
 	if (!Schema)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchSchema"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *AssetPath));
 
 	// Access the private Channels array via reflection
 	TArray<TObjectPtr<UPoseSearchFeatureChannel>>* Channels = GetSchemaChannelsMutable(Schema);
@@ -1048,7 +1048,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleSetChannelWeight(const T
 
 	UPoseSearchSchema* Schema = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchSchema>(AssetPath);
 	if (!Schema)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchSchema"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *AssetPath));
 
 	// Access authored channels via reflection
 	TArray<TObjectPtr<UPoseSearchFeatureChannel>>* Channels = GetSchemaChannelsMutable(Schema);
@@ -1109,7 +1109,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleRebuildPoseSearchIndex(c
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(AssetPath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
 
 	bool bWait = false;
 	if (Params->HasField(TEXT("wait")))
@@ -1160,7 +1160,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleSetDatabaseSearchMode(co
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(AssetPath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), AssetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *AssetPath));
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("Set PoseSearch Database Search Mode")));
 	Database->Modify();
@@ -1307,11 +1307,11 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleAddDatabaseToNormalizati
 
 	UPoseSearchNormalizationSet* Set = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchNormalizationSet>(SetPath);
 	if (!Set)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchNormalizationSet not found: %s"), *SetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchNormalizationSet"), SetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchNormalizationSet not found: %s"), *SetPath));
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(DatabasePath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), DatabasePath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("Add Database To Normalization Set")));
 	Set->Modify();
@@ -1341,7 +1341,7 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleSetDatabaseEntryTags(con
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(DatabasePath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), DatabasePath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
 
 	const int32 NumAssets = Database->GetNumAnimationAssets();
 	if (EntryIndex < 0 || EntryIndex >= NumAssets)
@@ -1422,11 +1422,11 @@ static FMonolithActionResult HandleSetDatabaseNormalizationSet(const TSharedPtr<
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(DatabasePath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), DatabasePath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
 
 	UPoseSearchNormalizationSet* Set = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchNormalizationSet>(SetPath);
 	if (!Set)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchNormalizationSet not found: %s"), *SetPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchNormalizationSet"), SetPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchNormalizationSet not found: %s"), *SetPath));
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("Set Database Normalization Set")));
 	Database->Modify();
@@ -1466,11 +1466,11 @@ static FMonolithActionResult HandleAddDatabaseEntry(const TSharedPtr<FJsonObject
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(DatabasePath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), DatabasePath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
 
 	UObject* AnimAsset = FMonolithAssetUtils::LoadAssetByPath<UObject>(AnimPath);
 	if (!AnimAsset)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AnimPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AnimPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AnimPath));
 
 	if (Database->Contains(AnimAsset))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation already in database: %s"), *AnimPath));
@@ -1529,7 +1529,7 @@ static FMonolithActionResult HandleConfigureSchemaChannel(const TSharedPtr<FJson
 
 	UPoseSearchSchema* Schema = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchSchema>(SchemaPath);
 	if (!Schema)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *SchemaPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchSchema"), SchemaPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *SchemaPath));
 
 	TArray<TObjectPtr<UPoseSearchFeatureChannel>>* Channels = GetSchemaChannelsMutable(Schema);
 	if (!Channels)
@@ -1652,7 +1652,7 @@ static FMonolithActionResult HandleAddPoseSearchNotify(const TSharedPtr<FJsonObj
 
 	UAnimSequenceBase* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AnimPath);
 	if (!Seq)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AnimPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AnimPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AnimPath));
 
 	if (StartTime < 0.f || StartTime > Seq->GetPlayLength())
 		return FMonolithActionResult::Error(FString::Printf(TEXT("start_time %.3f out of range [0, %.3f]"), StartTime, Seq->GetPlayLength()));
@@ -1719,11 +1719,11 @@ static FMonolithActionResult HandleDeriveSchemaChannelsFromSkeleton(const TShare
 
 	UPoseSearchSchema* Schema = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchSchema>(SchemaPath);
 	if (!Schema)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *SchemaPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchSchema"), SchemaPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *SchemaPath));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
 	if (!Skeleton)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	// Heuristically pick foot bones: name matches foot/ball/toe AND a left/right marker.
 	const FReferenceSkeleton& RefSkel = Skeleton->GetReferenceSkeleton();
@@ -1872,7 +1872,7 @@ static FMonolithActionResult HandleValidatePoseSearchDatabase(const TSharedPtr<F
 
 	UPoseSearchDatabase* Database = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchDatabase>(DatabasePath);
 	if (!Database)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchDatabase"), DatabasePath).WithErrorMessage(FString::Printf(TEXT("PoseSearchDatabase not found: %s"), *DatabasePath));
 
 	TArray<TSharedPtr<FJsonValue>> Issues;
 	bool bValid = true;

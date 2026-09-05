@@ -666,7 +666,7 @@ FMonolithActionResult FMonolithMeshBuildingValidationActions::ValidateBuilding(
 
 	if (!FMonolithMeshSpatialRegistry::HasBlock(BlockId))
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Block"), BlockId).WithErrorMessage(FString::Printf(
 			TEXT("Block '%s' not found in spatial registry. Use register_building or load_block_descriptor first."),
 			*BlockId));
 	}

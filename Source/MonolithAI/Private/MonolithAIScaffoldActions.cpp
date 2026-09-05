@@ -1214,7 +1214,7 @@ FMonolithActionResult FMonolithAIScaffoldActions::HandleScaffoldTeamSystem(const
 	const TArray<TSharedPtr<FJsonValue>>* TeamsArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("teams"), TeamsArr) || !TeamsArr || TeamsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: teams (non-empty array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("teams"), TEXT("Missing required parameter: teams (non-empty array)")).WithErrorMessage(TEXT("Missing required parameter: teams (non-empty array)"));
 	}
 
 	// Parse teams

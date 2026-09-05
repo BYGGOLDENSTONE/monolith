@@ -228,6 +228,7 @@ private:
 	static UNiagaraGraph* GetGraphForUsage(UNiagaraSystem* System, const FString& EmitterHandleId, ENiagaraScriptUsage Usage);
 	static UNiagaraNodeOutput* FindOutputNode(UNiagaraSystem* System, const FString& EmitterHandleId,
 		ENiagaraScriptUsage Usage, const FGuid& UsageId = FGuid());
+	static FMonolithActionResult ModuleNotFound(UNiagaraSystem* System, const FString& EmitterHandleId, const FString& Needle);
 	static UNiagaraNodeFunctionCall* FindModuleNode(UNiagaraSystem* System, const FString& EmitterHandleId,
 		const FString& NodeGuidStr, ENiagaraScriptUsage* OutUsage = nullptr, FGuid* OutUsageId = nullptr);
 	static UNiagaraNodeFunctionCall* FindFunctionCallNode(UNiagaraSystem* System, const FString& EmitterHandleId, const FString& NodeGuidStr);

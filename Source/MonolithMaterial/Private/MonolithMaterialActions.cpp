@@ -1,5 +1,6 @@
 #include "MonolithMaterialActions.h"
 #include "MonolithToolRegistry.h"
+#include "MonolithAssetUtils.h"
 #include "MonolithParamSchema.h"
 #include "MonolithPackagePathValidator.h"
 
@@ -951,7 +952,7 @@ FMonolithActionResult FMonolithMaterialActions::GetAllExpressions(const TSharedP
 
 	if (!Mat && !MatFunc)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(
 			TEXT("Failed to load material or material function at '%s'"), *AssetPath));
 	}
 
@@ -993,7 +994,7 @@ FMonolithActionResult FMonolithMaterialActions::GetExpressionDetails(const TShar
 
 	if (!Mat && !MatFunc)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(
 			TEXT("Failed to load material or material function at '%s'"), *AssetPath));
 	}
 
@@ -1017,7 +1018,7 @@ FMonolithActionResult FMonolithMaterialActions::GetExpressionDetails(const TShar
 		{
 			if (Expr) AvailableNames.Add(Expr->GetName());
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("expression"), ExpressionName, AvailableNames).WithErrorMessage(FString::Printf(
 			TEXT("Expression '%s' not found. Available: %s"),
 			*ExpressionName, *FString::Join(AvailableNames, TEXT(", "))));
 	}
@@ -1094,7 +1095,7 @@ FMonolithActionResult FMonolithMaterialActions::GetFullConnectionGraph(const TSh
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> ConnectionsArray;
@@ -1182,7 +1183,7 @@ FMonolithActionResult FMonolithMaterialActions::DisconnectExpression(const TShar
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	UMaterialExpression* TargetExpr = nullptr;
@@ -1203,7 +1204,7 @@ FMonolithActionResult FMonolithMaterialActions::DisconnectExpression(const TShar
 		{
 			if (Expr) AvailableNames.Add(Expr->GetName());
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("expression"), ExpressionName, AvailableNames).WithErrorMessage(FString::Printf(
 			TEXT("Expression '%s' not found. Available: %s"),
 			*ExpressionName, *FString::Join(AvailableNames, TEXT(", "))));
 	}
@@ -1372,7 +1373,7 @@ FMonolithActionResult FMonolithMaterialActions::BuildMaterialGraph(const TShared
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	// graph_spec can be passed as a nested object or as a JSON string
@@ -1590,7 +1591,7 @@ FMonolithActionResult FMonolithMaterialActions::ExportMaterialGraph(const TShare
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	TConstArrayView<TObjectPtr<UMaterialExpression>> Expressions = Mat->GetExpressions();
@@ -1785,7 +1786,7 @@ FMonolithActionResult FMonolithMaterialActions::ImportMaterialGraph(const TShare
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	if (Mode == TEXT("overwrite"))
@@ -1861,7 +1862,7 @@ FMonolithActionResult FMonolithMaterialActions::ValidateMaterial(const TSharedPt
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	TConstArrayView<TObjectPtr<UMaterialExpression>> Expressions = Mat->GetExpressions();
@@ -2212,7 +2213,7 @@ FMonolithActionResult FMonolithMaterialActions::RenderPreview(const TSharedPtr<F
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	FObjectThumbnail Thumbnail;
@@ -2282,7 +2283,7 @@ FMonolithActionResult FMonolithMaterialActions::GetThumbnail(const TSharedPtr<FJ
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	FObjectThumbnail Thumbnail;
@@ -2355,7 +2356,7 @@ FMonolithActionResult FMonolithMaterialActions::CreateCustomHLSLNode(const TShar
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("CreateCustomHLSLNode")));
@@ -2445,7 +2446,7 @@ FMonolithActionResult FMonolithMaterialActions::GetLayerInfo(const TSharedPtr<FJ
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	auto ResultJson = MakeShared<FJsonObject>();
@@ -2713,7 +2714,7 @@ FMonolithActionResult FMonolithMaterialActions::CreateMaterialInstance(const TSh
 	UMaterialInterface* ParentMat = ParentObj ? Cast<UMaterialInterface>(ParentObj) : nullptr;
 	if (!ParentMat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load parent material at '%s'"), *ParentPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), ParentPath, UMaterialInterface::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load parent material at '%s'"), *ParentPath));
 	}
 
 	// Check if asset already exists
@@ -2852,7 +2853,7 @@ FMonolithActionResult FMonolithMaterialActions::SetMaterialProperty(const TShare
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	FString ResolvedPathError;
@@ -3062,7 +3063,7 @@ FMonolithActionResult FMonolithMaterialActions::DeleteExpression(const TSharedPt
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	// Find the expression
@@ -3084,7 +3085,7 @@ FMonolithActionResult FMonolithMaterialActions::DeleteExpression(const TSharedPt
 		{
 			if (Expr) AvailableNames.Add(Expr->GetName());
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("expression"), ExprName, AvailableNames).WithErrorMessage(FString::Printf(
 			TEXT("Expression '%s' not found. Available: %s"),
 			*ExprName, *FString::Join(AvailableNames, TEXT(", "))));
 	}
@@ -3119,7 +3120,7 @@ FMonolithActionResult FMonolithMaterialActions::GetMaterialParameters(const TSha
 	UMaterialInterface* MatInterface = LoadedAsset ? Cast<UMaterialInterface>(LoadedAsset) : nullptr;
 	if (!MatInterface)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterialInterface::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load material at '%s'"), *AssetPath));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> ScalarArray, VectorArray, TextureArray, SwitchArray;
@@ -3231,7 +3232,7 @@ FMonolithActionResult FMonolithMaterialActions::SetInstanceParameter(const TShar
 				TEXT("'%s' is a Material Function, not a Material Instance. Use 'set_expression_property' to modify expression defaults."),
 				*AssetPath));
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material_instance"), AssetPath, UMaterialInstanceConstant::StaticClass()).WithErrorMessage(FString::Printf(
 			TEXT("Failed to load material instance at '%s' (loaded as %s)"),
 			*AssetPath, LoadedAsset ? *LoadedAsset->GetClass()->GetName() : TEXT("null")));
 	}
@@ -3320,7 +3321,7 @@ FMonolithActionResult FMonolithMaterialActions::RecompileMaterial(const TSharedP
 	UMaterialInterface* MatInterface = LoadedAsset ? Cast<UMaterialInterface>(LoadedAsset) : nullptr;
 	if (!MatInterface)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterialInterface::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load material at '%s'"), *AssetPath));
 	}
 
 	// For base materials, trigger full recompile
@@ -3398,7 +3399,7 @@ FMonolithActionResult FMonolithMaterialActions::DuplicateMaterial(const TSharedP
 	UObject* SourceObj = UEditorAssetLibrary::LoadAsset(SourcePath);
 	if (!SourceObj)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source material not found at '%s'"), *SourcePath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), SourcePath, UMaterialInterface::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Source material not found at '%s'"), *SourcePath));
 	}
 
 	// Check dest doesn't exist
@@ -3434,7 +3435,7 @@ FMonolithActionResult FMonolithMaterialActions::GetCompilationStats(const TShare
 	UMaterialInterface* MatInterface = LoadedAsset ? Cast<UMaterialInterface>(LoadedAsset) : nullptr;
 	if (!MatInterface)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterialInterface::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load material at '%s'"), *AssetPath));
 	}
 
 	UMaterial* BaseMat = MatInterface->GetMaterial();
@@ -3558,7 +3559,7 @@ FMonolithActionResult FMonolithMaterialActions::SetExpressionProperty(const TSha
 
 	if (!Mat && !MatFunc)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(
 			TEXT("Failed to load material or material function at '%s'"), *AssetPath));
 	}
 
@@ -3583,7 +3584,7 @@ FMonolithActionResult FMonolithMaterialActions::SetExpressionProperty(const TSha
 		{
 			if (E) AvailableNames.Add(E->GetName());
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("expression"), ExprName, AvailableNames).WithErrorMessage(FString::Printf(
 			TEXT("Expression '%s' not found. Available: %s"),
 			*ExprName, *FString::Join(AvailableNames, TEXT(", "))));
 	}
@@ -3599,7 +3600,7 @@ FMonolithActionResult FMonolithMaterialActions::SetExpressionProperty(const TSha
 				AvailableProps.Add((*PropIt)->GetName());
 			}
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("property"), PropName, AvailableProps).WithErrorMessage(FString::Printf(
 			TEXT("Property '%s' not found on expression '%s' (%s). Available: %s"),
 			*PropName, *ExprName, *TargetExpr->GetClass()->GetName(),
 			*FString::Join(AvailableProps, TEXT(", "))));
@@ -3753,7 +3754,7 @@ FMonolithActionResult FMonolithMaterialActions::ConnectExpressions(const TShared
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	// Find source expression (and optionally target expression)
@@ -3775,7 +3776,7 @@ FMonolithActionResult FMonolithMaterialActions::ConnectExpressions(const TShared
 		{
 			if (Expr) AvailableNames.Add(Expr->GetName());
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("expression"), FromExprName, AvailableNames).WithErrorMessage(FString::Printf(
 			TEXT("Source expression '%s' not found. Available: %s"),
 			*FromExprName, *FString::Join(AvailableNames, TEXT(", "))));
 	}
@@ -3867,7 +3868,7 @@ FMonolithActionResult FMonolithMaterialActions::AutoLayout(const TSharedPtr<FJso
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	FString Formatter = TEXT("auto");
@@ -3985,7 +3986,7 @@ FMonolithActionResult FMonolithMaterialActions::DuplicateExpression(const TShare
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	// Find source expression
@@ -4006,7 +4007,7 @@ FMonolithActionResult FMonolithMaterialActions::DuplicateExpression(const TShare
 		{
 			if (Expr) AvailableNames.Add(Expr->GetName());
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("expression"), ExprName, AvailableNames).WithErrorMessage(FString::Printf(
 			TEXT("Expression '%s' not found. Available: %s"),
 			*ExprName, *FString::Join(AvailableNames, TEXT(", "))));
 	}
@@ -4180,7 +4181,7 @@ FMonolithActionResult FMonolithMaterialActions::GetExpressionConnections(const T
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	// Find target expression
@@ -4202,7 +4203,7 @@ FMonolithActionResult FMonolithMaterialActions::GetExpressionConnections(const T
 		{
 			if (Expr) AvailableNames.Add(Expr->GetName());
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("expression"), ExprName, AvailableNames).WithErrorMessage(FString::Printf(
 			TEXT("Expression '%s' not found. Available: %s"),
 			*ExprName, *FString::Join(AvailableNames, TEXT(", "))));
 	}
@@ -4317,7 +4318,7 @@ FMonolithActionResult FMonolithMaterialActions::MoveExpression(const TSharedPtr<
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	// Build a list of move operations
@@ -4461,7 +4462,7 @@ FMonolithActionResult FMonolithMaterialActions::GetMaterialProperties(const TSha
 	UMaterialInterface* MatInterface = LoadedAsset ? Cast<UMaterialInterface>(LoadedAsset) : nullptr;
 	if (!MatInterface)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterialInterface::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load material at '%s'"), *AssetPath));
 	}
 
 	auto ResultJson = MakeShared<FJsonObject>();
@@ -4559,7 +4560,7 @@ FMonolithActionResult FMonolithMaterialActions::GetInstanceParameters(const TSha
 	UMaterialInstanceConstant* MIC = LoadedAsset ? Cast<UMaterialInstanceConstant>(LoadedAsset) : nullptr;
 	if (!MIC)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load material instance at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material_instance"), AssetPath, UMaterialInstanceConstant::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load material instance at '%s'"), *AssetPath));
 	}
 
 	auto ResultJson = MakeShared<FJsonObject>();
@@ -4693,7 +4694,7 @@ FMonolithActionResult FMonolithMaterialActions::SetInstanceParameters(const TSha
 				TEXT("'%s' is a Material Function, not a Material Instance. Use 'set_expression_property' to modify expression defaults."),
 				*AssetPath));
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material_instance"), AssetPath, UMaterialInstanceConstant::StaticClass()).WithErrorMessage(FString::Printf(
 			TEXT("Failed to load material instance at '%s' (loaded as %s)"),
 			*AssetPath, LoadedAsset ? *LoadedAsset->GetClass()->GetName() : TEXT("null")));
 	}
@@ -4868,14 +4869,14 @@ FMonolithActionResult FMonolithMaterialActions::SetInstanceParent(const TSharedP
 	UMaterialInstanceConstant* MIC = LoadedAsset ? Cast<UMaterialInstanceConstant>(LoadedAsset) : nullptr;
 	if (!MIC)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load material instance at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material_instance"), AssetPath, UMaterialInstanceConstant::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load material instance at '%s'"), *AssetPath));
 	}
 
 	UObject* NewParentObj = UEditorAssetLibrary::LoadAsset(NewParentPath);
 	UMaterialInterface* NewParent = NewParentObj ? Cast<UMaterialInterface>(NewParentObj) : nullptr;
 	if (!NewParent)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load new parent material at '%s'"), *NewParentPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), NewParentPath, UMaterialInterface::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load new parent material at '%s'"), *NewParentPath));
 	}
 
 	// Snapshot current override names before reparenting
@@ -4957,7 +4958,7 @@ FMonolithActionResult FMonolithMaterialActions::ClearInstanceParameter(const TSh
 	UMaterialInstanceConstant* MIC = LoadedAsset ? Cast<UMaterialInstanceConstant>(LoadedAsset) : nullptr;
 	if (!MIC)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load material instance at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material_instance"), AssetPath, UMaterialInstanceConstant::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load material instance at '%s'"), *AssetPath));
 	}
 
 	FString ParamName = Params->HasField(TEXT("parameter_name")) ? Params->GetStringField(TEXT("parameter_name")) : TEXT("");
@@ -5091,7 +5092,7 @@ FMonolithActionResult FMonolithMaterialActions::SaveMaterial(const TSharedPtr<FJ
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	FString WritablePathError;
@@ -5130,7 +5131,7 @@ FMonolithActionResult FMonolithMaterialActions::UpdateCustomHlslNode(const TShar
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	// Find the expression
@@ -5158,7 +5159,7 @@ FMonolithActionResult FMonolithMaterialActions::UpdateCustomHlslNode(const TShar
 		{
 			if (Expr) AvailableNames.Add(Expr->GetName());
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("expression"), ExprName, AvailableNames).WithErrorMessage(FString::Printf(
 			TEXT("Expression '%s' not found. Available: %s"),
 			*ExprName, *FString::Join(AvailableNames, TEXT(", "))));
 	}
@@ -5296,7 +5297,7 @@ FMonolithActionResult FMonolithMaterialActions::ReplaceExpression(const TSharedP
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	// Find old expression
@@ -5318,7 +5319,7 @@ FMonolithActionResult FMonolithMaterialActions::ReplaceExpression(const TSharedP
 		{
 			if (Expr) AvailableNames.Add(Expr->GetName());
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("expression"), ExprName, AvailableNames).WithErrorMessage(FString::Printf(
 			TEXT("Expression '%s' not found. Available: %s"),
 			*ExprName, *FString::Join(AvailableNames, TEXT(", "))));
 	}
@@ -5682,7 +5683,14 @@ FMonolithActionResult FMonolithMaterialActions::GetExpressionPinInfo(const TShar
 	}
 	if (!ExprClass || !ExprClass->IsChildOf(UMaterialExpression::StaticClass()))
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		TArray<UClass*> Classes;
+		GetDerivedClasses(UMaterialExpression::StaticClass(), Classes, true);
+		TArray<FString> Names;
+		for (UClass* Class : Classes)
+		{
+			if (Class && !Class->HasAnyClassFlags(CLASS_Abstract)) Names.Add(Class->GetName());
+		}
+		return FMonolithActionResult::NotFound(TEXT("expression_class"), FullClassName, Names).WithErrorMessage(FString::Printf(
 			TEXT("Expression class '%s' not found. Use list_expression_classes to see valid options."), *ClassName));
 	}
 
@@ -5746,7 +5754,7 @@ FMonolithActionResult FMonolithMaterialActions::RenameExpression(const TSharedPt
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	UMaterialExpression* TargetExpr = nullptr;
@@ -5766,7 +5774,7 @@ FMonolithActionResult FMonolithMaterialActions::RenameExpression(const TSharedPt
 		{
 			if (Expr) AvailableNames.Add(Expr->GetName());
 		}
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("expression"), ExprName, AvailableNames).WithErrorMessage(FString::Printf(
 			TEXT("Expression '%s' not found. Available: %s"),
 			*ExprName, *FString::Join(AvailableNames, TEXT(", "))));
 	}
@@ -5804,7 +5812,7 @@ FMonolithActionResult FMonolithMaterialActions::ListMaterialInstances(const TSha
 	UObject* ParentAsset = UEditorAssetLibrary::LoadAsset(ParentPath);
 	if (!ParentAsset || !Cast<UMaterialInterface>(ParentAsset))
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), ParentPath, UMaterialInterface::StaticClass()).WithErrorMessage(FString::Printf(
 			TEXT("Failed to load material interface at '%s'"), *ParentPath));
 	}
 
@@ -6498,7 +6506,7 @@ FMonolithActionResult FMonolithMaterialActions::BuildFunctionGraph(const TShared
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 	UMaterialFunction* Func = Cast<UMaterialFunction>(LoadedAsset);
 	if (!Func)
@@ -6790,7 +6798,7 @@ FMonolithActionResult FMonolithMaterialActions::GetFunctionInfo(const TSharedPtr
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	// UMaterialFunction is the base class for layers and layer blends too
@@ -6917,7 +6925,7 @@ FMonolithActionResult FMonolithMaterialActions::ExportFunctionGraph(const TShare
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	UMaterialFunction* MatFunc = Cast<UMaterialFunction>(LoadedAsset);
@@ -7236,7 +7244,7 @@ FMonolithActionResult FMonolithMaterialActions::SetFunctionMetadata(const TShare
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	UMaterialFunction* MatFunc = Cast<UMaterialFunction>(LoadedAsset);
@@ -7308,7 +7316,7 @@ FMonolithActionResult FMonolithMaterialActions::UpdateMaterialFunction(const TSh
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	UMaterialFunctionInterface* MatFuncInterface = Cast<UMaterialFunctionInterface>(LoadedAsset);
@@ -7340,7 +7348,7 @@ FMonolithActionResult FMonolithMaterialActions::DeleteFunctionExpression(const T
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	// Reject function instances — DeleteMaterialExpressionInFunction requires UMaterialFunction*, not UMaterialFunctionInterface*
@@ -8146,15 +8154,15 @@ FMonolithActionResult FMonolithMaterialActions::CreatePbrMaterialFromDisk(const 
 	// ---- Parse required params ----
 	if (!Params->HasField(TEXT("material_path")))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: material_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("material_path"), TEXT("Missing required param: material_path")).WithErrorMessage(TEXT("Missing required param: material_path"));
 	}
 	if (!Params->HasField(TEXT("texture_folder")))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: texture_folder"));
+		return FMonolithActionResult::InvalidParam(TEXT("texture_folder"), TEXT("Missing required param: texture_folder")).WithErrorMessage(TEXT("Missing required param: texture_folder"));
 	}
 	if (!Params->HasField(TEXT("maps")))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: maps"));
+		return FMonolithActionResult::InvalidParam(TEXT("maps"), TEXT("Missing required param: maps")).WithErrorMessage(TEXT("Missing required param: maps"));
 	}
 
 	FString MaterialPath = Params->GetStringField(TEXT("material_path"));
@@ -8564,7 +8572,7 @@ FMonolithActionResult FMonolithMaterialActions::CreateFunctionInstance(const TSh
 	UMaterialFunctionInterface* ParentFunc = ParentObj ? Cast<UMaterialFunctionInterface>(ParentObj) : nullptr;
 	if (!ParentFunc)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load parent function at '%s'"), *ParentPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material_function"), ParentPath, UMaterialFunctionInterface::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load parent function at '%s'"), *ParentPath));
 	}
 
 	// Create package
@@ -8801,7 +8809,7 @@ FMonolithActionResult FMonolithMaterialActions::SetFunctionInstanceParameter(con
 	UMaterialFunctionInstance* MFI = LoadedAsset ? Cast<UMaterialFunctionInstance>(LoadedAsset) : nullptr;
 	if (!MFI)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load material function instance at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material_function"), AssetPath, UMaterialFunctionInstance::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load material function instance at '%s'"), *AssetPath));
 	}
 
 	// Build parameter GUID lookup from base function expressions
@@ -9009,7 +9017,7 @@ FMonolithActionResult FMonolithMaterialActions::GetFunctionInstanceInfo(const TS
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	UMaterialFunctionInstance* MFI = Cast<UMaterialFunctionInstance>(LoadedAsset);
@@ -9267,7 +9275,7 @@ FMonolithActionResult FMonolithMaterialActions::LayoutFunctionExpressions(const 
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	// Reject function instances — layout only works on base functions
@@ -9301,7 +9309,7 @@ FMonolithActionResult FMonolithMaterialActions::RenameFunctionParameterGroup(con
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	UMaterialFunctionInterface* MatFuncInterface = Cast<UMaterialFunctionInterface>(LoadedAsset);
@@ -9337,7 +9345,7 @@ FMonolithActionResult FMonolithMaterialActions::ClearGraph(const TSharedPtr<FJso
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	// Save material-level properties — PostEditChange can reset them
@@ -9431,7 +9439,7 @@ FMonolithActionResult FMonolithMaterialActions::DeleteExpressions(const TSharedP
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	// Collect matching expressions into local array first (avoid iterator invalidation)
@@ -9547,7 +9555,7 @@ FMonolithActionResult FMonolithMaterialActions::GetTextureProperties(const TShar
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	UTexture* Tex = Cast<UTexture>(LoadedAsset);
@@ -9583,7 +9591,7 @@ FMonolithActionResult FMonolithMaterialActions::PreviewTexture(const TSharedPtr<
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("asset"), AssetPath, nullptr).WithErrorMessage(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
 	}
 
 	UTexture* Tex = Cast<UTexture>(LoadedAsset);
@@ -9769,7 +9777,7 @@ FMonolithActionResult FMonolithMaterialActions::CheckTilingQuality(const TShared
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("material"), AssetPath, UMaterial::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> IssuesArray;

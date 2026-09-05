@@ -142,7 +142,7 @@ FMonolithActionResult FProjectExportAssetTextAction::Execute(const TSharedPtr<FJ
 	UObject* Asset = FMonolithAssetUtils::LoadAssetByPath(AssetPath);
 	if (!Asset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
 	}
 
 	// Optional: scope to a sub-object by name/class substring.

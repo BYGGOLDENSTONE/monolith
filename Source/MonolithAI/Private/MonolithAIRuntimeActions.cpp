@@ -390,13 +390,13 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeGetBBValue(const T
 	FString KeyName = Params->GetStringField(TEXT("key_name"));
 	if (KeyName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'key_name'"));
+		return FMonolithActionResult::InvalidParam(TEXT("key_name"), TEXT("Missing required param 'key_name'")).WithErrorMessage(TEXT("Missing required param 'key_name'"));
 	}
 
 	FBlackboard::FKey KeyID = BB->GetKeyID(FName(*KeyName));
 	if (KeyID == FBlackboard::InvalidKey)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blackboard key '%s' not found"), *KeyName));
+		return FMonolithActionResult::NotFound(TEXT("Blackboard key"), KeyName).WithErrorMessage(FString::Printf(TEXT("Blackboard key '%s' not found"), *KeyName));
 	}
 
 	const FBlackboardEntry* Entry = nullptr;
@@ -436,13 +436,13 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeSetBBValue(const T
 	FString KeyName = Params->GetStringField(TEXT("key_name"));
 	if (KeyName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'key_name'"));
+		return FMonolithActionResult::InvalidParam(TEXT("key_name"), TEXT("Missing required param 'key_name'")).WithErrorMessage(TEXT("Missing required param 'key_name'"));
 	}
 
 	FBlackboard::FKey KeyID = BB->GetKeyID(FName(*KeyName));
 	if (KeyID == FBlackboard::InvalidKey)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blackboard key '%s' not found"), *KeyName));
+		return FMonolithActionResult::NotFound(TEXT("Blackboard key"), KeyName).WithErrorMessage(FString::Printf(TEXT("Blackboard key '%s' not found"), *KeyName));
 	}
 
 	// Determine the key type from the BB asset
@@ -483,7 +483,7 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeSetBBValue(const T
 	}
 	else
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'value'"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required param 'value'")).WithErrorMessage(TEXT("Missing required param 'value'"));
 	}
 
 	if (KeyTypeName.Contains(TEXT("Float")))
@@ -596,13 +596,13 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeClearBBValue(const
 	FString KeyName = Params->GetStringField(TEXT("key_name"));
 	if (KeyName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'key_name'"));
+		return FMonolithActionResult::InvalidParam(TEXT("key_name"), TEXT("Missing required param 'key_name'")).WithErrorMessage(TEXT("Missing required param 'key_name'"));
 	}
 
 	FBlackboard::FKey KeyID = BB->GetKeyID(FName(*KeyName));
 	if (KeyID == FBlackboard::InvalidKey)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blackboard key '%s' not found"), *KeyName));
+		return FMonolithActionResult::NotFound(TEXT("Blackboard key"), KeyName).WithErrorMessage(FString::Printf(TEXT("Blackboard key '%s' not found"), *KeyName));
 	}
 
 	BB->ClearValue(KeyID);
@@ -674,7 +674,7 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeStartBT(const TSha
 		BT = Cast<UBehaviorTree>(MonolithAI::ResolveAsset(UBehaviorTree::StaticClass(), BTPath));
 		if (!BT)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTPath));
+			return FMonolithActionResult::NotFound(TEXT("BehaviorTree"), BTPath).WithErrorMessage(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTPath));
 		}
 	}
 
@@ -945,12 +945,12 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeCheckPerception(co
 	FString ObserverId = Params->GetStringField(TEXT("observer_actor"));
 	if (ObserverId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'observer_actor'"));
+		return FMonolithActionResult::InvalidParam(TEXT("observer_actor"), TEXT("Missing required param 'observer_actor'")).WithErrorMessage(TEXT("Missing required param 'observer_actor'"));
 	}
 	AActor* ObserverActor = MonolithAI::FindActorInPIE(ObserverId);
 	if (!ObserverActor)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Observer actor '%s' not found in PIE"), *ObserverId));
+		return FMonolithActionResult::NotFound(TEXT("Observer actor"), ObserverId).WithErrorMessage(FString::Printf(TEXT("Observer actor '%s' not found in PIE"), *ObserverId));
 	}
 
 	AAIController* AIC = GetAIControllerFromActor(ObserverActor);
@@ -969,12 +969,12 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeCheckPerception(co
 	FString TargetId = Params->GetStringField(TEXT("target_actor"));
 	if (TargetId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'target_actor'"));
+		return FMonolithActionResult::InvalidParam(TEXT("target_actor"), TEXT("Missing required param 'target_actor'")).WithErrorMessage(TEXT("Missing required param 'target_actor'"));
 	}
 	AActor* TargetActor = MonolithAI::FindActorInPIE(TargetId);
 	if (!TargetActor)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Target actor '%s' not found in PIE"), *TargetId));
+		return FMonolithActionResult::NotFound(TEXT("Target actor"), TargetId).WithErrorMessage(FString::Printf(TEXT("Target actor '%s' not found in PIE"), *TargetId));
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -1043,7 +1043,7 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeReportNoise(const 
 		FString LocationStr = Params->GetStringField(TEXT("location"));
 		if (LocationStr.IsEmpty())
 		{
-			return FMonolithActionResult::Error(TEXT("Missing required param 'location' — use {\"x\":N,\"y\":N,\"z\":N} or \"X,Y,Z\""));
+			return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing required param 'location' — use {\"x\":N,\"y\":N,\"z\":N} or \"X,Y,Z\"")).WithErrorMessage(TEXT("Missing required param 'location' — use {\"x\":N,\"y\":N,\"z\":N} or \"X,Y,Z\""));
 		}
 		TArray<FString> Parts;
 		LocationStr.Replace(TEXT("("), TEXT("")).Replace(TEXT(")"), TEXT("")).ParseIntoArray(Parts, TEXT(","));
@@ -1069,7 +1069,7 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeReportNoise(const 
 		Instigator = MonolithAI::FindActorInPIE(InstigatorStr);
 		if (!Instigator)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Instigator actor '%s' not found in PIE"), *InstigatorStr));
+			return FMonolithActionResult::NotFound(TEXT("Instigator actor"), InstigatorStr).WithErrorMessage(FString::Printf(TEXT("Instigator actor '%s' not found in PIE"), *InstigatorStr));
 		}
 	}
 
@@ -1190,7 +1190,7 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeSendSTEvent(const 
 	FString EventTagStr = Params->GetStringField(TEXT("event_tag"));
 	if (EventTagStr.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'event_tag'"));
+		return FMonolithActionResult::InvalidParam(TEXT("event_tag"), TEXT("Missing required param 'event_tag'")).WithErrorMessage(TEXT("Missing required param 'event_tag'"));
 	}
 
 	FGameplayTag EventTag = FGameplayTag::RequestGameplayTag(FName(*EventTagStr), false);
@@ -1356,13 +1356,13 @@ FMonolithActionResult FMonolithAIRuntimeActions::HandleRuntimeRunEQSQuery(const 
 	FString QueryPath = Params->GetStringField(TEXT("query_path"));
 	if (QueryPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'query_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("query_path"), TEXT("Missing required param 'query_path'")).WithErrorMessage(TEXT("Missing required param 'query_path'"));
 	}
 
 	UEnvQuery* QueryTemplate = Cast<UEnvQuery>(FMonolithAssetUtils::LoadAssetByPath(UEnvQuery::StaticClass(), QueryPath));
 	if (!QueryTemplate)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("EQS query not found: %s"), *QueryPath));
+		return FMonolithActionResult::NotFound(TEXT("EQS query"), QueryPath).WithErrorMessage(FString::Printf(TEXT("EQS query not found: %s"), *QueryPath));
 	}
 
 	int32 MaxResults = 10;

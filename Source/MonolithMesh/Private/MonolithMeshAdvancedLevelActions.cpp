@@ -275,7 +275,7 @@ FMonolithActionResult FMonolithMeshAdvancedLevelActions::ManageSublevel(const TS
 	FString SubAction;
 	if (!Params->TryGetStringField(TEXT("sub_action"), SubAction))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: sub_action"));
+		return FMonolithActionResult::InvalidParam(TEXT("sub_action"), TEXT("Missing required param: sub_action")).WithErrorMessage(TEXT("Missing required param: sub_action"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -290,7 +290,7 @@ FMonolithActionResult FMonolithMeshAdvancedLevelActions::ManageSublevel(const TS
 		FString LevelPath;
 		if (!Params->TryGetStringField(TEXT("level_path"), LevelPath))
 		{
-			return FMonolithActionResult::Error(TEXT("Missing required param: level_path (for create)"));
+			return FMonolithActionResult::InvalidParam(TEXT("level_path"), TEXT("Missing required param: level_path (for create)")).WithErrorMessage(TEXT("Missing required param: level_path (for create)"));
 		}
 
 		// Determine streaming class
@@ -464,13 +464,13 @@ FMonolithActionResult FMonolithMeshAdvancedLevelActions::PlaceBlueprintActor(con
 	FString BlueprintPath;
 	if (!Params->TryGetStringField(TEXT("blueprint"), BlueprintPath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: blueprint"));
+		return FMonolithActionResult::InvalidParam(TEXT("blueprint"), TEXT("Missing required param: blueprint")).WithErrorMessage(TEXT("Missing required param: blueprint"));
 	}
 
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location")).WithErrorMessage(TEXT("Missing or invalid required param: location"));
 	}
 
 	FRotator Rotation(0, 0, 0);
@@ -644,7 +644,7 @@ FMonolithActionResult FMonolithMeshAdvancedLevelActions::PlaceSpline(const TShar
 	const TArray<TSharedPtr<FJsonValue>>* PointsJson = nullptr;
 	if (!Params->TryGetArrayField(TEXT("points"), PointsJson) || !PointsJson || PointsJson->Num() < 2)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: points (array of [x,y,z], minimum 2)"));
+		return FMonolithActionResult::InvalidParam(TEXT("points"), TEXT("Missing or invalid required param: points (array of [x,y,z], minimum 2)")).WithErrorMessage(TEXT("Missing or invalid required param: points (array of [x,y,z], minimum 2)"));
 	}
 
 	// Parse spline points
@@ -845,13 +845,13 @@ FMonolithActionResult FMonolithMeshAdvancedLevelActions::CreatePrefab(const TSha
 	const TArray<TSharedPtr<FJsonValue>>* ActorNamesJson = nullptr;
 	if (!Params->TryGetArrayField(TEXT("actor_names"), ActorNamesJson) || !ActorNamesJson || ActorNamesJson->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: actor_names"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_names"), TEXT("Missing or empty required param: actor_names")).WithErrorMessage(TEXT("Missing or empty required param: actor_names"));
 	}
 
 	FString SavePath;
 	if (!Params->TryGetStringField(TEXT("save_path"), SavePath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param: save_path")).WithErrorMessage(TEXT("Missing required param: save_path"));
 	}
 
 	FString TypeStr;
@@ -937,13 +937,13 @@ FMonolithActionResult FMonolithMeshAdvancedLevelActions::SpawnPrefab(const TShar
 	FString PrefabPath;
 	if (!Params->TryGetStringField(TEXT("prefab_path"), PrefabPath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: prefab_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("prefab_path"), TEXT("Missing required param: prefab_path")).WithErrorMessage(TEXT("Missing required param: prefab_path"));
 	}
 
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location")).WithErrorMessage(TEXT("Missing or invalid required param: location"));
 	}
 
 	FRotator Rotation(0, 0, 0);
@@ -1018,7 +1018,7 @@ FMonolithActionResult FMonolithMeshAdvancedLevelActions::RandomizeTransforms(con
 	const TArray<TSharedPtr<FJsonValue>>* ActorNamesJson = nullptr;
 	if (!Params->TryGetArrayField(TEXT("actor_names"), ActorNamesJson) || !ActorNamesJson || ActorNamesJson->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: actor_names"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_names"), TEXT("Missing or empty required param: actor_names")).WithErrorMessage(TEXT("Missing or empty required param: actor_names"));
 	}
 
 	// Parse ranges (all [min, max] arrays)
@@ -1167,7 +1167,7 @@ FMonolithActionResult FMonolithMeshAdvancedLevelActions::GetLevelActors(const TS
 		AActor* VolumeActor = MonolithMeshUtils::FindActorByName(VolumeName, Err);
 		if (!VolumeActor)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Volume actor not found: %s"), *VolumeName));
+			return FMonolithActionResult::NotFound(TEXT("Volume actor"), VolumeName).WithErrorMessage(FString::Printf(TEXT("Volume actor not found: %s"), *VolumeName));
 		}
 		FVector Origin, Extent;
 		VolumeActor->GetActorBounds(/*bOnlyCollidingComponents=*/false, Origin, Extent);
@@ -1383,13 +1383,13 @@ FMonolithActionResult FMonolithMeshAdvancedLevelActions::CreateBlueprintPrefab(c
 	const TArray<TSharedPtr<FJsonValue>>* ActorNamesJson = nullptr;
 	if (!Params->TryGetArrayField(TEXT("actor_names"), ActorNamesJson) || !ActorNamesJson || ActorNamesJson->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: actor_names"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_names"), TEXT("Missing or empty required param: actor_names")).WithErrorMessage(TEXT("Missing or empty required param: actor_names"));
 	}
 
 	FString SavePath;
 	if (!Params->TryGetStringField(TEXT("save_path"), SavePath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param: save_path")).WithErrorMessage(TEXT("Missing required param: save_path"));
 	}
 
 	bool bCenterPivot = true;

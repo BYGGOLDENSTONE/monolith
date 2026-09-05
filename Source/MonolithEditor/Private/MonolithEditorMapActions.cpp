@@ -136,7 +136,7 @@ FMonolithActionResult FMonolithEditorMapActions::HandleCreateEmptyMap(const TSha
 	FString InPath;
 	if (!Params->TryGetStringField(TEXT("path"), InPath) || InPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: path"));
+		return FMonolithActionResult::InvalidParam(TEXT("path"), TEXT("Missing required parameter: path")).WithErrorMessage(TEXT("Missing required parameter: path"));
 	}
 
 	FString Template;

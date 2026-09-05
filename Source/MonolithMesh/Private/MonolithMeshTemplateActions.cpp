@@ -249,7 +249,7 @@ FMonolithActionResult FMonolithMeshTemplateActions::GetRoomTemplate(const TShare
 	FString TemplateName;
 	if (!Params->TryGetStringField(TEXT("template_name"), TemplateName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: template_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("template_name"), TEXT("Missing required param: template_name")).WithErrorMessage(TEXT("Missing required param: template_name"));
 	}
 
 	FString Error;
@@ -271,13 +271,13 @@ FMonolithActionResult FMonolithMeshTemplateActions::ApplyRoomTemplate(const TSha
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	FString TemplateName;
 	if (!Params->TryGetStringField(TEXT("template_name"), TemplateName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: template_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("template_name"), TEXT("Missing required param: template_name")).WithErrorMessage(TEXT("Missing required param: template_name"));
 	}
 
 	bool bMirror = false;
@@ -536,13 +536,13 @@ FMonolithActionResult FMonolithMeshTemplateActions::CreateRoomTemplate(const TSh
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	FString TemplateName;
 	if (!Params->TryGetStringField(TEXT("template_name"), TemplateName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: template_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("template_name"), TEXT("Missing required param: template_name")).WithErrorMessage(TEXT("Missing required param: template_name"));
 	}
 
 	FString Category = TEXT("custom");

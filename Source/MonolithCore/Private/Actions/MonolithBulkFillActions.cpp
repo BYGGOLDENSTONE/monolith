@@ -9,7 +9,6 @@
 #include "Reflection/MonolithDryRunGuard.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithJsonUtils.h"
-#include "MonolithFuzzyMatch.h"
 #include "MonolithParamSchema.h"
 #include "Dom/JsonObject.h"
 
@@ -99,29 +98,27 @@ namespace MonolithBulkFillActionsInternal
 	{
 		if (!Params.IsValid())
 		{
-			return FMonolithActionResult::Error(TEXT("bulk_fill.apply requires params"));
+			return FMonolithActionResult::InvalidParam(TEXT("params"), TEXT("bulk_fill.apply requires an object"));
 		}
 
 		FBulkFillSpec Spec;
 		Params->TryGetStringField(TEXT("target_namespace"), Spec.TargetNamespace);
 		Params->TryGetStringField(TEXT("target"), Spec.TargetAsset);
-		Spec.Tree = Params->GetObjectField(TEXT("tree"));
+		const TSharedPtr<FJsonObject>* Tree = nullptr;
+		if (Params->TryGetObjectField(TEXT("tree"), Tree)) Spec.Tree = *Tree;
 		Params->TryGetBoolField(TEXT("dry_run"), Spec.bDryRun);
 		Params->TryGetBoolField(TEXT("strict"), Spec.bStrict);
 
 		if (Spec.TargetNamespace.IsEmpty() || Spec.TargetAsset.IsEmpty() || !Spec.Tree.IsValid())
 		{
-			return FMonolithActionResult::Error(
-				TEXT("bulk_fill.apply requires target_namespace, target, and tree (JSON object)"),
-				FMonolithJsonUtils::ErrInvalidParams);
+			return FMonolithActionResult::InvalidParam(TEXT("params"),
+				TEXT("bulk_fill.apply requires target_namespace, target, and tree (JSON object)"));
 		}
 
 		if (!FMonolithBulkFillRegistry::Get().HasAdapter(Spec.TargetNamespace))
 		{
-			return FMonolithActionResult::Error(
-				FString::Printf(TEXT("no bulk_fill adapter registered for namespace '%s' (Phase 0 ships dispatcher only; per-namespace adapters land in Phases 1-5)"),
-					*Spec.TargetNamespace),
-				FMonolithJsonUtils::ErrOptionalDepUnavailable);
+			return FMonolithActionResult::NotFound(TEXT("namespace"), Spec.TargetNamespace,
+				FMonolithBulkFillRegistry::Get().GetRegisteredNamespaces());
 		}
 
 		const FDryRunReport Report = FMonolithBulkFillRegistry::Get().DispatchBulkFill(Spec);
@@ -152,7 +149,7 @@ namespace MonolithBulkFillActionsInternal
 	{
 		if (!Params.IsValid())
 		{
-			return FMonolithActionResult::Error(TEXT("describe.schema requires params"));
+			return FMonolithActionResult::InvalidParam(TEXT("params"), TEXT("describe.schema requires an object"));
 		}
 
 		FString TargetNamespace;
@@ -162,16 +159,13 @@ namespace MonolithBulkFillActionsInternal
 
 		if (TargetNamespace.IsEmpty() || Target.IsEmpty())
 		{
-			return FMonolithActionResult::Error(
-				TEXT("describe.schema requires target_namespace and target"),
-				FMonolithJsonUtils::ErrInvalidParams);
+			return FMonolithActionResult::InvalidParam(TEXT("params"), TEXT("describe.schema requires target_namespace and target"));
 		}
 
 		if (!FMonolithBulkFillRegistry::Get().HasAdapter(TargetNamespace))
 		{
-			return FMonolithActionResult::Error(
-				FString::Printf(TEXT("no describe adapter registered for namespace '%s'"), *TargetNamespace),
-				FMonolithJsonUtils::ErrOptionalDepUnavailable);
+			return FMonolithActionResult::NotFound(TEXT("namespace"), TargetNamespace,
+				FMonolithBulkFillRegistry::Get().GetRegisteredNamespaces());
 		}
 
 		const FSchemaDescriptor Root = FMonolithBulkFillRegistry::Get().DispatchDescribe(TargetNamespace, Target);
@@ -183,7 +177,7 @@ namespace MonolithBulkFillActionsInternal
 	{
 		if (!Params.IsValid())
 		{
-			return FMonolithActionResult::Error(TEXT("describe.list_targets requires params"));
+			return FMonolithActionResult::InvalidParam(TEXT("params"), TEXT("describe.list_targets requires an object"));
 		}
 
 		FString TargetNamespace;
@@ -191,9 +185,12 @@ namespace MonolithBulkFillActionsInternal
 
 		if (TargetNamespace.IsEmpty())
 		{
-			return FMonolithActionResult::Error(
-				TEXT("describe.list_targets requires target_namespace"),
-				FMonolithJsonUtils::ErrInvalidParams);
+			return FMonolithActionResult::InvalidParam(TEXT("target_namespace"), TEXT("describe.list_targets requires target_namespace"));
+		}
+		if (!FMonolithBulkFillRegistry::Get().HasAdapter(TargetNamespace))
+		{
+			return FMonolithActionResult::NotFound(TEXT("namespace"), TargetNamespace,
+				FMonolithBulkFillRegistry::Get().GetRegisteredNamespaces());
 		}
 
 		const TArray<FString> Targets = FMonolithBulkFillRegistry::Get().DispatchListTargets(TargetNamespace);
@@ -243,7 +240,7 @@ namespace MonolithBulkFillActionsInternal
 		// future code path bypasses the alias rewrite.
 		if (!Params.IsValid())
 		{
-			return FMonolithActionResult::Error(TEXT("describe.action_schema requires params"));
+			return FMonolithActionResult::InvalidParam(TEXT("params"), TEXT("describe.action_schema requires an object"));
 		}
 		FString TargetNamespace;
 		Params->TryGetStringField(TEXT("target_namespace"), TargetNamespace);
@@ -259,10 +256,8 @@ namespace MonolithBulkFillActionsInternal
 			TArray<FString> Missing;
 			if (TargetNamespace.IsEmpty()) Missing.Add(TEXT("target_namespace"));
 			if (ActionName.IsEmpty())      Missing.Add(TEXT("target_action"));
-			return FMonolithActionResult::Error(FString::Printf(
-				TEXT("missing required parameter(s): [%s]"),
-				*FString::Join(Missing, TEXT(", "))),
-				FMonolithJsonUtils::ErrInvalidParams);
+			return FMonolithActionResult::InvalidParam(FString::Join(Missing, TEXT(", ")),
+				TEXT("missing required parameters"));
 		}
 
 		FMonolithToolRegistry& Reg = FMonolithToolRegistry::Get();
@@ -281,21 +276,10 @@ namespace MonolithBulkFillActionsInternal
 			}
 			else { Candidates = Namespaces; }
 			const FString Kind = bKnownNamespace ? TEXT("action") : TEXT("namespace");
-			TArray<TSharedPtr<FJsonValue>> Suggestions;
-			for (const auto& Candidate : MonolithFuzzyMatchDetail::ScoreFuzzyMatches(
-				bKnownNamespace ? ActionName : TargetNamespace, Candidates, 3))
-			{
-				auto Suggestion = MakeShared<FJsonObject>();
-				Suggestion->SetStringField(Kind, Candidate.Key);
-				Suggestion->SetNumberField(TEXT("score"), Candidate.Score);
-				Suggestions.Add(MakeShared<FJsonValueObject>(Suggestion));
-			}
-			auto ErrorData = MakeShared<FJsonObject>();
-			ErrorData->SetStringField(TEXT("kind"), Kind);
-			ErrorData->SetArrayField(TEXT("suggestions"), Suggestions);
-			return FMonolithActionResult::Error(FString::Printf(
+			return FMonolithActionResult::NotFound(Kind,
+				bKnownNamespace ? ActionName : TargetNamespace, Candidates).WithErrorMessage(FString::Printf(
 				TEXT("action '%s' not found in namespace '%s'. Use monolith_discover(\"%s\") to list available actions."),
-				*ActionName, *TargetNamespace, *TargetNamespace)).WithErrorData(ErrorData);
+				*ActionName, *TargetNamespace, *TargetNamespace));
 		}
 
 		TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();

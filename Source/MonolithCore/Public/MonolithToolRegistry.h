@@ -48,6 +48,13 @@ struct FMonolithActionResult
 	/** Clone data and fill a missing class. Legacy errors gain no inferred execution/retryability. */
 	static MONOLITHCORE_API TSharedPtr<FJsonObject> NormalizeErrorData(int32 Code, const TSharedPtr<FJsonValue>& Data);
 
+	/** Preserve detailed legacy diagnostics when adopting a typed error helper. */
+	FMonolithActionResult& WithErrorMessage(const FString& Message)
+	{
+		ErrorMessage = Message;
+		return *this;
+	}
+
 	/** Merge caller fields over existing object data without modifying either input. Null resets data. */
 	FMonolithActionResult& WithErrorData(const TSharedPtr<FJsonObject>& Data)
 	{

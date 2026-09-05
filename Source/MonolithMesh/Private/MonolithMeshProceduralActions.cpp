@@ -404,7 +404,7 @@ FMonolithActionResult FMonolithMeshProceduralActions::CreateParametricMesh(const
 	FString Type;
 	if (!Params->TryGetStringField(TEXT("type"), Type))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: type"));
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TEXT("Missing required param: type")).WithErrorMessage(TEXT("Missing required param: type"));
 	}
 	Type = Type.ToLower().TrimStartAndEnd();
 
@@ -617,7 +617,7 @@ FMonolithActionResult FMonolithMeshProceduralActions::CreateHorrorProp(const TSh
 	FString Type;
 	if (!Params->TryGetStringField(TEXT("type"), Type))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: type"));
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TEXT("Missing required param: type")).WithErrorMessage(TEXT("Missing required param: type"));
 	}
 	Type = Type.ToLower().TrimStartAndEnd();
 
@@ -1752,7 +1752,7 @@ FMonolithActionResult FMonolithMeshProceduralActions::CreateStructure(const TSha
 	FString Type;
 	if (!Params->TryGetStringField(TEXT("type"), Type))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: type"));
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TEXT("Missing required param: type")).WithErrorMessage(TEXT("Missing required param: type"));
 	}
 	Type = Type.ToLower().TrimStartAndEnd();
 
@@ -2786,7 +2786,7 @@ FMonolithActionResult FMonolithMeshProceduralActions::CreateFragments(const TSha
 	FString SourceHandle;
 	if (!Params->TryGetStringField(TEXT("source_handle"), SourceHandle) || SourceHandle.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: source_handle"));
+		return FMonolithActionResult::InvalidParam(TEXT("source_handle"), TEXT("Missing required param: source_handle")).WithErrorMessage(TEXT("Missing required param: source_handle"));
 	}
 
 	FString HandleErr;

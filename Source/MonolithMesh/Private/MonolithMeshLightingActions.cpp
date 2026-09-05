@@ -221,7 +221,7 @@ FMonolithActionResult FMonolithMeshLightingActions::SampleLightLevels(const TSha
 	TArray<FVector> Points;
 	if (!MLight_ParseVectorArray(Params, TEXT("points"), Points))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: points (array of [x,y,z] arrays)"));
+		return FMonolithActionResult::InvalidParam(TEXT("points"), TEXT("Missing or invalid required param: points (array of [x,y,z] arrays)")).WithErrorMessage(TEXT("Missing or invalid required param: points (array of [x,y,z] arrays)"));
 	}
 
 	// Hard cap
@@ -461,7 +461,7 @@ FMonolithActionResult FMonolithMeshLightingActions::AnalyzeLightTransitions(cons
 	TArray<FVector> PathPoints;
 	if (!MLight_ParseVectorArray(Params, TEXT("path_points"), PathPoints) || PathPoints.Num() < 2)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: path_points (need at least 2 points)"));
+		return FMonolithActionResult::InvalidParam(TEXT("path_points"), TEXT("Missing or invalid required param: path_points (need at least 2 points)")).WithErrorMessage(TEXT("Missing or invalid required param: path_points (need at least 2 points)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -623,7 +623,7 @@ FMonolithActionResult FMonolithMeshLightingActions::GetLightCoverage(const TShar
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName) || VolumeName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -727,13 +727,13 @@ FMonolithActionResult FMonolithMeshLightingActions::SuggestLightPlacement(const 
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName) || VolumeName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	FString Mood;
 	if (!Params->TryGetStringField(TEXT("mood"), Mood) || Mood.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: mood (horror_dim, safe_room, clinical, ambient)"));
+		return FMonolithActionResult::InvalidParam(TEXT("mood"), TEXT("Missing required param: mood (horror_dim, safe_room, clinical, ambient)")).WithErrorMessage(TEXT("Missing required param: mood (horror_dim, safe_room, clinical, ambient)"));
 	}
 	Mood = Mood.ToLower();
 

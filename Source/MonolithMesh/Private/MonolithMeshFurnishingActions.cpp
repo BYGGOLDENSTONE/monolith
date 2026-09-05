@@ -748,14 +748,14 @@ FMonolithActionResult FMonolithMeshFurnishingActions::FurnishRoom(const TSharedP
 	FString RoomType;
 	if (!Params->TryGetStringField(TEXT("room_type"), RoomType))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: room_type"));
+		return FMonolithActionResult::InvalidParam(TEXT("room_type"), TEXT("Missing required param: room_type")).WithErrorMessage(TEXT("Missing required param: room_type"));
 	}
 	RoomType = RoomType.ToLower().TrimStartAndEnd();
 
 	const TSharedPtr<FJsonObject>* BoundsObj = nullptr;
 	if (!Params->TryGetObjectField(TEXT("world_bounds"), BoundsObj) || !BoundsObj || !(*BoundsObj).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: world_bounds"));
+		return FMonolithActionResult::InvalidParam(TEXT("world_bounds"), TEXT("Missing required param: world_bounds")).WithErrorMessage(TEXT("Missing required param: world_bounds"));
 	}
 
 	FBox RoomBounds;
@@ -767,7 +767,7 @@ FMonolithActionResult FMonolithMeshFurnishingActions::FurnishRoom(const TSharedP
 	FString SavePathPrefix;
 	if (!Params->TryGetStringField(TEXT("save_path_prefix"), SavePathPrefix))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path_prefix"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path_prefix"), TEXT("Missing required param: save_path_prefix")).WithErrorMessage(TEXT("Missing required param: save_path_prefix"));
 	}
 
 	// --- Parse optional params ---
@@ -974,13 +974,13 @@ FMonolithActionResult FMonolithMeshFurnishingActions::FurnishBuilding(const TSha
 	FString BuildingId;
 	if (!Params->TryGetStringField(TEXT("building_id"), BuildingId))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: building_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("building_id"), TEXT("Missing required param: building_id")).WithErrorMessage(TEXT("Missing required param: building_id"));
 	}
 
 	FString SavePathPrefix;
 	if (!Params->TryGetStringField(TEXT("save_path_prefix"), SavePathPrefix))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path_prefix"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path_prefix"), TEXT("Missing required param: save_path_prefix")).WithErrorMessage(TEXT("Missing required param: save_path_prefix"));
 	}
 
 	// --- Parse optional params ---

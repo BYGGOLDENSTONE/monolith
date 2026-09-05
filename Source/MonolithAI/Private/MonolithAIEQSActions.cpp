@@ -865,7 +865,7 @@ FMonolithActionResult FMonolithAIEQSActions::HandleDeleteEQSQuery(const TSharedP
 	UObject* Asset = FMonolithAssetUtils::LoadAssetByPath(UEnvQuery::StaticClass(), AssetPath);
 	if (!Asset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("EQS query not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("EQS query"), AssetPath).WithErrorMessage(FString::Printf(TEXT("EQS query not found: %s"), *AssetPath));
 	}
 
 	TArray<UObject*> ObjectsToDelete;
@@ -903,7 +903,7 @@ FMonolithActionResult FMonolithAIEQSActions::HandleDuplicateEQSQuery(const TShar
 	UEnvQuery* SourceQuery = Cast<UEnvQuery>(FMonolithAssetUtils::LoadAssetByPath(UEnvQuery::StaticClass(), SourcePath));
 	if (!SourceQuery)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source EQS query not found: %s"), *SourcePath));
+		return FMonolithActionResult::NotFound(TEXT("Source EQS query"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source EQS query not found: %s"), *SourcePath));
 	}
 
 	FString DestAssetName = FPackageName::GetShortName(DestPath);
@@ -963,7 +963,7 @@ FMonolithActionResult FMonolithAIEQSActions::HandleAddEQSGenerator(const TShared
 	UClass* GenClass = FindEQSClassByName(UEnvQueryGenerator::StaticClass(), GeneratorClassName);
 	if (!GenClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Generator class not found: %s. Use list_eqs_generator_types to see available classes."), *GeneratorClassName));
+		return FMonolithActionResult::NotFound(TEXT("Generator class"), GeneratorClassName).WithErrorMessage(FString::Printf(TEXT("Generator class not found: %s. Use list_eqs_generator_types to see available classes."), *GeneratorClassName));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Add EQS Generator")));
@@ -1073,7 +1073,7 @@ FMonolithActionResult FMonolithAIEQSActions::HandleConfigureEQSGenerator(const T
 	const TSharedPtr<FJsonObject>* PropsObj = nullptr;
 	if (!Params->TryGetObjectField(TEXT("properties"), PropsObj) || !PropsObj->IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: properties"));
+		return FMonolithActionResult::InvalidParam(TEXT("properties"), TEXT("Missing required param: properties")).WithErrorMessage(TEXT("Missing required param: properties"));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Configure EQS Generator")));
@@ -1134,7 +1134,7 @@ FMonolithActionResult FMonolithAIEQSActions::HandleAddEQSTest(const TSharedPtr<F
 	UClass* TestClass = FindEQSClassByName(UEnvQueryTest::StaticClass(), TestClassName);
 	if (!TestClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Test class not found: %s. Use list_eqs_test_types to see available classes."), *TestClassName));
+		return FMonolithActionResult::NotFound(TEXT("Test class"), TestClassName).WithErrorMessage(FString::Printf(TEXT("Test class not found: %s. Use list_eqs_test_types to see available classes."), *TestClassName));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Add EQS Test")));
@@ -1241,7 +1241,7 @@ FMonolithActionResult FMonolithAIEQSActions::HandleConfigureEQSTest(const TShare
 	const TSharedPtr<FJsonObject>* PropsObj = nullptr;
 	if (!Params->TryGetObjectField(TEXT("properties"), PropsObj) || !PropsObj->IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: properties"));
+		return FMonolithActionResult::InvalidParam(TEXT("properties"), TEXT("Missing required param: properties")).WithErrorMessage(TEXT("Missing required param: properties"));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Configure EQS Test")));
@@ -1752,7 +1752,7 @@ FMonolithActionResult FMonolithAIEQSActions::HandleReorderEQSTests(const TShared
 	const TArray<TSharedPtr<FJsonValue>>* NewOrderArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("new_order"), NewOrderArr) || !NewOrderArr)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: new_order (array of test indices)"));
+		return FMonolithActionResult::InvalidParam(TEXT("new_order"), TEXT("Missing required param: new_order (array of test indices)")).WithErrorMessage(TEXT("Missing required param: new_order (array of test indices)"));
 	}
 
 	int32 TestCount = Option->Tests.Num();
@@ -1871,7 +1871,7 @@ FMonolithActionResult FMonolithAIEQSActions::HandleBuildEQSQueryFromSpec(const T
 	const TSharedPtr<FJsonObject>* SpecObj = nullptr;
 	if (!Params->TryGetObjectField(TEXT("spec"), SpecObj) || !SpecObj->IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: spec"));
+		return FMonolithActionResult::InvalidParam(TEXT("spec"), TEXT("Missing required param: spec")).WithErrorMessage(TEXT("Missing required param: spec"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* OptionsArr = nullptr;

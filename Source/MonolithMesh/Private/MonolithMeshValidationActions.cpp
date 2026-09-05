@@ -63,7 +63,7 @@ FMonolithActionResult FMonolithMeshTemplateActions::ValidateGameReady(const TSha
 	FString AssetPath;
 	if (!Params->TryGetStringField(TEXT("asset_path"), AssetPath) || AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param: asset_path")).WithErrorMessage(TEXT("Missing required param: asset_path"));
 	}
 
 	FString Error;
@@ -321,7 +321,7 @@ FMonolithActionResult FMonolithMeshTemplateActions::SuggestLodStrategy(const TSh
 	FString AssetPath;
 	if (!Params->TryGetStringField(TEXT("asset_path"), AssetPath) || AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param: asset_path")).WithErrorMessage(TEXT("Missing required param: asset_path"));
 	}
 
 	FString Error;
@@ -616,7 +616,7 @@ FMonolithActionResult FMonolithMeshTemplateActions::CompareLodChain(const TShare
 	FString AssetPath;
 	if (!Params->TryGetStringField(TEXT("asset_path"), AssetPath) || AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param: asset_path")).WithErrorMessage(TEXT("Missing required param: asset_path"));
 	}
 
 	FString Error;

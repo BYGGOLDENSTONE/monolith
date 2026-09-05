@@ -79,7 +79,7 @@ FMonolithActionResult FMonolithBlueprintStringTableActions::HandleReadStringTabl
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path"));
 	}
 
 	FString Error;
@@ -143,13 +143,13 @@ FMonolithActionResult FMonolithBlueprintStringTableActions::HandleSetStringTable
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* EntriesArray = nullptr;
 	if (!Params->TryGetArrayField(TEXT("entries"), EntriesArray) || !EntriesArray)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: entries (array of {key, source_string})"));
+		return FMonolithActionResult::InvalidParam(TEXT("entries"), TEXT("Missing required parameter: entries (array of {key, source_string})")).WithErrorMessage(TEXT("Missing required parameter: entries (array of {key, source_string})"));
 	}
 
 	FString Error;
@@ -249,8 +249,8 @@ FMonolithActionResult FMonolithBlueprintStringTableActions::HandleRemoveStringTa
 
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	const FString Key = Params->GetStringField(TEXT("key"));
-	if (AssetPath.IsEmpty()) { return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path")); }
-	if (Key.IsEmpty())       { return FMonolithActionResult::Error(TEXT("Missing required parameter: key")); }
+	if (AssetPath.IsEmpty()) { return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path")); }
+	if (Key.IsEmpty())       { return FMonolithActionResult::InvalidParam(TEXT("key"), TEXT("Missing required parameter: key")).WithErrorMessage(TEXT("Missing required parameter: key")); }
 
 	FString Error;
 	UStringTable* StringTable = ResolveStringTable(AssetPath, Error);

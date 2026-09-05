@@ -141,6 +141,41 @@ bool FMonolithDescribeActionSchemaMissingBothTest::RunTest(const FString& /*Para
 			R.ErrorMessage.Contains(TEXT("target_namespace")));
 		TestTrue(TEXT("error mentions target_action"),
 			R.ErrorMessage.Contains(TEXT("target_action")));
+		if (TestTrue(TEXT("Missing fields carry typed error data"), R.ErrorData.IsValid()))
+		{
+			TestEqual(TEXT("Missing fields are invalid_param"), R.ErrorData->AsObject()->GetStringField(TEXT("class")), FString(TEXT("invalid_param")));
+			TestFalse(TEXT("Missing fields are rejected before mutation"), R.ErrorData->AsObject()->GetBoolField(TEXT("executed")));
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithBulkFillTypedErrorsTest,
+	"Monolith.Core.ErrorMigration.BulkFill", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMonolithBulkFillTypedErrorsTest::RunTest(const FString& Parameters)
+{
+	auto Params = MakeShared<FJsonObject>();
+	Params->SetStringField(TEXT("target_namespace"), TEXT("material"));
+	Params->SetStringField(TEXT("target"), TEXT("/Game/Tests/Monolith/Core/Unused"));
+	Params->SetNumberField(TEXT("tree"), 42);
+	const FMonolithActionResult Invalid = FMonolithToolRegistry::Get().ExecuteAction(TEXT("bulk_fill"), TEXT("apply"), Params);
+	TestFalse(TEXT("Wrong tree type is rejected without JSON assertion"), Invalid.bSuccess);
+	TestEqual(TEXT("Wrong tree type is invalid params"), Invalid.ErrorCode, FMonolithJsonUtils::ErrInvalidParams);
+	if (TestTrue(TEXT("Typed tree error data"), Invalid.ErrorData.IsValid()))
+		TestEqual(TEXT("Tree error class"), Invalid.ErrorData->AsObject()->GetStringField(TEXT("class")), FString(TEXT("invalid_param")));
+	Params->SetObjectField(TEXT("tree"), MakeShared<FJsonObject>());
+	Params->SetStringField(TEXT("target_namespace"), TEXT("materail"));
+	const FMonolithActionResult Typo = FMonolithToolRegistry::Get().ExecuteAction(TEXT("bulk_fill"), TEXT("apply"), Params);
+	TestEqual(TEXT("Adapter typo is not found"), Typo.ErrorCode, FMonolithJsonUtils::ErrNotFound);
+	if (TestTrue(TEXT("Adapter typo has data"), Typo.ErrorData.IsValid()))
+	{
+		const auto Data = Typo.ErrorData->AsObject();
+		TestEqual(TEXT("Adapter typo class"), Data->GetStringField(TEXT("class")), FString(TEXT("not_found")));
+		TestFalse(TEXT("No asset mutation on adapter typo"), Data->GetBoolField(TEXT("executed")));
+		const auto& Suggestions = Data->GetArrayField(TEXT("suggestions"));
+		if (TestTrue(TEXT("Adapter typo has suggestions"), !Suggestions.IsEmpty()))
+			TestEqual(TEXT("Adapter typo suggests material"), Suggestions[0]->AsObject()->GetStringField(TEXT("namespace")), FString(TEXT("material")));
 	}
 	return true;
 }

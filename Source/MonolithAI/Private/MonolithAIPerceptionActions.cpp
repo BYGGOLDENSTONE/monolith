@@ -1052,7 +1052,7 @@ FMonolithActionResult FMonolithAIPerceptionActions::HandleAddStimuliSourceCompon
 	UBlueprint* BP = Cast<UBlueprint>(FMonolithAssetUtils::LoadAssetByPath(UBlueprint::StaticClass(), AssetPath));
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Blueprint"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	if (!BP->SimpleConstructionScript)
@@ -1169,7 +1169,7 @@ FMonolithActionResult FMonolithAIPerceptionActions::HandleConfigureStimuliSource
 	UBlueprint* BP = Cast<UBlueprint>(FMonolithAssetUtils::LoadAssetByPath(UBlueprint::StaticClass(), AssetPath));
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Blueprint"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	USCS_Node* SourceNode = FindStimuliSourceNode(BP);

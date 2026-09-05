@@ -101,11 +101,11 @@ FMonolithActionResult FMonolithMeshPerformanceActions::GetRegionPerformance(cons
 	FVector RegionMin, RegionMax;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("region_min"), RegionMin))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: region_min (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("region_min"), TEXT("Missing or invalid required param: region_min (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: region_min (array of 3 numbers)"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("region_max"), RegionMax))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: region_max (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("region_max"), TEXT("Missing or invalid required param: region_max (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: region_max (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -250,7 +250,7 @@ FMonolithActionResult FMonolithMeshPerformanceActions::EstimatePlacementCost(con
 	const TArray<TSharedPtr<FJsonValue>>* AssetsArr;
 	if (!Params->TryGetArrayField(TEXT("assets"), AssetsArr) || AssetsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: assets (array of {asset_path, count} objects)"));
+		return FMonolithActionResult::InvalidParam(TEXT("assets"), TEXT("Missing or empty required param: assets (array of {asset_path, count} objects)")).WithErrorMessage(TEXT("Missing or empty required param: assets (array of {asset_path, count} objects)"));
 	}
 
 	if (AssetsArr->Num() > 100)
@@ -358,7 +358,7 @@ FMonolithActionResult FMonolithMeshPerformanceActions::FindOverdrawHotspots(cons
 	FVector Viewpoint;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("viewpoint"), Viewpoint))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: viewpoint (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("viewpoint"), TEXT("Missing or invalid required param: viewpoint (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: viewpoint (array of 3 numbers)"));
 	}
 
 	FVector ViewDirection(1.0, 0.0, 0.0); // Default: +X forward
@@ -627,11 +627,11 @@ FMonolithActionResult FMonolithMeshPerformanceActions::AnalyzeShadowCost(const T
 	FVector RegionMin, RegionMax;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("region_min"), RegionMin))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: region_min (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("region_min"), TEXT("Missing or invalid required param: region_min (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: region_min (array of 3 numbers)"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("region_max"), RegionMax))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: region_max (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("region_max"), TEXT("Missing or invalid required param: region_max (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: region_max (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -817,7 +817,7 @@ FMonolithActionResult FMonolithMeshPerformanceActions::GetTriangleBudget(const T
 	FVector Viewpoint;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("viewpoint"), Viewpoint))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: viewpoint (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("viewpoint"), TEXT("Missing or invalid required param: viewpoint (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: viewpoint (array of 3 numbers)"));
 	}
 
 	FVector ViewDirection(1.0, 0.0, 0.0);

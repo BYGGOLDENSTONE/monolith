@@ -543,7 +543,7 @@ FMonolithActionResult FMonolithMeshAudioActions::EstimateFootstepSound(const TSh
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -595,7 +595,7 @@ FMonolithActionResult FMonolithMeshAudioActions::AnalyzeRoomAcoustics(const TSha
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -738,11 +738,11 @@ FMonolithActionResult FMonolithMeshAudioActions::AnalyzeSoundPropagation(const T
 	FVector From, To;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("from"), From))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: from"));
+		return FMonolithActionResult::InvalidParam(TEXT("from"), TEXT("Missing or invalid required param: from")).WithErrorMessage(TEXT("Missing or invalid required param: from"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("to"), To))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: to"));
+		return FMonolithActionResult::InvalidParam(TEXT("to"), TEXT("Missing or invalid required param: to")).WithErrorMessage(TEXT("Missing or invalid required param: to"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -987,11 +987,11 @@ FMonolithActionResult FMonolithMeshAudioActions::FindSoundPaths(const TSharedPtr
 	FVector From, To;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("from"), From))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: from"));
+		return FMonolithActionResult::InvalidParam(TEXT("from"), TEXT("Missing or invalid required param: from")).WithErrorMessage(TEXT("Missing or invalid required param: from"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("to"), To))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: to"));
+		return FMonolithActionResult::InvalidParam(TEXT("to"), TEXT("Missing or invalid required param: to")).WithErrorMessage(TEXT("Missing or invalid required param: to"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1099,11 +1099,11 @@ FMonolithActionResult FMonolithMeshAudioActions::CanAiHearFrom(const TSharedPtr<
 	FVector AiLocation, PlayerLocation;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("ai_location"), AiLocation))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: ai_location"));
+		return FMonolithActionResult::InvalidParam(TEXT("ai_location"), TEXT("Missing or invalid required param: ai_location")).WithErrorMessage(TEXT("Missing or invalid required param: ai_location"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("player_location"), PlayerLocation))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: player_location"));
+		return FMonolithActionResult::InvalidParam(TEXT("player_location"), TEXT("Missing or invalid required param: player_location")).WithErrorMessage(TEXT("Missing or invalid required param: player_location"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1264,7 +1264,7 @@ FMonolithActionResult FMonolithMeshAudioActions::GetStealthMap(const TSharedPtr<
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1358,11 +1358,11 @@ FMonolithActionResult FMonolithMeshAudioActions::FindQuietPath(const TSharedPtr<
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start")).WithErrorMessage(TEXT("Missing or invalid required param: start"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end")).WithErrorMessage(TEXT("Missing or invalid required param: end"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1469,7 +1469,7 @@ FMonolithActionResult FMonolithMeshAudioActions::SuggestAudioVolumes(const TShar
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1589,7 +1589,7 @@ FMonolithActionResult FMonolithMeshAudioActions::CreateAudioVolume(const TShared
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1662,13 +1662,13 @@ FMonolithActionResult FMonolithMeshAudioActions::SetSurfaceType(const TSharedPtr
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString SurfaceTypeName;
 	if (!Params->TryGetStringField(TEXT("surface_type"), SurfaceTypeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: surface_type"));
+		return FMonolithActionResult::InvalidParam(TEXT("surface_type"), TEXT("Missing required param: surface_type")).WithErrorMessage(TEXT("Missing required param: surface_type"));
 	}
 
 	FString Error;

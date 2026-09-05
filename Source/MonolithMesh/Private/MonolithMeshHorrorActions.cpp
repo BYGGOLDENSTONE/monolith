@@ -150,7 +150,7 @@ FMonolithActionResult FMonolithMeshHorrorActions::AnalyzeSightlines(const TShare
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -263,17 +263,17 @@ FMonolithActionResult FMonolithMeshHorrorActions::FindHidingSpots(const TSharedP
 	FVector RegionMin, RegionMax;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("region_min"), RegionMin))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: region_min"));
+		return FMonolithActionResult::InvalidParam(TEXT("region_min"), TEXT("Missing or invalid required param: region_min")).WithErrorMessage(TEXT("Missing or invalid required param: region_min"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("region_max"), RegionMax))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: region_max"));
+		return FMonolithActionResult::InvalidParam(TEXT("region_max"), TEXT("Missing or invalid required param: region_max")).WithErrorMessage(TEXT("Missing or invalid required param: region_max"));
 	}
 
 	TArray<FVector> Viewpoints;
 	if (!MHorror_ParseVectorArray(Params, TEXT("viewpoints"), Viewpoints))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: viewpoints (array of [x,y,z])"));
+		return FMonolithActionResult::InvalidParam(TEXT("viewpoints"), TEXT("Missing or invalid required param: viewpoints (array of [x,y,z])")).WithErrorMessage(TEXT("Missing or invalid required param: viewpoints (array of [x,y,z])"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -380,7 +380,7 @@ FMonolithActionResult FMonolithMeshHorrorActions::FindAmbushPoints(const TShared
 	TArray<FVector> PathPoints;
 	if (!MHorror_ParseVectorArray(Params, TEXT("path_points"), PathPoints) || PathPoints.Num() < 2)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])"));
+		return FMonolithActionResult::InvalidParam(TEXT("path_points"), TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])")).WithErrorMessage(TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -489,11 +489,11 @@ FMonolithActionResult FMonolithMeshHorrorActions::AnalyzeChokePoints(const TShar
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start")).WithErrorMessage(TEXT("Missing or invalid required param: start"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end")).WithErrorMessage(TEXT("Missing or invalid required param: end"));
 	}
 
 	double AgentRadius = 45.0;
@@ -627,7 +627,7 @@ FMonolithActionResult FMonolithMeshHorrorActions::AnalyzeEscapeRoutes(const TSha
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location")).WithErrorMessage(TEXT("Missing or invalid required param: location"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -830,7 +830,7 @@ FMonolithActionResult FMonolithMeshHorrorActions::ClassifyZoneTension(const TSha
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location")).WithErrorMessage(TEXT("Missing or invalid required param: location"));
 	}
 
 	double Radius = 500.0;
@@ -893,7 +893,7 @@ FMonolithActionResult FMonolithMeshHorrorActions::AnalyzePacingCurve(const TShar
 	TArray<FVector> PathPoints;
 	if (!MHorror_ParseVectorArray(Params, TEXT("path_points"), PathPoints) || PathPoints.Num() < 2)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])"));
+		return FMonolithActionResult::InvalidParam(TEXT("path_points"), TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])")).WithErrorMessage(TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])"));
 	}
 
 	double SampleInterval = 200.0;

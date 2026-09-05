@@ -213,7 +213,7 @@ FMonolithActionResult FMonolithMeshSceneActions::GetActorInfo(const TSharedPtr<F
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString Error;
@@ -296,13 +296,13 @@ FMonolithActionResult FMonolithMeshSceneActions::SpawnActor(const TSharedPtr<FJs
 	FString ClassOrMesh;
 	if (!Params->TryGetStringField(TEXT("class_or_mesh"), ClassOrMesh))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: class_or_mesh"));
+		return FMonolithActionResult::InvalidParam(TEXT("class_or_mesh"), TEXT("Missing required param: class_or_mesh")).WithErrorMessage(TEXT("Missing required param: class_or_mesh"));
 	}
 
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
 	}
 
 	FRotator Rotation(0, 0, 0);
@@ -332,7 +332,7 @@ FMonolithActionResult FMonolithMeshSceneActions::SpawnActor(const TSharedPtr<FJs
 		MeshToSpawn = FMonolithAssetUtils::LoadAssetByPath<UStaticMesh>(ClassOrMesh);
 		if (!MeshToSpawn)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("StaticMesh not found: %s"), *ClassOrMesh));
+			return FMonolithActionResult::NotFound(TEXT("StaticMesh"), ClassOrMesh).WithErrorMessage(FString::Printf(TEXT("StaticMesh not found: %s"), *ClassOrMesh));
 		}
 	}
 	else
@@ -352,7 +352,7 @@ FMonolithActionResult FMonolithMeshSceneActions::SpawnActor(const TSharedPtr<FJs
 		}
 		if (!ClassToSpawn)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Class not found: %s"), *ClassOrMesh));
+			return FMonolithActionResult::NotFound(TEXT("Class"), ClassOrMesh).WithErrorMessage(FString::Printf(TEXT("Class not found: %s"), *ClassOrMesh));
 		}
 		if (!ClassToSpawn->IsChildOf(AActor::StaticClass()))
 		{
@@ -431,7 +431,7 @@ FMonolithActionResult FMonolithMeshSceneActions::MoveActor(const TSharedPtr<FJso
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString Error;
@@ -501,7 +501,7 @@ FMonolithActionResult FMonolithMeshSceneActions::DuplicateActor(const TSharedPtr
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString Error;
@@ -577,7 +577,7 @@ FMonolithActionResult FMonolithMeshSceneActions::DeleteActors(const TSharedPtr<F
 	const TArray<TSharedPtr<FJsonValue>>* NamesArr;
 	if (!Params->TryGetArrayField(TEXT("actor_names"), NamesArr) || NamesArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: actor_names (array of strings)"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_names"), TEXT("Missing or empty required param: actor_names (array of strings)")).WithErrorMessage(TEXT("Missing or empty required param: actor_names (array of strings)"));
 	}
 
 	// Phase 1: resolve ALL actors first, fail if any are missing
@@ -591,7 +591,7 @@ FMonolithActionResult FMonolithMeshSceneActions::DeleteActors(const TSharedPtr<F
 		AActor* Actor = MonolithMeshUtils::FindActorByName(Name, Error);
 		if (!Actor)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Actor not found: %s. No actors deleted."), *Name));
+			return FMonolithActionResult::NotFound(TEXT("Actor"), Name).WithErrorMessage(FString::Printf(TEXT("Actor not found: %s. No actors deleted."), *Name));
 		}
 		Actors.Add(Actor);
 	}
@@ -633,13 +633,13 @@ FMonolithActionResult FMonolithMeshSceneActions::GroupActors(const TSharedPtr<FJ
 	const TArray<TSharedPtr<FJsonValue>>* NamesArr;
 	if (!Params->TryGetArrayField(TEXT("actor_names"), NamesArr) || NamesArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: actor_names"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_names"), TEXT("Missing or empty required param: actor_names")).WithErrorMessage(TEXT("Missing or empty required param: actor_names"));
 	}
 
 	FString GroupName;
 	if (!Params->TryGetStringField(TEXT("group_name"), GroupName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: group_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("group_name"), TEXT("Missing required param: group_name")).WithErrorMessage(TEXT("Missing required param: group_name"));
 	}
 
 	SceneActionHelpers::FScopedMeshTransaction Transaction(FText::FromString(TEXT("Monolith: Group Actors")));
@@ -685,7 +685,7 @@ FMonolithActionResult FMonolithMeshSceneActions::SetActorProperties(const TShare
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString Error;
@@ -818,7 +818,7 @@ FMonolithActionResult FMonolithMeshSceneActions::BatchExecute(const TSharedPtr<F
 	const TArray<TSharedPtr<FJsonValue>>* ActionsArr;
 	if (!Params->TryGetArrayField(TEXT("actions"), ActionsArr) || ActionsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: actions"));
+		return FMonolithActionResult::InvalidParam(TEXT("actions"), TEXT("Missing or empty required param: actions")).WithErrorMessage(TEXT("Missing or empty required param: actions"));
 	}
 
 	if (ActionsArr->Num() > 200)
@@ -944,7 +944,7 @@ FMonolithActionResult FMonolithMeshSceneActions::AlignActors(const TSharedPtr<FJ
 	FString AxisStr;
 	if (!Params->TryGetStringField(TEXT("axis"), AxisStr))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: axis (X, Y, or Z)"));
+		return FMonolithActionResult::InvalidParam(TEXT("axis"), TEXT("Missing required param: axis (X, Y, or Z)")).WithErrorMessage(TEXT("Missing required param: axis (X, Y, or Z)"));
 	}
 	AxisStr = AxisStr.ToUpper();
 	int32 AxisIndex = -1;
@@ -959,7 +959,7 @@ FMonolithActionResult FMonolithMeshSceneActions::AlignActors(const TSharedPtr<FJ
 	FString ModeStr;
 	if (!Params->TryGetStringField(TEXT("mode"), ModeStr))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: mode (min, max, center, or distribute)"));
+		return FMonolithActionResult::InvalidParam(TEXT("mode"), TEXT("Missing required param: mode (min, max, center, or distribute)")).WithErrorMessage(TEXT("Missing required param: mode (min, max, center, or distribute)"));
 	}
 	ModeStr = ModeStr.ToLower();
 	if (ModeStr != TEXT("min") && ModeStr != TEXT("max") && ModeStr != TEXT("center") && ModeStr != TEXT("distribute"))
@@ -977,7 +977,7 @@ FMonolithActionResult FMonolithMeshSceneActions::AlignActors(const TSharedPtr<FJ
 		AActor* Actor = MonolithMeshUtils::FindActorByName(Name, Error);
 		if (!Actor)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Actor not found: %s"), *Name));
+			return FMonolithActionResult::NotFound(TEXT("Actor"), Name).WithErrorMessage(FString::Printf(TEXT("Actor not found: %s"), *Name));
 		}
 		Actors.Add(Actor);
 	}
@@ -1082,7 +1082,7 @@ FMonolithActionResult FMonolithMeshSceneActions::SnapToFloor(const TSharedPtr<FJ
 	const TArray<TSharedPtr<FJsonValue>>* NamesArr;
 	if (!Params->TryGetArrayField(TEXT("actor_names"), NamesArr) || NamesArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: actor_names"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_names"), TEXT("Missing or empty required param: actor_names")).WithErrorMessage(TEXT("Missing or empty required param: actor_names"));
 	}
 
 	double TraceDistance = 10000.0;
@@ -1102,7 +1102,7 @@ FMonolithActionResult FMonolithMeshSceneActions::SnapToFloor(const TSharedPtr<FJ
 		AActor* Actor = MonolithMeshUtils::FindActorByName(Name, Error);
 		if (!Actor)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Actor not found: %s"), *Name));
+			return FMonolithActionResult::NotFound(TEXT("Actor"), Name).WithErrorMessage(FString::Printf(TEXT("Actor not found: %s"), *Name));
 		}
 		Actors.Add(Actor);
 	}
@@ -1186,7 +1186,7 @@ FMonolithActionResult FMonolithMeshSceneActions::ManageFolders(const TSharedPtr<
 	FString SubAction;
 	if (!Params->TryGetStringField(TEXT("sub_action"), SubAction))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: sub_action (list, delete, rename, move)"));
+		return FMonolithActionResult::InvalidParam(TEXT("sub_action"), TEXT("Missing required param: sub_action (list, delete, rename, move)")).WithErrorMessage(TEXT("Missing required param: sub_action (list, delete, rename, move)"));
 	}
 	SubAction = SubAction.ToLower();
 

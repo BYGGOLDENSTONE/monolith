@@ -273,7 +273,7 @@ FMonolithActionResult FMonolithMeshQualityActions::BatchRenameAssets(const TShar
 	const TArray<TSharedPtr<FJsonValue>>* PathsArr;
 	if (!Params->TryGetArrayField(TEXT("asset_paths"), PathsArr) || PathsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: asset_paths"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_paths"), TEXT("Missing or empty required param: asset_paths")).WithErrorMessage(TEXT("Missing or empty required param: asset_paths"));
 	}
 
 	if (PathsArr->Num() > 200)
@@ -323,7 +323,7 @@ FMonolithActionResult FMonolithMeshQualityActions::BatchRenameAssets(const TShar
 		FAssetData AssetData = AssetRegistry.GetAssetByObjectPath(FSoftObjectPath(AssetPath));
 		if (!AssetData.IsValid())
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
+			return FMonolithActionResult::NotFound(TEXT("Asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
 		}
 
 		FString OldName = AssetData.AssetName.ToString();
@@ -919,13 +919,13 @@ FMonolithActionResult FMonolithMeshQualityActions::AnalyzeFraming(const TSharedP
 	FVector CamLocation;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("camera_location"), CamLocation))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: camera_location"));
+		return FMonolithActionResult::InvalidParam(TEXT("camera_location"), TEXT("Missing or invalid required param: camera_location")).WithErrorMessage(TEXT("Missing or invalid required param: camera_location"));
 	}
 
 	FRotator CamRotation;
 	if (!MonolithMeshUtils::ParseRotator(Params, TEXT("camera_rotation"), CamRotation))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: camera_rotation"));
+		return FMonolithActionResult::InvalidParam(TEXT("camera_rotation"), TEXT("Missing or invalid required param: camera_rotation")).WithErrorMessage(TEXT("Missing or invalid required param: camera_rotation"));
 	}
 
 	double FOV = 90.0;
@@ -1147,13 +1147,13 @@ FMonolithActionResult FMonolithMeshQualityActions::EvaluateMonsterReveal(const T
 	FVector PlayerLoc;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("player_location"), PlayerLoc))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: player_location"));
+		return FMonolithActionResult::InvalidParam(TEXT("player_location"), TEXT("Missing or invalid required param: player_location")).WithErrorMessage(TEXT("Missing or invalid required param: player_location"));
 	}
 
 	FRotator PlayerRot;
 	if (!MonolithMeshUtils::ParseRotator(Params, TEXT("player_rotation"), PlayerRot))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: player_rotation"));
+		return FMonolithActionResult::InvalidParam(TEXT("player_rotation"), TEXT("Missing or invalid required param: player_rotation")).WithErrorMessage(TEXT("Missing or invalid required param: player_rotation"));
 	}
 
 	FString MonsterName;

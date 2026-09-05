@@ -460,23 +460,23 @@ FMonolithActionResult FMonolithBlueprintDiffActions::HandleCompareBlueprints(con
 
 	if (PathA.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path_a"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path_a"), TEXT("Missing required parameter: asset_path_a")).WithErrorMessage(TEXT("Missing required parameter: asset_path_a"));
 	}
 	if (PathB.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path_b"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path_b"), TEXT("Missing required parameter: asset_path_b")).WithErrorMessage(TEXT("Missing required parameter: asset_path_b"));
 	}
 
 	UBlueprint* BPA = FMonolithAssetUtils::LoadAssetByPath<UBlueprint>(PathA);
 	if (!BPA)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint A not found: %s"), *PathA));
+		return FMonolithActionResult::NotFound(TEXT("Blueprint A"), PathA).WithErrorMessage(FString::Printf(TEXT("Blueprint A not found: %s"), *PathA));
 	}
 
 	UBlueprint* BPB = FMonolithAssetUtils::LoadAssetByPath<UBlueprint>(PathB);
 	if (!BPB)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint B not found: %s"), *PathB));
+		return FMonolithActionResult::NotFound(TEXT("Blueprint B"), PathB).WithErrorMessage(FString::Printf(TEXT("Blueprint B not found: %s"), *PathB));
 	}
 
 	// Collect data from both BPs

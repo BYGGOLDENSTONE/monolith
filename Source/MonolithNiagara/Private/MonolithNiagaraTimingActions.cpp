@@ -156,7 +156,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleGetSystemTiming(const
 {
 	const FString SystemPath = GetAssetPath(Params);
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
 	R->SetStringField(TEXT("asset_path"), SystemPath);
@@ -184,7 +184,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetWarmupProfile(cons
 	// warmup_time required (per plan § Phase 1 spec)
 	TSharedPtr<FJsonValue> WarmupTimeJV = Params->TryGetField(TEXT("warmup_time"));
 	if (!WarmupTimeJV.IsValid() || WarmupTimeJV->Type != EJson::Number)
-		return FMonolithActionResult::Error(TEXT("Missing required field: warmup_time (number)"));
+		return FMonolithActionResult::InvalidParam(TEXT("warmup_time"), TEXT("Missing required field: warmup_time (number)"));
 	const float WarmupTimeIn = static_cast<float>(WarmupTimeJV->AsNumber());
 
 	// warmup_tick_delta optional
@@ -198,7 +198,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetWarmupProfile(cons
 	}
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	GEditor->BeginTransaction(NSLOCTEXT("Monolith", "SetWarmupProfile", "Set Niagara Warmup Profile"));
 	System->Modify();
@@ -245,7 +245,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetFixedTickDelta(con
 	// enabled required (bool)
 	TSharedPtr<FJsonValue> EnabledJV = Params->TryGetField(TEXT("enabled"));
 	if (!EnabledJV.IsValid() || EnabledJV->Type != EJson::Boolean)
-		return FMonolithActionResult::Error(TEXT("Missing required field: enabled (bool)"));
+		return FMonolithActionResult::InvalidParam(TEXT("enabled"), TEXT("Missing required field: enabled (bool)"));
 	const bool bEnabled = EnabledJV->AsBool();
 
 	// fixed_delta_time optional (number)
@@ -259,7 +259,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetFixedTickDelta(con
 	}
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	FBoolProperty* EnabledProp = FindFProperty<FBoolProperty>(UNiagaraSystem::StaticClass(), TEXT("bFixedTickDelta"));
 	if (!EnabledProp)
@@ -307,11 +307,11 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetRequireCurrentFram
 
 	TSharedPtr<FJsonValue> RequireJV = Params->TryGetField(TEXT("require"));
 	if (!RequireJV.IsValid() || RequireJV->Type != EJson::Boolean)
-		return FMonolithActionResult::Error(TEXT("Missing required field: require (bool)"));
+		return FMonolithActionResult::InvalidParam(TEXT("require"), TEXT("Missing required field: require (bool)"));
 	const bool bRequire = RequireJV->AsBool();
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	FBoolProperty* Prop = FindFProperty<FBoolProperty>(UNiagaraSystem::StaticClass(), TEXT("bRequireCurrentFrameData"));
 	if (!Prop)
@@ -891,7 +891,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetEmitterLoopProfile
 
 	const FString SystemPath = GetAssetPath(Params);
 	if (SystemPath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required field: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required field: asset_path"));
 
 	// Emitter is optional NOW — only required for system-asset path. Validated below.
 	FString Emitter;
@@ -936,10 +936,10 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetEmitterLoopProfile
 
 	// System-asset path. `emitter` is mandatory here.
 	if (Emitter.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required field: emitter (string) — required when asset_path is a UNiagaraSystem"));
+		return FMonolithActionResult::InvalidParam(TEXT("emitter"), TEXT("Missing required field: emitter (string) — required when asset_path is a UNiagaraSystem"));
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	// Resolve emitter handle. Use the public list_emitters / set_module_input_value
 	// emitter-resolution contract (string id or name) — we can't reuse
@@ -959,8 +959,12 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetEmitterLoopProfile
 		}
 	}
 	if (EIdx == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(
+	{
+		TArray<FString> Names;
+		for (const FNiagaraEmitterHandle& Handle : Handles) Names.Add(Handle.GetName().ToString());
+		return FMonolithActionResult::NotFound(TEXT("emitter"), Emitter, Names).WithErrorMessage(FString::Printf(
 			TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *Emitter));
+	}
 
 	// Stateless emitter dispatch — Phase 2. The stateless branch writes EmitterState
 	// UPROPERTYs via reflection (UNiagaraStatelessEmitter header is in Internal/ and
@@ -1086,7 +1090,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleGetEmitterTimingSumma
 
 	const FString SystemPath = GetAssetPath(Params);
 	if (SystemPath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required field: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required field: asset_path"));
 
 	FString FilterEmitter;
 	Params->TryGetStringField(TEXT("emitter"), FilterEmitter);
@@ -1111,7 +1115,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleGetEmitterTimingSumma
 	}
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	const TArray<FNiagaraEmitterHandle>& Handles = System->GetEmitterHandles();
 
@@ -1335,12 +1339,12 @@ namespace MonolithNiagaraTimingLocal
 		// upstream GetAssetPath also accepts system_path so either works).
 		const FString SystemPath = GetAssetPath(Params);
 		if (SystemPath.IsEmpty())
-			return FMonolithActionResult::Error(TEXT("Missing required field: asset_path"));
+			return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required field: asset_path"));
 
 		// Forward emitter (required by canonical handler).
 		FString Emitter;
 		if (!Params->TryGetStringField(TEXT("emitter"), Emitter) || Emitter.IsEmpty())
-			return FMonolithActionResult::Error(TEXT("Missing required field: emitter (string)"));
+			return FMonolithActionResult::InvalidParam(TEXT("emitter"), TEXT("Missing required field: emitter (string)"));
 
 		// Forward exactly one of stage_index / stage_name (canonical handler
 		// validates that at least one is supplied; we mirror that here to give a
@@ -1380,7 +1384,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetSimStageIterationC
 	// using "%g" before ImportText_Direct, so we forward the integer as a JSON Number.
 	TSharedPtr<FJsonValue> IterJV = Params->TryGetField(TEXT("iterations"));
 	if (!IterJV.IsValid() || IterJV->Type != EJson::Number)
-		return FMonolithActionResult::Error(TEXT("Missing required field: iterations (integer)"));
+		return FMonolithActionResult::InvalidParam(TEXT("iterations"), TEXT("Missing required field: iterations (integer)"));
 
 	const int32 Iterations = static_cast<int32>(IterJV->AsNumber());
 	if (Iterations < 0)
@@ -1398,7 +1402,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetSimStageExecuteBeh
 	// and let it do the enum mapping. Validate non-empty here for a clearer error.
 	FString Behavior;
 	if (!Params->TryGetStringField(TEXT("behavior"), Behavior) || Behavior.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required field: behavior (string: 'Always' | 'OnSimulationReset' | 'NotOnSimulationReset')"));
+		return FMonolithActionResult::InvalidParam(TEXT("behavior"), TEXT("Missing required field: behavior (string: 'Always' | 'OnSimulationReset' | 'NotOnSimulationReset')"));
 
 	TSharedPtr<FJsonValue> Value = MakeShared<FJsonValueString>(Behavior);
 	return MonolithNiagaraTimingLocal::DispatchSimStageAlias(Params, TEXT("ExecuteBehavior"), Value);
@@ -1410,15 +1414,15 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetParticleLifetime(c
 
 	const FString SystemPath = GetAssetPath(Params);
 	if (SystemPath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required field: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required field: asset_path"));
 
 	FString Emitter;
 	if (!Params->TryGetStringField(TEXT("emitter"), Emitter) || Emitter.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required field: emitter (string)"));
+		return FMonolithActionResult::InvalidParam(TEXT("emitter"), TEXT("Missing required field: emitter (string)"));
 
 	TSharedPtr<FJsonValue> MinJV = Params->TryGetField(TEXT("min"));
 	if (!MinJV.IsValid() || MinJV->Type != EJson::Number)
-		return FMonolithActionResult::Error(TEXT("Missing required field: min (number)"));
+		return FMonolithActionResult::InvalidParam(TEXT("min"), TEXT("Missing required field: min (number)"));
 	const double MinValue = MinJV->AsNumber();
 
 	const TSharedPtr<FJsonValue> MaxJV = Params->TryGetField(TEXT("max"));
@@ -1428,7 +1432,7 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetParticleLifetime(c
 	// Validate emitter handle existence + stateless rejection up-front so we can
 	// produce a clean error without mid-dispatch partial-write side effects.
 	UNiagaraSystem* System = LoadSystem(SystemPath);
-	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+	if (!System) return FMonolithAssetUtils::AssetNotFound(TEXT("system"), SystemPath, UNiagaraSystem::StaticClass()).WithErrorMessage(TEXT("Failed to load system"));
 
 	int32 EIdx = INDEX_NONE;
 	const TArray<FNiagaraEmitterHandle>& Handles = System->GetEmitterHandles();
@@ -1444,8 +1448,12 @@ FMonolithActionResult FMonolithNiagaraTimingActions::HandleSetParticleLifetime(c
 		}
 	}
 	if (EIdx == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(
+	{
+		TArray<FString> Names;
+		for (const FNiagaraEmitterHandle& Handle : Handles) Names.Add(Handle.GetName().ToString());
+		return FMonolithActionResult::NotFound(TEXT("emitter"), Emitter, Names).WithErrorMessage(FString::Printf(
 			TEXT("Emitter '%s' not found. Use list_emitters to get valid emitter names or GUIDs."), *Emitter));
+	}
 
 	if (Handles[EIdx].GetStatelessEmitter() != nullptr)
 	{

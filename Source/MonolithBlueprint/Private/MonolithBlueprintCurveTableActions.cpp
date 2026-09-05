@@ -201,7 +201,7 @@ FMonolithActionResult FMonolithBlueprintCurveTableActions::HandleReadCurveTable(
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path"));
 	}
 
 	FString Error;
@@ -255,13 +255,13 @@ FMonolithActionResult FMonolithBlueprintCurveTableActions::HandleSetCurveTableKe
 
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	const FString RowName = Params->GetStringField(TEXT("row_name"));
-	if (AssetPath.IsEmpty()) { return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path")); }
-	if (RowName.IsEmpty())   { return FMonolithActionResult::Error(TEXT("Missing required parameter: row_name")); }
+	if (AssetPath.IsEmpty()) { return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path")); }
+	if (RowName.IsEmpty())   { return FMonolithActionResult::InvalidParam(TEXT("row_name"), TEXT("Missing required parameter: row_name")).WithErrorMessage(TEXT("Missing required parameter: row_name")); }
 
 	const TArray<TSharedPtr<FJsonValue>>* KeysArray = nullptr;
 	if (!Params->TryGetArrayField(TEXT("keys"), KeysArray) || !KeysArray)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: keys (array of {time, value})"));
+		return FMonolithActionResult::InvalidParam(TEXT("keys"), TEXT("Missing required parameter: keys (array of {time, value})")).WithErrorMessage(TEXT("Missing required parameter: keys (array of {time, value})"));
 	}
 
 	FString Error;
@@ -394,8 +394,8 @@ FMonolithActionResult FMonolithBlueprintCurveTableActions::HandleAddCurveTableRo
 
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	const FString RowName = Params->GetStringField(TEXT("row_name"));
-	if (AssetPath.IsEmpty()) { return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path")); }
-	if (RowName.IsEmpty())   { return FMonolithActionResult::Error(TEXT("Missing required parameter: row_name")); }
+	if (AssetPath.IsEmpty()) { return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path")); }
+	if (RowName.IsEmpty())   { return FMonolithActionResult::InvalidParam(TEXT("row_name"), TEXT("Missing required parameter: row_name")).WithErrorMessage(TEXT("Missing required parameter: row_name")); }
 
 	FString Error;
 	UCurveTable* CurveTable = ResolveCurveTable(AssetPath, Error);
@@ -481,8 +481,8 @@ FMonolithActionResult FMonolithBlueprintCurveTableActions::HandleRemoveCurveTabl
 
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	const FString RowName = Params->GetStringField(TEXT("row_name"));
-	if (AssetPath.IsEmpty()) { return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path")); }
-	if (RowName.IsEmpty())   { return FMonolithActionResult::Error(TEXT("Missing required parameter: row_name")); }
+	if (AssetPath.IsEmpty()) { return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path")); }
+	if (RowName.IsEmpty())   { return FMonolithActionResult::InvalidParam(TEXT("row_name"), TEXT("Missing required parameter: row_name")).WithErrorMessage(TEXT("Missing required parameter: row_name")); }
 
 	FString Error;
 	UCurveTable* CurveTable = ResolveCurveTable(AssetPath, Error);
@@ -539,9 +539,9 @@ FMonolithActionResult FMonolithBlueprintCurveTableActions::HandleRenameCurveTabl
 	const FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	const FString OldName = Params->GetStringField(TEXT("old_name"));
 	const FString NewName = Params->GetStringField(TEXT("new_name"));
-	if (AssetPath.IsEmpty()) { return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path")); }
-	if (OldName.IsEmpty())   { return FMonolithActionResult::Error(TEXT("Missing required parameter: old_name")); }
-	if (NewName.IsEmpty())   { return FMonolithActionResult::Error(TEXT("Missing required parameter: new_name")); }
+	if (AssetPath.IsEmpty()) { return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path")); }
+	if (OldName.IsEmpty())   { return FMonolithActionResult::InvalidParam(TEXT("old_name"), TEXT("Missing required parameter: old_name")).WithErrorMessage(TEXT("Missing required parameter: old_name")); }
+	if (NewName.IsEmpty())   { return FMonolithActionResult::InvalidParam(TEXT("new_name"), TEXT("Missing required parameter: new_name")).WithErrorMessage(TEXT("Missing required parameter: new_name")); }
 
 	FString Error;
 	UCurveTable* CurveTable = ResolveCurveTable(AssetPath, Error);

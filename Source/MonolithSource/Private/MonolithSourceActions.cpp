@@ -2782,7 +2782,7 @@ FMonolithActionResult FMonolithSourceActions::HandleGenerateClassStub(const TSha
 	if (ParentRows.Num() == 0) ParentRows = DB->SearchSymbolsFTS(ParentClass, 5);
 	if (ParentRows.Num() == 0)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Parent class"), ParentClass).WithErrorMessage(FString::Printf(
 			TEXT("Parent class '%s' not found in the source index. Run source.trigger_reindex if it is a project type."), *ParentClass));
 	}
 

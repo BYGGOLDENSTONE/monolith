@@ -1,5 +1,8 @@
 #include "MonolithAssetUtils.h"
 #include "MonolithJsonUtils.h"
+#include "MonolithToolRegistry.h"
+#include "MonolithFuzzyMatch.h"
+#include "Misc/PackageName.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "AssetRegistry/AssetData.h"
@@ -193,4 +196,68 @@ TArray<FAssetData> FMonolithAssetUtils::GetAssetsByClass(const FTopLevelAssetPat
 FString FMonolithAssetUtils::GetAssetName(const FString& AssetPath)
 {
 	return FPackageName::GetShortName(AssetPath);
+}
+
+namespace MonolithAssetSuggestionDetail
+{
+	static FString PackagePath(const FString& AssetPath)
+	{
+		return FPackageName::ObjectPathToPackageName(FMonolithAssetUtils::ResolveAssetPath(AssetPath));
+	}
+}
+
+TArray<FString> FMonolithAssetUtils::GetAssetPathCandidates(const FString& AssetPath, UClass* ExpectedClass)
+{
+	TArray<FString> Candidates;
+	const FString Needle = MonolithAssetSuggestionDetail::PackagePath(AssetPath);
+	IAssetRegistry* Registry = IAssetRegistry::Get();
+	if (AssetPath.TrimStartAndEnd().IsEmpty() || !Registry || !FPackageName::IsValidLongPackageName(Needle, true)) return Candidates;
+	const FString Folder = FPackageName::GetLongPackagePath(Needle);
+	constexpr int32 MaxCandidates = 256;
+	FARFilter Filter;
+	if (ExpectedClass && ExpectedClass != UObject::StaticClass())
+	{
+		Filter.ClassPaths.Add(ExpectedClass->GetClassPathName());
+		Filter.bRecursiveClasses = true;
+	}
+	Filter.bRecursivePaths = false;
+	Filter.PackagePaths.Add(FName(*Folder));
+	auto Collect = [&](const FAssetData& Asset)
+	{
+		Candidates.AddUnique(Asset.PackageName.ToString());
+		return Candidates.Num() < MaxCandidates;
+	};
+	Registry->EnumerateAssets(Filter, Collect);
+	if (Candidates.IsEmpty())
+	{
+		const FString Parent = FPackageName::GetLongPackagePath(Folder);
+		if (!Parent.IsEmpty() && Parent != TEXT("/") && Parent != Folder)
+		{
+			// Read only immediate directory metadata, then query at most three sibling
+			// folders plus their parent. Never recursively enumerate the /Game tree.
+			TArray<FString> SiblingFolders;
+			Registry->GetSubPaths(Parent, SiblingFolders, false);
+			SiblingFolders.Sort();
+			Filter.PackagePaths = { FName(*Parent) };
+			for (const auto& Match : MonolithFuzzyMatchDetail::ScoreFuzzyMatches(Folder, SiblingFolders, 3))
+			{
+				Filter.PackagePaths.AddUnique(FName(*Match.Key));
+			}
+			Registry->EnumerateAssets(Filter, Collect);
+		}
+	}
+	Candidates.Sort();
+	return Candidates;
+}
+
+FMonolithActionResult FMonolithAssetUtils::AssetNotFound(const FString& Kind, const FString& AssetPath, UClass* ExpectedClass)
+{
+	const FString Needle = MonolithAssetSuggestionDetail::PackagePath(AssetPath);
+	FMonolithActionResult Result = AssetPath.TrimStartAndEnd().IsEmpty()
+		? FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Asset path is required"))
+		: FMonolithActionResult::NotFound(Kind, Needle, GetAssetPathCandidates(AssetPath, ExpectedClass));
+	auto Data = MakeShared<FJsonObject>();
+	Data->SetStringField(TEXT("requested_path"), AssetPath);
+	if (ExpectedClass) Data->SetStringField(TEXT("expected_class"), ExpectedClass->GetClassPathName().ToString());
+	return Result.WithErrorData(Data);
 }

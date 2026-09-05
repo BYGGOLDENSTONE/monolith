@@ -597,7 +597,7 @@ FMonolithActionResult FMonolithAIBlackboardActions::HandleDeleteBlackboard(const
 	UObject* Asset = FMonolithAssetUtils::LoadAssetByPath(UBlackboardData::StaticClass(), AssetPath);
 	if (!Asset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
 	}
 
 	TArray<UObject*> ObjectsToDelete;
@@ -639,7 +639,7 @@ FMonolithActionResult FMonolithAIBlackboardActions::HandleDuplicateBlackboard(co
 	UBlackboardData* SourceBB = Cast<UBlackboardData>(FMonolithAssetUtils::LoadAssetByPath(UBlackboardData::StaticClass(), SourcePath));
 	if (!SourceBB)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source blackboard not found: %s"), *SourcePath));
+		return FMonolithActionResult::NotFound(TEXT("Source blackboard"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source blackboard not found: %s"), *SourcePath));
 	}
 
 	// Refuse silent overwrite. EnsureAssetPathFree returns false when the asset already exists.
@@ -823,7 +823,7 @@ FMonolithActionResult FMonolithAIBlackboardActions::HandleRemoveBBKey(const TSha
 	int32 Idx = FindKeyIndex(BB, KeyFName);
 	if (Idx == INDEX_NONE)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Key '%s' not found in blackboard (not in own keys — inherited keys cannot be removed from child)"), *KeyName));
+		return FMonolithActionResult::NotFound(TEXT("Key"), KeyName).WithErrorMessage(FString::Printf(TEXT("Key '%s' not found in blackboard (not in own keys — inherited keys cannot be removed from child)"), *KeyName));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Remove BB Key")));
@@ -867,7 +867,7 @@ FMonolithActionResult FMonolithAIBlackboardActions::HandleRenameBBKey(const TSha
 	int32 Idx = FindKeyIndex(BB, OldFName);
 	if (Idx == INDEX_NONE)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Key '%s' not found"), *OldName));
+		return FMonolithActionResult::NotFound(TEXT("Key"), OldName).WithErrorMessage(FString::Printf(TEXT("Key '%s' not found"), *OldName));
 	}
 
 	// Check new name doesn't conflict
@@ -942,7 +942,7 @@ FMonolithActionResult FMonolithAIBlackboardActions::HandleGetBBKeyDetails(const 
 
 	if (!FoundEntry)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Key '%s' not found in blackboard or parent chain"), *KeyName));
+		return FMonolithActionResult::NotFound(TEXT("Key"), KeyName).WithErrorMessage(FString::Printf(TEXT("Key '%s' not found in blackboard or parent chain"), *KeyName));
 	}
 
 	TSharedPtr<FJsonObject> Result = EntryToJson(*FoundEntry, bIsInherited);
@@ -974,7 +974,7 @@ FMonolithActionResult FMonolithAIBlackboardActions::HandleBatchAddBBKeys(const T
 	const TArray<TSharedPtr<FJsonValue>>* KeysArray;
 	if (!Params->TryGetArrayField(TEXT("keys"), KeysArray))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: keys (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("keys"), TEXT("Missing required parameter: keys (array)")).WithErrorMessage(TEXT("Missing required parameter: keys (array)"));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Batch Add BB Keys")));
@@ -1155,8 +1155,8 @@ FMonolithActionResult FMonolithAIBlackboardActions::HandleCompareBlackboards(con
 	UBlackboardData* BBA = Cast<UBlackboardData>(FMonolithAssetUtils::LoadAssetByPath(UBlackboardData::StaticClass(), PathA));
 	UBlackboardData* BBB = Cast<UBlackboardData>(FMonolithAssetUtils::LoadAssetByPath(UBlackboardData::StaticClass(), PathB));
 
-	if (!BBA) return FMonolithActionResult::Error(FString::Printf(TEXT("Blackboard A not found: %s"), *PathA));
-	if (!BBB) return FMonolithActionResult::Error(FString::Printf(TEXT("Blackboard B not found: %s"), *PathB));
+	if (!BBA) return FMonolithActionResult::NotFound(TEXT("Blackboard A"), PathA).WithErrorMessage(FString::Printf(TEXT("Blackboard A not found: %s"), *PathA));
+	if (!BBB) return FMonolithActionResult::NotFound(TEXT("Blackboard B"), PathB).WithErrorMessage(FString::Printf(TEXT("Blackboard B not found: %s"), *PathB));
 
 	// Build key maps: name -> type string
 	auto BuildKeyMap = [](const UBlackboardData* BB) -> TMap<FName, const FBlackboardEntry*>

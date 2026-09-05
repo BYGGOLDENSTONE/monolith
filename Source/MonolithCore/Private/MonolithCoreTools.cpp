@@ -3,7 +3,6 @@
 #include "MonolithGuideTool.h"
 #include "MonolithCoreModule.h"
 #include "MonolithJsonUtils.h"
-#include "MonolithFuzzyMatch.h"
 #include "MonolithHttpServer.h"
 #include "MonolithSettings.h"
 #include "MonolithUpdateSubsystem.h"
@@ -386,21 +385,8 @@ FMonolithActionResult FMonolithCoreTools::HandleDiscover(const TSharedPtr<FJsonO
 				return FMonolithActionResult::Success(Result);
 			}
 
-			TArray<TSharedPtr<FJsonValue>> Suggestions;
-			for (const auto& Candidate : MonolithFuzzyMatchDetail::ScoreFuzzyMatches(FilterNamespace, Namespaces, 3))
-			{
-				auto Suggestion = MakeShared<FJsonObject>();
-				Suggestion->SetStringField(TEXT("namespace"), Candidate.Key);
-				Suggestion->SetNumberField(TEXT("score"), Candidate.Score);
-				Suggestions.Add(MakeShared<FJsonValueObject>(Suggestion));
-			}
-			auto ErrorData = MakeShared<FJsonObject>();
-			ErrorData->SetStringField(TEXT("kind"), TEXT("namespace"));
-			ErrorData->SetArrayField(TEXT("suggestions"), Suggestions);
-			return FMonolithActionResult::Error(
-				FString::Printf(TEXT("Unknown namespace: %s"), *FilterNamespace),
-				FMonolithJsonUtils::ErrInvalidParams
-			).WithErrorData(ErrorData);
+			return FMonolithActionResult::NotFound(TEXT("namespace"), FilterNamespace, Namespaces)
+				.WithErrorMessage(FString::Printf(TEXT("Unknown namespace: %s"), *FilterNamespace));
 		}
 
 		// Apply optional category filter (only meaningful when namespace is specified).
@@ -706,10 +692,8 @@ FMonolithActionResult FMonolithCoreTools::HandleUpdate(const TSharedPtr<FJsonObj
 		return FMonolithActionResult::Success(Result);
 	}
 
-	return FMonolithActionResult::Error(
-		FString::Printf(TEXT("Unknown update action: %s. Use 'check' or 'install'."), *Action),
-		FMonolithJsonUtils::ErrInvalidParams
-	);
+	return FMonolithActionResult::InvalidParam(TEXT("action"),
+		FString::Printf(TEXT("Unknown update action: %s. Use 'check' or 'install'."), *Action));
 }
 
 FMonolithActionResult FMonolithCoreTools::HandleReindex(const TSharedPtr<FJsonObject>& Params)

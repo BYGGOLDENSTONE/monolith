@@ -91,8 +91,7 @@ FMonolithActionResult MonolithUI::FAnimationEventActions::HandleAddAnimationEven
     UWidgetBlueprint* WBP = LoadObject<UWidgetBlueprint>(nullptr, *AssetPath);
     if (!WBP)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Widget Blueprint '%s' not found"), *AssetPath), -32603);
+        return FMonolithActionResult::NotFound(TEXT("Widget Blueprint"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Widget Blueprint '%s' not found"), *AssetPath));
     }
 
 #if WITH_EDITORONLY_DATA
@@ -259,8 +258,7 @@ FMonolithActionResult MonolithUI::FAnimationEventActions::HandleBindAnimationToE
     UWidgetBlueprint* WBP = LoadObject<UWidgetBlueprint>(nullptr, *AssetPath);
     if (!WBP)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Widget Blueprint '%s' not found"), *AssetPath), -32603);
+        return FMonolithActionResult::NotFound(TEXT("Widget Blueprint"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Widget Blueprint '%s' not found"), *AssetPath));
     }
 
 #if WITH_EDITORONLY_DATA

@@ -346,7 +346,7 @@ FMonolithActionResult FMonolithToolRegistry::ExecuteAction(
 		FString Collision;
 		if (!FMonolithParamSchema::ApplyAliases(ActionInfo.ParamSchema, EffectiveParams, Collision))
 		{
-			return FMonolithActionResult::Error(Collision, FMonolithJsonUtils::ErrInvalidParams);
+			return FMonolithActionResult::InvalidParam(TEXT("params"), Collision).WithErrorMessage(Collision);
 		}
 	}
 
@@ -428,10 +428,10 @@ FMonolithActionResult FMonolithToolRegistry::ExecuteAction(
 		{
 			TArray<FString> Provided;
 			for (const auto& P : EffectiveParams->Values) Provided.Add(MonolithKeyToString(P.Key));
-			return FMonolithActionResult::Error(
-				FString::Printf(TEXT("Missing required param(s): [%s]. Provided keys: [%s] — inspect the action's parameter schema via monolith_discover(\"<namespace>\") and supply all required fields."),
+			const FString Message = FString::Printf(TEXT("Missing required param(s): [%s]. Provided keys: [%s] — inspect the action's parameter schema via monolith_discover(\"<namespace>\") and supply all required fields."),
 					*FString::Join(Missing, TEXT(", ")),
-					*FString::Join(Provided, TEXT(", "))), FMonolithJsonUtils::ErrInvalidParams);
+					*FString::Join(Provided, TEXT(", ")));
+			return FMonolithActionResult::InvalidParam(FString::Join(Missing, TEXT(", ")), Message).WithErrorMessage(Message);
 		}
 	}
 
@@ -517,10 +517,9 @@ FMonolithActionResult FMonolithToolRegistry::ExecuteAction(
 
 			if (FMonolithParamSchema::IsStrictParamsEnabled())
 			{
-				return FMonolithActionResult::Error(
-					FString::Printf(TEXT("STRICT_PARAMS=1: rejected action '%s:%s' due to unknown params: [%s] — unset STRICT_PARAMS or remove the unknown params from the call."),
-						*Namespace, *Action, *FString::Join(Unknown, TEXT(", "))),
-					FMonolithJsonUtils::ErrInvalidParams);
+				const FString Message = FString::Printf(TEXT("STRICT_PARAMS=1: rejected action '%s:%s' due to unknown params: [%s] — unset STRICT_PARAMS or remove the unknown params from the call."),
+						*Namespace, *Action, *FString::Join(Unknown, TEXT(", ")));
+				return FMonolithActionResult::InvalidParam(FString::Join(Unknown, TEXT(", ")), Message).WithErrorMessage(Message);
 			}
 		}
 	}

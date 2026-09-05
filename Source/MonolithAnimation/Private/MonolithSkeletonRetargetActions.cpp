@@ -231,7 +231,7 @@ FMonolithActionResult FMonolithSkeletonRetargetActions::HandleSetBoneTranslation
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
 	if (!Skeleton)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 	}
 
 	const FString Preset = Params->GetStringField(TEXT("preset"));
@@ -292,7 +292,7 @@ FMonolithActionResult FMonolithSkeletonRetargetActions::HandleSetBoneTranslation
 			const int32 BoneIndex = RefSkel.FindBoneIndex(FName(*BoneName));
 			if (BoneIndex == INDEX_NONE)
 			{
-				return FMonolithActionResult::Error(FString::Printf(
+				return FMonolithActionResult::NotFound(TEXT("Bone"), BoneName).WithErrorMessage(FString::Printf(
 					TEXT("Bone not found in skeleton: %s"), *BoneName));
 			}
 
@@ -364,7 +364,7 @@ FMonolithActionResult FMonolithSkeletonRetargetActions::HandleGetBoneTranslation
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
 	if (!Skeleton)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 	}
 
 	const FReferenceSkeleton& RefSkel = Skeleton->GetReferenceSkeleton();
@@ -454,7 +454,7 @@ FMonolithActionResult FMonolithSkeletonRetargetActions::HandleSetIkRigBoneSettin
 	UIKRigDefinition* IkRig = FMonolithAssetUtils::LoadAssetByPath<UIKRigDefinition>(IkRigPath);
 	if (!IkRig)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("IK Rig not found: %s"), *IkRigPath));
+		return FMonolithActionResult::NotFound(TEXT("IK Rig"), IkRigPath).WithErrorMessage(FString::Printf(TEXT("IK Rig not found: %s"), *IkRigPath));
 	}
 
 	FString BoneNameStr;
@@ -697,7 +697,7 @@ FMonolithActionResult FMonolithSkeletonRetargetActions::HandleGetIkRigBoneSettin
 	UIKRigDefinition* IkRig = FMonolithAssetUtils::LoadAssetByPath<UIKRigDefinition>(IkRigPath);
 	if (!IkRig)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("IK Rig not found: %s"), *IkRigPath));
+		return FMonolithActionResult::NotFound(TEXT("IK Rig"), IkRigPath).WithErrorMessage(FString::Printf(TEXT("IK Rig not found: %s"), *IkRigPath));
 	}
 
 	UIKRigController* Controller = UIKRigController::GetController(IkRig);

@@ -1505,7 +1505,7 @@ FMonolithActionResult FMonolithMeshFacadeActions::ApplyHorrorDamage(const TShare
 
 	if (!TargetActor)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Actor '%s' not found"), *TargetActorName));
+		return FMonolithActionResult::NotFound(TEXT("Actor"), TargetActorName).WithErrorMessage(FString::Printf(TEXT("Actor '%s' not found"), *TargetActorName));
 	}
 
 	// Parse params

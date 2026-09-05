@@ -767,7 +767,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleCreateStateTree(const T
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
 	if (SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'save_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param 'save_path'")).WithErrorMessage(TEXT("Missing required param 'save_path'"));
 	}
 	SavePath = FMonolithAssetUtils::ResolveAssetPath(SavePath);
 
@@ -973,7 +973,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleDuplicateStateTree(cons
 
 	if (SourcePath.IsEmpty() || DestPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required params 'source_path' and 'dest_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("source_path"), TEXT("Missing required params 'source_path' and 'dest_path'")).WithErrorMessage(TEXT("Missing required params 'source_path' and 'dest_path'"));
 	}
 
 	SourcePath = FMonolithAssetUtils::ResolveAssetPath(SourcePath);
@@ -983,7 +983,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleDuplicateStateTree(cons
 	UStateTree* SourceST = FMonolithAssetUtils::LoadAssetByPath<UStateTree>(SourcePath);
 	if (!SourceST)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source StateTree not found at '%s'"), *SourcePath));
+		return FMonolithActionResult::NotFound(TEXT("Source StateTree"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source StateTree not found at '%s'"), *SourcePath));
 	}
 
 	FString DestName = FPackageName::GetShortName(DestPath);
@@ -1054,7 +1054,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleSetSTSchema(const TShar
 	FString SchemaClassName = Params->GetStringField(TEXT("schema_class"));
 	if (SchemaClassName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'schema_class'"));
+		return FMonolithActionResult::InvalidParam(TEXT("schema_class"), TEXT("Missing required param 'schema_class'")).WithErrorMessage(TEXT("Missing required param 'schema_class'"));
 	}
 
 	UClass* SchemaClass = FindFirstObject<UClass>(*SchemaClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
@@ -1064,7 +1064,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleSetSTSchema(const TShar
 	}
 	if (!SchemaClass || !SchemaClass->IsChildOf(UStateTreeSchema::StaticClass()))
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Schema class '%s' not found or not a UStateTreeSchema subclass"), *SchemaClassName));
+		return FMonolithActionResult::NotFound(TEXT("Schema class"), SchemaClassName).WithErrorMessage(FString::Printf(TEXT("Schema class '%s' not found or not a UStateTreeSchema subclass"), *SchemaClassName));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Set ST Schema")));
@@ -1118,7 +1118,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTState(const TShare
 	FString StateName = Params->GetStringField(TEXT("name"));
 	if (StateName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'name'"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required param 'name'")).WithErrorMessage(TEXT("Missing required param 'name'"));
 	}
 
 	// Phase F #24: distinguish "key absent / null / empty" (intent: add at root)
@@ -1214,13 +1214,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleRemoveSTState(const TSh
 	FString StateId = Params->GetStringField(TEXT("state_id"));
 	if (StateId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'state_id'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required param 'state_id'")).WithErrorMessage(TEXT("Missing required param 'state_id'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Remove ST State")));
@@ -1254,13 +1254,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleRenameSTState(const TSh
 
 	if (StateId.IsEmpty() || NewName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required params 'state_id' and 'new_name'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required params 'state_id' and 'new_name'")).WithErrorMessage(TEXT("Missing required params 'state_id' and 'new_name'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Rename ST State")));
@@ -1293,13 +1293,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleMoveSTState(const TShar
 
 	if (StateId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'state_id'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required param 'state_id'")).WithErrorMessage(TEXT("Missing required param 'state_id'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Move ST State")));
@@ -1371,13 +1371,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleSetSTStateProperties(co
 	FString StateId = Params->GetStringField(TEXT("state_id"));
 	if (StateId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'state_id'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required param 'state_id'")).WithErrorMessage(TEXT("Missing required param 'state_id'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Set ST State Properties")));
@@ -1424,19 +1424,19 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTTask(const TShared
 
 	if (StateId.IsEmpty() || TaskClassName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required params 'state_id' and 'task_class'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required params 'state_id' and 'task_class'")).WithErrorMessage(TEXT("Missing required params 'state_id' and 'task_class'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	UScriptStruct* TaskStruct = FindStructByName(TaskClassName);
 	if (!TaskStruct)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Task struct '%s' not found"), *TaskClassName));
+		return FMonolithActionResult::NotFound(TEXT("Task struct"), TaskClassName).WithErrorMessage(FString::Printf(TEXT("Task struct '%s' not found"), *TaskClassName));
 	}
 
 	// Verify it's a task base subclass
@@ -1494,13 +1494,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleRemoveSTTask(const TSha
 
 	if (StateId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'state_id'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required param 'state_id'")).WithErrorMessage(TEXT("Missing required param 'state_id'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	if (!State->Tasks.IsValidIndex(TaskIndex))
@@ -1540,7 +1540,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleSetSTTaskProperty(const
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	if (!State->Tasks.IsValidIndex(TaskIndex))
@@ -1618,19 +1618,19 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTEnterCondition(con
 
 	if (StateId.IsEmpty() || CondClassName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required params 'state_id' and 'condition_class'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required params 'state_id' and 'condition_class'")).WithErrorMessage(TEXT("Missing required params 'state_id' and 'condition_class'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	UScriptStruct* CondStruct = FindStructByName(CondClassName);
 	if (!CondStruct)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Condition struct '%s' not found"), *CondClassName));
+		return FMonolithActionResult::NotFound(TEXT("Condition struct"), CondClassName).WithErrorMessage(FString::Printf(TEXT("Condition struct '%s' not found"), *CondClassName));
 	}
 
 	if (!CondStruct->IsChildOf(FStateTreeConditionBase::StaticStruct()))
@@ -1681,13 +1681,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleRemoveSTEnterCondition(
 
 	if (StateId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'state_id'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required param 'state_id'")).WithErrorMessage(TEXT("Missing required param 'state_id'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	if (!State->EnterConditions.IsValidIndex(CondIndex))
@@ -1723,13 +1723,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTTransition(const T
 
 	if (StateId.IsEmpty() || TriggerStr.IsEmpty() || TargetStr.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required params 'state_id', 'trigger', and 'target_state'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required params 'state_id', 'trigger', and 'target_state'")).WithErrorMessage(TEXT("Missing required params 'state_id', 'trigger', and 'target_state'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	// Phase F #25: validate trigger string up-front instead of silently defaulting to OnStateCompleted.
@@ -1770,7 +1770,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTTransition(const T
 		TargetState = FindStateByGuid(EditorData, TargetStr);
 		if (!TargetState)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Target state '%s' not found — use a GUID or: Succeeded, Failed, NextState, NextSelectableState"), *TargetStr));
+			return FMonolithActionResult::NotFound(TEXT("Target state"), TargetStr).WithErrorMessage(FString::Printf(TEXT("Target state '%s' not found — use a GUID or: Succeeded, Failed, NextState, NextSelectableState"), *TargetStr));
 		}
 	}
 
@@ -1817,13 +1817,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleRemoveSTTransition(cons
 
 	if (StateId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'state_id'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required param 'state_id'")).WithErrorMessage(TEXT("Missing required param 'state_id'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	if (!State->Transitions.IsValidIndex(TransIndex))
@@ -1856,7 +1856,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTPropertyBinding(co
 
 	if (SourcePathStr.IsEmpty() || TargetPathStr.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required params 'source_path' and 'target_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("source_path"), TEXT("Missing required params 'source_path' and 'target_path'")).WithErrorMessage(TEXT("Missing required params 'source_path' and 'target_path'"));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Add ST Property Binding")));
@@ -2014,7 +2014,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleGetSTBindableProperties
 		UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 		if (!State)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+			return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 		}
 
 		// If a specific task index is given, list that task's bindable properties
@@ -2183,13 +2183,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTTransitionConditio
 	FString StateId = Params->GetStringField(TEXT("state_id"));
 	if (StateId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'state_id'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required param 'state_id'")).WithErrorMessage(TEXT("Missing required param 'state_id'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	int32 TransIndex = static_cast<int32>(Params->GetNumberField(TEXT("transition_index")));
@@ -2201,13 +2201,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTTransitionConditio
 	FString CondClassName = Params->GetStringField(TEXT("condition_class"));
 	if (CondClassName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'condition_class'"));
+		return FMonolithActionResult::InvalidParam(TEXT("condition_class"), TEXT("Missing required param 'condition_class'")).WithErrorMessage(TEXT("Missing required param 'condition_class'"));
 	}
 
 	UScriptStruct* CondStruct = FindStructByName(CondClassName);
 	if (!CondStruct || !CondStruct->IsChildOf(FStateTreeConditionBase::StaticStruct()))
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Condition class '%s' not found or not a FStateTreeConditionBase"), *CondClassName));
+		return FMonolithActionResult::NotFound(TEXT("Condition class"), CondClassName).WithErrorMessage(FString::Printf(TEXT("Condition class '%s' not found or not a FStateTreeConditionBase"), *CondClassName));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Add ST Transition Condition")));
@@ -2261,25 +2261,25 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTConsideration(cons
 	FString StateId = Params->GetStringField(TEXT("state_id"));
 	if (StateId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'state_id'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required param 'state_id'")).WithErrorMessage(TEXT("Missing required param 'state_id'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	FString ConsClassName = Params->GetStringField(TEXT("consideration_class"));
 	if (ConsClassName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'consideration_class'"));
+		return FMonolithActionResult::InvalidParam(TEXT("consideration_class"), TEXT("Missing required param 'consideration_class'")).WithErrorMessage(TEXT("Missing required param 'consideration_class'"));
 	}
 
 	UScriptStruct* ConsStruct = FindStructByName(ConsClassName);
 	if (!ConsStruct || !ConsStruct->IsChildOf(FStateTreeConsiderationBase::StaticStruct()))
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Consideration class '%s' not found or not a FStateTreeConsiderationBase"), *ConsClassName));
+		return FMonolithActionResult::NotFound(TEXT("Consideration class"), ConsClassName).WithErrorMessage(FString::Printf(TEXT("Consideration class '%s' not found or not a FStateTreeConsiderationBase"), *ConsClassName));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Add ST Consideration")));
@@ -2328,13 +2328,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleConfigureSTConsideratio
 	FString StateId = Params->GetStringField(TEXT("state_id"));
 	if (StateId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'state_id'"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_id"), TEXT("Missing required param 'state_id'")).WithErrorMessage(TEXT("Missing required param 'state_id'"));
 	}
 
 	UStateTreeState* State = FindStateByGuid(EditorData, StateId);
 	if (!State)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found"), *StateId));
+		return FMonolithActionResult::NotFound(TEXT("State"), StateId).WithErrorMessage(FString::Printf(TEXT("State '%s' not found"), *StateId));
 	}
 
 	int32 ConsIndex = static_cast<int32>(Params->GetNumberField(TEXT("consideration_index")));
@@ -2591,7 +2591,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTExtension(const TS
 	FString ExtClassName = Params->GetStringField(TEXT("extension_class"));
 	if (ExtClassName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'extension_class'"));
+		return FMonolithActionResult::InvalidParam(TEXT("extension_class"), TEXT("Missing required param 'extension_class'")).WithErrorMessage(TEXT("Missing required param 'extension_class'"));
 	}
 
 	// Find class
@@ -2602,7 +2602,7 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleAddSTExtension(const TS
 	}
 	if (!ExtClass || !ExtClass->IsChildOf(UStateTreeExtension::StaticClass()))
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Extension class '%s' not found or not a UStateTreeExtension subclass"), *ExtClassName));
+		return FMonolithActionResult::NotFound(TEXT("Extension class"), ExtClassName).WithErrorMessage(FString::Printf(TEXT("Extension class '%s' not found or not a UStateTreeExtension subclass"), *ExtClassName));
 	}
 	if (ExtClass->HasAnyClassFlags(CLASS_Abstract))
 	{
@@ -2899,14 +2899,14 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleBuildStateTreeFromSpec(
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
 	if (SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'save_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param 'save_path'")).WithErrorMessage(TEXT("Missing required param 'save_path'"));
 	}
 	SavePath = FMonolithAssetUtils::ResolveAssetPath(SavePath);
 
 	const TSharedPtr<FJsonObject>* SpecPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("spec"), SpecPtr) || !SpecPtr || !SpecPtr->IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'spec'"));
+		return FMonolithActionResult::InvalidParam(TEXT("spec"), TEXT("Missing required param 'spec'")).WithErrorMessage(TEXT("Missing required param 'spec'"));
 	}
 	const TSharedPtr<FJsonObject>& Spec = *SpecPtr;
 

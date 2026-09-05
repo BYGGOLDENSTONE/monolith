@@ -1328,7 +1328,7 @@ FMonolithActionResult FMonolithMeshTerrainActions::CreateFoundation(const TShare
 	FString StrategyStr;
 	if (!Params->TryGetStringField(TEXT("strategy"), StrategyStr))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: strategy"));
+		return FMonolithActionResult::InvalidParam(TEXT("strategy"), TEXT("Missing required param: strategy")).WithErrorMessage(TEXT("Missing required param: strategy"));
 	}
 	EFoundationStrategy Strategy = StringToStrategy(StrategyStr);
 
@@ -1357,7 +1357,7 @@ FMonolithActionResult FMonolithMeshTerrainActions::CreateFoundation(const TShare
 	FString SavePath;
 	if (!Params->TryGetStringField(TEXT("save_path"), SavePath) || SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param: save_path")).WithErrorMessage(TEXT("Missing required param: save_path"));
 	}
 
 	// Optional params
@@ -1520,7 +1520,7 @@ FMonolithActionResult FMonolithMeshTerrainActions::CreateRetainingWall(const TSh
 	FString SavePath;
 	if (!Params->TryGetStringField(TEXT("save_path"), SavePath) || SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param: save_path")).WithErrorMessage(TEXT("Missing required param: save_path"));
 	}
 
 	float Thickness = Params->HasField(TEXT("thickness")) ?
@@ -1613,7 +1613,7 @@ FMonolithActionResult FMonolithMeshTerrainActions::PlaceBuildingOnTerrain(const 
 	FString SavePathPrefix;
 	if (!Params->TryGetStringField(TEXT("save_path_prefix"), SavePathPrefix) || SavePathPrefix.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path_prefix"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path_prefix"), TEXT("Missing required param: save_path_prefix")).WithErrorMessage(TEXT("Missing required param: save_path_prefix"));
 	}
 
 	bool bHospice = Params->HasField(TEXT("hospice_mode")) ?

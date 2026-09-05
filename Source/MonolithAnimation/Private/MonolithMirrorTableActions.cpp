@@ -86,7 +86,7 @@ FMonolithActionResult FMonolithMirrorTableActions::HandleCreateMirrorDataTable(c
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
 	if (!Skeleton)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	FString AssetName;
 	int32 LastSlash;
@@ -184,11 +184,11 @@ FMonolithActionResult FMonolithMirrorTableActions::HandleSetSchemaMirrorDataTabl
 
 	UPoseSearchSchema* Schema = FMonolithAssetUtils::LoadAssetByPath<UPoseSearchSchema>(SchemaPath);
 	if (!Schema)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *SchemaPath));
+		return FMonolithActionResult::NotFound(TEXT("PoseSearchSchema"), SchemaPath).WithErrorMessage(FString::Printf(TEXT("PoseSearchSchema not found: %s"), *SchemaPath));
 
 	UMirrorDataTable* MDT = FMonolithAssetUtils::LoadAssetByPath<UMirrorDataTable>(MirrorTablePath);
 	if (!MDT)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("UMirrorDataTable not found: %s"), *MirrorTablePath));
+		return FMonolithActionResult::NotFound(TEXT("UMirrorDataTable"), MirrorTablePath).WithErrorMessage(FString::Printf(TEXT("UMirrorDataTable not found: %s"), *MirrorTablePath));
 
 	TArray<FPoseSearchRoledSkeleton>* Skeletons = GetSchemaSkeletonsMutable(Schema);
 	if (!Skeletons)

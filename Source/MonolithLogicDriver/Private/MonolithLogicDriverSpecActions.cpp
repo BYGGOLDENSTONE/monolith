@@ -71,7 +71,7 @@ FMonolithActionResult FMonolithLogicDriverSpecActions::HandleExportSMJson(const 
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 
 	FString LoadError;
@@ -128,10 +128,10 @@ FMonolithActionResult FMonolithLogicDriverSpecActions::HandleExportSMJson(const 
 FMonolithActionResult FMonolithLogicDriverSpecActions::HandleImportSMJson(const TSharedPtr<FJsonObject>& Params)
 {
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
-	if (SavePath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'save_path'"));
+	if (SavePath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param 'save_path'")).WithErrorMessage(TEXT("Missing required param 'save_path'"));
 
 	FString JsonPathOrData = Params->GetStringField(TEXT("json_path_or_data"));
-	if (JsonPathOrData.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'json_path_or_data'"));
+	if (JsonPathOrData.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("json_path_or_data"), TEXT("Missing required param 'json_path_or_data'")).WithErrorMessage(TEXT("Missing required param 'json_path_or_data'"));
 
 	FString JsonString;
 
@@ -168,12 +168,12 @@ FMonolithActionResult FMonolithLogicDriverSpecActions::HandleImportSMJson(const 
 FMonolithActionResult FMonolithLogicDriverSpecActions::HandleBuildSMFromSpec(const TSharedPtr<FJsonObject>& Params)
 {
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
-	if (SavePath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'save_path'"));
+	if (SavePath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param 'save_path'")).WithErrorMessage(TEXT("Missing required param 'save_path'"));
 
 	const TSharedPtr<FJsonObject>* SpecPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("spec"), SpecPtr) || !SpecPtr || !(*SpecPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'spec' (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("spec"), TEXT("Missing required param 'spec' (object)")).WithErrorMessage(TEXT("Missing required param 'spec' (object)"));
 	}
 	TSharedPtr<FJsonObject> Spec = *SpecPtr;
 
@@ -422,7 +422,7 @@ FMonolithActionResult FMonolithLogicDriverSpecActions::HandleBuildSMFromSpec(con
 FMonolithActionResult FMonolithLogicDriverSpecActions::HandleExportSMSpec(const TSharedPtr<FJsonObject>& Params)
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 
 	FString LoadError;
 	UBlueprint* SMBlueprint = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -563,8 +563,8 @@ FMonolithActionResult FMonolithLogicDriverSpecActions::HandleCompareStateMachine
 {
 	FString PathA = Params->GetStringField(TEXT("path_a"));
 	FString PathB = Params->GetStringField(TEXT("path_b"));
-	if (PathA.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'path_a'"));
-	if (PathB.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'path_b'"));
+	if (PathA.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("path_a"), TEXT("Missing required param 'path_a'")).WithErrorMessage(TEXT("Missing required param 'path_a'"));
+	if (PathB.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("path_b"), TEXT("Missing required param 'path_b'")).WithErrorMessage(TEXT("Missing required param 'path_b'"));
 
 	// Load both SMs
 	FString LoadErrorA, LoadErrorB;

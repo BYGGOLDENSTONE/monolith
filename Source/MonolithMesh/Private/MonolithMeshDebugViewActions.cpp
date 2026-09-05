@@ -470,8 +470,7 @@ FMonolithActionResult FMonolithMeshDebugViewActions::CaptureFloorPlan(const TSha
 
 	if (!FMonolithMeshSpatialRegistry::HasBlock(BlockId))
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Block '%s' not found in spatial registry"), *BlockId));
+		return FMonolithActionResult::NotFound(TEXT("Block"), BlockId).WithErrorMessage(FString::Printf(TEXT("Block '%s' not found in spatial registry"), *BlockId));
 	}
 
 	const FSpatialBlock& Block = FMonolithMeshSpatialRegistry::GetBlock(BlockId);
@@ -1252,8 +1251,7 @@ FMonolithActionResult FMonolithMeshDebugViewActions::CaptureBuildingViews(const 
 
 	if (!FMonolithMeshSpatialRegistry::HasBlock(BlockId))
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Block '%s' not found in spatial registry"), *BlockId));
+		return FMonolithActionResult::NotFound(TEXT("Block"), BlockId).WithErrorMessage(FString::Printf(TEXT("Block '%s' not found in spatial registry"), *BlockId));
 	}
 
 	const FSpatialBlock& Block = FMonolithMeshSpatialRegistry::GetBlock(BlockId);

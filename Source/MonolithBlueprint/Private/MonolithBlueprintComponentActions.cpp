@@ -138,7 +138,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleAddComponent(con
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	if (!BP->SimpleConstructionScript)
@@ -160,7 +160,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleAddComponent(con
 	}
 	if (!CompClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Component class not found: %s"), *ClassName));
+		return FMonolithActionResult::NotFound(TEXT("Component class"), ClassName).WithErrorMessage(FString::Printf(TEXT("Component class not found: %s"), *ClassName));
 	}
 	if (!CompClass->IsChildOf(UActorComponent::StaticClass()))
 	{
@@ -237,7 +237,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleRemoveComponent(
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	if (!BP->SimpleConstructionScript)
@@ -254,7 +254,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleRemoveComponent(
 	USCS_Node* Node = FindSCSNodeByName(BP->SimpleConstructionScript, FName(*CompName));
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Component not found: %s"), *CompName));
+		return FMonolithActionResult::NotFound(TEXT("Component"), CompName).WithErrorMessage(FString::Printf(TEXT("Component not found: %s"), *CompName));
 	}
 
 	// Determine promote_children (default true)
@@ -301,7 +301,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleRenameComponent(
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	if (!BP->SimpleConstructionScript)
@@ -319,7 +319,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleRenameComponent(
 	USCS_Node* Node = FindSCSNodeByName(BP->SimpleConstructionScript, FName(*CompName));
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Component not found: %s"), *CompName));
+		return FMonolithActionResult::NotFound(TEXT("Component"), CompName).WithErrorMessage(FString::Printf(TEXT("Component not found: %s"), *CompName));
 	}
 
 	// Verify name is not already taken by another SCS node
@@ -366,7 +366,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleReparentComponen
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	if (!BP->SimpleConstructionScript)
@@ -383,7 +383,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleReparentComponen
 	USCS_Node* Node = FindSCSNodeByName(BP->SimpleConstructionScript, FName(*CompName));
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Component not found: %s"), *CompName));
+		return FMonolithActionResult::NotFound(TEXT("Component"), CompName).WithErrorMessage(FString::Printf(TEXT("Component not found: %s"), *CompName));
 	}
 
 	// Validate new parent if specified — must not be the node itself or a descendant
@@ -393,7 +393,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleReparentComponen
 		NewParentNode = FindSCSNodeByName(BP->SimpleConstructionScript, FName(*NewParent));
 		if (!NewParentNode)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("New parent component not found: %s"), *NewParent));
+			return FMonolithActionResult::NotFound(TEXT("New parent component"), NewParent).WithErrorMessage(FString::Printf(TEXT("New parent component not found: %s"), *NewParent));
 		}
 		if (NewParentNode == Node)
 		{
@@ -480,7 +480,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleSetComponentProp
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString CompName  = Params->GetStringField(TEXT("component_name"));
@@ -727,7 +727,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleDuplicateCompone
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	if (!BP->SimpleConstructionScript)
@@ -741,7 +741,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleDuplicateCompone
 	USCS_Node* SourceNode = FindSCSNodeByName(BP->SimpleConstructionScript, FName(*CompName));
 	if (!SourceNode)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Component not found: %s"), *CompName));
+		return FMonolithActionResult::NotFound(TEXT("Component"), CompName).WithErrorMessage(FString::Printf(TEXT("Component not found: %s"), *CompName));
 	}
 
 	if (!SourceNode->ComponentClass)

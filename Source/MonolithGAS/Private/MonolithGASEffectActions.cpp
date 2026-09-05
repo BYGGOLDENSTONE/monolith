@@ -938,8 +938,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleCreateGameplayEffect(cons
 		}
 		if (!ParentClass || !ParentClass->IsChildOf(UGameplayEffect::StaticClass()))
 		{
-			return FMonolithActionResult::Error(
-				FString::Printf(TEXT("Parent class '%s' not found or not a GameplayEffect subclass"), *ParentClassName));
+			return FMonolithActionResult::NotFound(TEXT("Parent class"), ParentClassName).WithErrorMessage(FString::Printf(TEXT("Parent class '%s' not found or not a GameplayEffect subclass"), *ParentClassName));
 		}
 	}
 
@@ -1307,7 +1306,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleAddModifier(const TShared
 	const TSharedPtr<FJsonObject>* MagObjPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("magnitude"), MagObjPtr) || !MagObjPtr || !(*MagObjPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: magnitude (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("magnitude"), TEXT("Missing required parameter: magnitude (object)")).WithErrorMessage(TEXT("Missing required parameter: magnitude (object)"));
 	}
 
 	FGameplayEffectModifierMagnitude Magnitude;
@@ -1365,7 +1364,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetModifier(const TShared
 
 	if (!Params->HasField(TEXT("modifier_index")))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: modifier_index"));
+		return FMonolithActionResult::InvalidParam(TEXT("modifier_index"), TEXT("Missing required parameter: modifier_index")).WithErrorMessage(TEXT("Missing required parameter: modifier_index"));
 	}
 	int32 Index = static_cast<int32>(Params->GetNumberField(TEXT("modifier_index")));
 
@@ -1567,7 +1566,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleAddGEComponent(const TSha
 	const TSharedPtr<FJsonObject>* ConfigPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("config"), ConfigPtr) || !ConfigPtr || !(*ConfigPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: config (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("config"), TEXT("Missing required parameter: config (object)")).WithErrorMessage(TEXT("Missing required parameter: config (object)"));
 	}
 	const TSharedPtr<FJsonObject>& Config = *ConfigPtr;
 
@@ -1753,7 +1752,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetGEComponent(const TSha
 	const TSharedPtr<FJsonObject>* ConfigPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("config"), ConfigPtr) || !ConfigPtr || !(*ConfigPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: config (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("config"), TEXT("Missing required parameter: config (object)")).WithErrorMessage(TEXT("Missing required parameter: config (object)"));
 	}
 	const TSharedPtr<FJsonObject>& Config = *ConfigPtr;
 
@@ -2100,7 +2099,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetPeriod(const TSharedPt
 
 	if (!Params->HasField(TEXT("period")))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: period"));
+		return FMonolithActionResult::InvalidParam(TEXT("period"), TEXT("Missing required parameter: period")).WithErrorMessage(TEXT("Missing required parameter: period"));
 	}
 
 	float PeriodValue = Params->GetNumberField(TEXT("period"));
@@ -2708,7 +2707,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleBuildEffectFromSpec(const
 	const TSharedPtr<FJsonObject>* SpecPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("spec"), SpecPtr) || !SpecPtr || !(*SpecPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: spec (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("spec"), TEXT("Missing required parameter: spec (object)")).WithErrorMessage(TEXT("Missing required parameter: spec (object)"));
 	}
 	const TSharedPtr<FJsonObject>& Spec = *SpecPtr;
 
@@ -2913,7 +2912,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleBatchCreateEffects(const 
 	const TArray<TSharedPtr<FJsonValue>>* EffectsArray;
 	if (!Params->TryGetArrayField(TEXT("effects"), EffectsArray) || !EffectsArray || EffectsArray->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: effects (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("effects"), TEXT("Missing or empty required parameter: effects (array)")).WithErrorMessage(TEXT("Missing or empty required parameter: effects (array)"));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> Results;
@@ -3035,8 +3034,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleAddExecution(const TShare
 	}
 	if (!CalcClass || !CalcClass->IsChildOf(UGameplayEffectExecutionCalculation::StaticClass()))
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Execution calculation class not found or invalid: %s"), *CalcClassPath));
+		return FMonolithActionResult::NotFound(TEXT("Execution calculation class"), CalcClassPath).WithErrorMessage(FString::Printf(TEXT("Execution calculation class not found or invalid: %s"), *CalcClassPath));
 	}
 
 	// Build the execution definition
@@ -3833,8 +3831,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleGetActiveEffects(const TS
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorId);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorId).WithErrorMessage(FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
 	}
 
 	UAbilitySystemComponent* ASC = MonolithGAS::GetASCFromActor(Actor);
@@ -3938,8 +3935,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleGetEffectModifiersBreakdo
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorId);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorId).WithErrorMessage(FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
 	}
 
 	UAbilitySystemComponent* ASC = MonolithGAS::GetASCFromActor(Actor);
@@ -4070,8 +4066,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleApplyEffect(const TShared
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorId);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorId).WithErrorMessage(FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
 	}
 
 	UAbilitySystemComponent* ASC = MonolithGAS::GetASCFromActor(Actor);
@@ -4161,8 +4156,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleRemoveEffect(const TShare
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorId);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorId).WithErrorMessage(FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
 	}
 
 	UAbilitySystemComponent* ASC = MonolithGAS::GetASCFromActor(Actor);
@@ -4262,7 +4256,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSimulateEffectStack(const
 	const TSharedPtr<FJsonObject>* StateObj;
 	if (!Params->TryGetObjectField(TEXT("attribute_state"), StateObj) || !StateObj || !(*StateObj).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: attribute_state (object with base_value)"));
+		return FMonolithActionResult::InvalidParam(TEXT("attribute_state"), TEXT("Missing required parameter: attribute_state (object with base_value)")).WithErrorMessage(TEXT("Missing required parameter: attribute_state (object with base_value)"));
 	}
 
 	double BaseValue = 0.0;
@@ -4274,7 +4268,7 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSimulateEffectStack(const
 	const TArray<TSharedPtr<FJsonValue>>* EffectsArr;
 	if (!Params->TryGetArrayField(TEXT("effects"), EffectsArr) || !EffectsArr || EffectsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: effects (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("effects"), TEXT("Missing or empty required parameter: effects (array)")).WithErrorMessage(TEXT("Missing or empty required parameter: effects (array)"));
 	}
 
 	// GAS evaluation order aggregators

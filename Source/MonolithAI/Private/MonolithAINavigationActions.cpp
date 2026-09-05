@@ -659,11 +659,11 @@ FMonolithActionResult FMonolithAINavigationActions::HandleAddNavBoundsVolume(con
 
 	if (!bLocFound)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: location"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing required parameter: location")).WithErrorMessage(TEXT("Missing required parameter: location"));
 	}
 	if (!bExtFound)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: extent"));
+		return FMonolithActionResult::InvalidParam(TEXT("extent"), TEXT("Missing required parameter: extent")).WithErrorMessage(TEXT("Missing required parameter: extent"));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Add NavMeshBoundsVolume")));
@@ -930,13 +930,13 @@ FMonolithActionResult FMonolithAINavigationActions::HandleAddNavModifierVolume(c
 	FVector Location = ParseVector(Params, TEXT("location"), bLocFound);
 	FVector Extent = ParseVector(Params, TEXT("extent"), bExtFound);
 
-	if (!bLocFound) return FMonolithActionResult::Error(TEXT("Missing required parameter: location"));
-	if (!bExtFound) return FMonolithActionResult::Error(TEXT("Missing required parameter: extent"));
+	if (!bLocFound) return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing required parameter: location")).WithErrorMessage(TEXT("Missing required parameter: location"));
+	if (!bExtFound) return FMonolithActionResult::InvalidParam(TEXT("extent"), TEXT("Missing required parameter: extent")).WithErrorMessage(TEXT("Missing required parameter: extent"));
 
 	FString AreaClassName = Params->GetStringField(TEXT("area_class"));
 	if (AreaClassName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: area_class"));
+		return FMonolithActionResult::InvalidParam(TEXT("area_class"), TEXT("Missing required parameter: area_class")).WithErrorMessage(TEXT("Missing required parameter: area_class"));
 	}
 
 	// Resolve area class
@@ -948,7 +948,7 @@ FMonolithActionResult FMonolithAINavigationActions::HandleAddNavModifierVolume(c
 	}
 	if (!AreaClass || !AreaClass->IsChildOf(UNavArea::StaticClass()))
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Nav area class not found: %s"), *AreaClassName));
+		return FMonolithActionResult::NotFound(TEXT("Nav area class"), AreaClassName).WithErrorMessage(FString::Printf(TEXT("Nav area class not found: %s"), *AreaClassName));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Add NavModifierVolume")));
@@ -999,8 +999,8 @@ FMonolithActionResult FMonolithAINavigationActions::HandleAddNavLinkProxy(const 
 	FVector StartLoc = ParseVector(Params, TEXT("start_location"), bStartFound);
 	FVector EndLoc = ParseVector(Params, TEXT("end_location"), bEndFound);
 
-	if (!bStartFound) return FMonolithActionResult::Error(TEXT("Missing required parameter: start_location"));
-	if (!bEndFound) return FMonolithActionResult::Error(TEXT("Missing required parameter: end_location"));
+	if (!bStartFound) return FMonolithActionResult::InvalidParam(TEXT("start_location"), TEXT("Missing required parameter: start_location")).WithErrorMessage(TEXT("Missing required parameter: start_location"));
+	if (!bEndFound) return FMonolithActionResult::InvalidParam(TEXT("end_location"), TEXT("Missing required parameter: end_location")).WithErrorMessage(TEXT("Missing required parameter: end_location"));
 
 	FString LinkType = Params->GetStringField(TEXT("link_type"));
 	bool bSmartLink = LinkType.Equals(TEXT("smart"), ESearchCase::IgnoreCase);
@@ -1078,7 +1078,7 @@ FMonolithActionResult FMonolithAINavigationActions::HandleConfigureNavLink(const
 	FString ActorPath = Params->GetStringField(TEXT("actor_path"));
 	if (ActorPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: actor_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_path"), TEXT("Missing required parameter: actor_path")).WithErrorMessage(TEXT("Missing required parameter: actor_path"));
 	}
 
 	UWorld* World = GetNavWorld();
@@ -1100,7 +1100,7 @@ FMonolithActionResult FMonolithAINavigationActions::HandleConfigureNavLink(const
 
 	if (!LinkActor)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("NavLinkProxy not found: %s"), *ActorPath));
+		return FMonolithActionResult::NotFound(TEXT("NavLinkProxy"), ActorPath).WithErrorMessage(FString::Printf(TEXT("NavLinkProxy not found: %s"), *ActorPath));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Configure NavLink")));
@@ -1249,8 +1249,8 @@ FMonolithActionResult FMonolithAINavigationActions::HandleFindPath(const TShared
 	FVector Start = ParseVector(Params, TEXT("start"), bStartFound);
 	FVector End = ParseVector(Params, TEXT("end"), bEndFound);
 
-	if (!bStartFound) return FMonolithActionResult::Error(TEXT("Missing required parameter: start"));
-	if (!bEndFound) return FMonolithActionResult::Error(TEXT("Missing required parameter: end"));
+	if (!bStartFound) return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing required parameter: start")).WithErrorMessage(TEXT("Missing required parameter: start"));
+	if (!bEndFound) return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing required parameter: end")).WithErrorMessage(TEXT("Missing required parameter: end"));
 
 	ANavigationData* NavData = NavSys->GetDefaultNavDataInstance();
 	if (!NavData)
@@ -1313,8 +1313,8 @@ FMonolithActionResult FMonolithAINavigationActions::HandleTestPath(const TShared
 	FVector Start = ParseVector(Params, TEXT("start"), bStartFound);
 	FVector End = ParseVector(Params, TEXT("end"), bEndFound);
 
-	if (!bStartFound) return FMonolithActionResult::Error(TEXT("Missing required parameter: start"));
-	if (!bEndFound) return FMonolithActionResult::Error(TEXT("Missing required parameter: end"));
+	if (!bStartFound) return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing required parameter: start")).WithErrorMessage(TEXT("Missing required parameter: start"));
+	if (!bEndFound) return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing required parameter: end")).WithErrorMessage(TEXT("Missing required parameter: end"));
 
 	ANavigationData* NavData = NavSys->GetDefaultNavDataInstance();
 	if (!NavData)
@@ -1354,7 +1354,7 @@ FMonolithActionResult FMonolithAINavigationActions::HandleProjectPointToNavigati
 	FVector Point = ParseVector(Params, TEXT("point"), bPointFound);
 	if (!bPointFound)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: point"));
+		return FMonolithActionResult::InvalidParam(TEXT("point"), TEXT("Missing required parameter: point")).WithErrorMessage(TEXT("Missing required parameter: point"));
 	}
 
 	bool bExtentFound = false;
@@ -1445,8 +1445,8 @@ FMonolithActionResult FMonolithAINavigationActions::HandleNavigationRaycast(cons
 	FVector Start = ParseVector(Params, TEXT("start"), bStartFound);
 	FVector End = ParseVector(Params, TEXT("end"), bEndFound);
 
-	if (!bStartFound) return FMonolithActionResult::Error(TEXT("Missing required parameter: start"));
-	if (!bEndFound) return FMonolithActionResult::Error(TEXT("Missing required parameter: end"));
+	if (!bStartFound) return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing required parameter: start")).WithErrorMessage(TEXT("Missing required parameter: start"));
+	if (!bEndFound) return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing required parameter: end")).WithErrorMessage(TEXT("Missing required parameter: end"));
 
 	FVector HitLocation;
 	bool bHit = UNavigationSystemV1::NavigationRaycast(World, Start, End, HitLocation);
@@ -1550,7 +1550,7 @@ FMonolithActionResult FMonolithAINavigationActions::HandleAddNavInvokerComponent
 	FString BlueprintPath = Params->GetStringField(TEXT("blueprint_path"));
 	if (BlueprintPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: blueprint_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("blueprint_path"), TEXT("Missing required parameter: blueprint_path")).WithErrorMessage(TEXT("Missing required parameter: blueprint_path"));
 	}
 
 	FString Error;
@@ -2217,7 +2217,7 @@ FMonolithActionResult FMonolithAINavigationActions::HandleValidateNavPoints(cons
 	const TArray<TSharedPtr<FJsonValue>>* PointsArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("points"), PointsArr) || !PointsArr || PointsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: points"));
+		return FMonolithActionResult::InvalidParam(TEXT("points"), TEXT("Missing or empty required parameter: points")).WithErrorMessage(TEXT("Missing or empty required parameter: points"));
 	}
 
 	TMap<FString, FVector> PointLocations;

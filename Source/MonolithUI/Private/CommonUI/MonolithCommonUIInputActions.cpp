@@ -94,7 +94,7 @@ namespace MonolithCommonUIInput
 			}
 		}
 		UDataTable* DT = LoadObject<UDataTable>(nullptr, *TablePath);
-		if (!DT) return FMonolithActionResult::Error(FString::Printf(TEXT("DataTable '%s' not found"), *TablePath));
+		if (!DT) return FMonolithActionResult::NotFound(TEXT("DataTable"), TablePath).WithErrorMessage(FString::Printf(TEXT("DataTable '%s' not found"), *TablePath));
 		if (DT->RowStruct != FCommonInputActionDataBase::StaticStruct())
 			return FMonolithActionResult::Error(TEXT("DataTable RowStruct is not FCommonInputActionDataBase"));
 
@@ -170,7 +170,7 @@ namespace MonolithCommonUIInput
 			return FMonolithActionResult::Error(TEXT("wbp_path (or asset_path) required"));
 
 		UDataTable* DT = LoadObject<UDataTable>(nullptr, *TablePath);
-		if (!DT) return FMonolithActionResult::Error(FString::Printf(TEXT("DataTable '%s' not found"), *TablePath));
+		if (!DT) return FMonolithActionResult::NotFound(TEXT("DataTable"), TablePath).WithErrorMessage(FString::Printf(TEXT("DataTable '%s' not found"), *TablePath));
 
 		if (!DT->FindRowUnchecked(FName(*RowName)))
 			return FMonolithActionResult::Error(FString::Printf(

@@ -387,7 +387,7 @@ FMonolithActionResult FMonolithAnimLayoutActions::HandleAutoLayout(const TShared
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 	}
 
 	const bool bExplicitBA = (Formatter == TEXT("blueprint_assist"));

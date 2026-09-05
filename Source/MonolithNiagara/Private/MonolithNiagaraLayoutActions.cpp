@@ -193,7 +193,7 @@ FMonolithActionResult FMonolithNiagaraLayoutActions::HandleAutoLayout(const TSha
 	FString AssetPath = NL_GetAssetPath(Params);
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 
 	FString EmitterFilter = Params->GetStringField(TEXT("emitter"));
@@ -228,7 +228,7 @@ FMonolithActionResult FMonolithNiagaraLayoutActions::HandleAutoLayout(const TSha
 	UNiagaraSystem* System = FMonolithAssetUtils::LoadAssetByPath<UNiagaraSystem>(AssetPath);
 	if (!System)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithAssetUtils::AssetNotFound(TEXT("system"), AssetPath, UNiagaraSystem::StaticClass()).WithErrorMessage(FString::Printf(
 			TEXT("Failed to load Niagara system: %s"), *AssetPath));
 	}
 

@@ -1073,7 +1073,7 @@ FMonolithActionResult FMonolithAudioSoundCueActions::RemoveSoundCueNode(const TS
 	USoundNode* NodeToRemove = FindNodeById(Cue, NodeId);
 	if (!NodeToRemove)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Node '%s' not found in cue"), *NodeId));
+		return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node '%s' not found in cue"), *NodeId));
 	}
 
 	FString WritableError;
@@ -1141,11 +1141,11 @@ FMonolithActionResult FMonolithAudioSoundCueActions::ConnectSoundCueNodes(const 
 	USoundNode* ToNode = FindNodeById(Cue, ToNodeId);
 	if (!FromNode)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("From node '%s' not found"), *FromNodeId));
+		return FMonolithActionResult::NotFound(TEXT("From node"), FromNodeId).WithErrorMessage(FString::Printf(TEXT("From node '%s' not found"), *FromNodeId));
 	}
 	if (!ToNode)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("To node '%s' not found"), *ToNodeId));
+		return FMonolithActionResult::NotFound(TEXT("To node"), ToNodeId).WithErrorMessage(FString::Printf(TEXT("To node '%s' not found"), *ToNodeId));
 	}
 
 	FString WritableError;
@@ -1222,7 +1222,7 @@ FMonolithActionResult FMonolithAudioSoundCueActions::SetSoundCueFirstNode(const 
 	USoundNode* Node = FindNodeById(Cue, NodeId);
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
+		return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
 	}
 
 	FString WritableError;
@@ -1271,7 +1271,7 @@ FMonolithActionResult FMonolithAudioSoundCueActions::SetSoundCueNodeProperty(con
 	USoundNode* Node = FindNodeById(Cue, NodeId);
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
+		return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node '%s' not found"), *NodeId));
 	}
 
 	FString WritableError;
@@ -2193,7 +2193,7 @@ FMonolithActionResult FMonolithAudioSoundCueActions::DuplicateSoundCue(const TSh
 
 	IAssetTools& AssetTools = FAssetToolsModule::GetModule().Get();
 	UObject* Source = StaticLoadObject(UObject::StaticClass(), nullptr, *SourcePath);
-	if (!Source) { return FMonolithActionResult::Error(FString::Printf(TEXT("Source asset not found: '%s'"), *SourcePath)); }
+	if (!Source) { return FMonolithActionResult::NotFound(TEXT("Source asset"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source asset not found: '%s'"), *SourcePath)); }
 	FString DestPackagePath, DestAssetName;
 	DestPath.Split(TEXT("/"), &DestPackagePath, &DestAssetName, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
 	{
@@ -2228,7 +2228,7 @@ FMonolithActionResult FMonolithAudioSoundCueActions::DeleteAudioAsset(const TSha
 	UObject* Asset = StaticLoadObject(UObject::StaticClass(), nullptr, *AssetPath);
 	if (!Asset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset not found at '%s'"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Asset not found at '%s'"), *AssetPath));
 	}
 
 	bool bDeleted = ObjectTools::DeleteSingleObject(Asset, /*bPerformReferenceCheck=*/false);

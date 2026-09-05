@@ -512,7 +512,7 @@ FMonolithActionResult FMonolithAISmartObjectActions::HandleDeleteSmartObjectDefi
 	UObject* Asset = FMonolithAssetUtils::LoadAssetByPath(USmartObjectDefinition::StaticClass(), AssetPath);
 	if (!Asset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
 	}
 
 	TArray<UObject*> ObjectsToDelete;
@@ -1016,7 +1016,7 @@ FMonolithActionResult FMonolithAISmartObjectActions::HandleAddSmartObjectCompone
 		FMonolithAssetUtils::LoadAssetByPath(USmartObjectDefinition::StaticClass(), DefinitionPath));
 	if (!SODef)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Smart Object Definition"), DefinitionPath).WithErrorMessage(FString::Printf(
 			TEXT("Smart Object Definition not found: %s"), *DefinitionPath));
 	}
 
@@ -1080,7 +1080,7 @@ FMonolithActionResult FMonolithAISmartObjectActions::HandlePlaceSmartObjectActor
 		FMonolithAssetUtils::LoadAssetByPath(USmartObjectDefinition::StaticClass(), DefinitionPath));
 	if (!SODef)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Smart Object Definition"), DefinitionPath).WithErrorMessage(FString::Printf(
 			TEXT("Smart Object Definition not found: %s"), *DefinitionPath));
 	}
 
@@ -1088,7 +1088,7 @@ FMonolithActionResult FMonolithAISmartObjectActions::HandlePlaceSmartObjectActor
 	const TSharedPtr<FJsonObject>* LocObj = nullptr;
 	if (!Params->TryGetObjectField(TEXT("location"), LocObj) || !LocObj || (*LocObj)->Values.Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: location {x, y, z}"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing required parameter: location {x, y, z}")).WithErrorMessage(TEXT("Missing required parameter: location {x, y, z}"));
 	}
 
 	FVector Location(
@@ -1537,7 +1537,7 @@ FMonolithActionResult FMonolithAISmartObjectActions::HandleDuplicateSmartObjectD
 		FMonolithAssetUtils::LoadAssetByPath(USmartObjectDefinition::StaticClass(), SourcePath));
 	if (!SourceDef)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Source definition"), SourcePath).WithErrorMessage(FString::Printf(
 			TEXT("Source definition not found: %s"), *SourcePath));
 	}
 

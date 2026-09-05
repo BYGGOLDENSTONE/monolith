@@ -351,16 +351,14 @@ FMonolithActionResult FMonolithUISlotActions::HandleMoveWidget(const TSharedPtr<
     UWidget* Widget = WBP->WidgetTree->FindWidget(FName(*WidgetName));
     if (!Widget)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Widget '%s' not found"), *WidgetName));
+        return FMonolithActionResult::NotFound(TEXT("Widget"), WidgetName).WithErrorMessage(FString::Printf(TEXT("Widget '%s' not found"), *WidgetName));
     }
 
     UWidget* NewParentWidget = WBP->WidgetTree->FindWidget(FName(*NewParentName));
     UPanelWidget* NewParent = Cast<UPanelWidget>(NewParentWidget);
     if (!NewParent)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("New parent '%s' not found or not a panel"), *NewParentName));
+        return FMonolithActionResult::NotFound(TEXT("New parent"), NewParentName).WithErrorMessage(FString::Printf(TEXT("New parent '%s' not found or not a panel"), *NewParentName));
     }
 
     // Remove from current parent

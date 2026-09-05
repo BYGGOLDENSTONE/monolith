@@ -192,7 +192,7 @@ FMonolithActionResult FMonolithMeshOperationActions::ReleaseHandle(const TShared
 
 	if (!Pool->ReleaseHandle(HandleName))
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Handle '%s' not found"), *HandleName));
+		return FMonolithActionResult::NotFound(TEXT("Handle"), HandleName).WithErrorMessage(FString::Printf(TEXT("Handle '%s' not found"), *HandleName));
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();

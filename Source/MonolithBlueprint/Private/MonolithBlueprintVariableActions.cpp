@@ -1,4 +1,5 @@
 #include "MonolithBlueprintVariableActions.h"
+#include "MonolithAssetUtils.h"
 #include "MonolithBlueprintInternal.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithPinTypeGrammar.h"
@@ -211,19 +212,19 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleAddVariable(const
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString Name = Params->GetStringField(TEXT("name"));
 	if (Name.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required parameter: name")).WithErrorMessage(TEXT("Missing required parameter: name"));
 	}
 
 	FString TypeStr = Params->GetStringField(TEXT("type"));
 	if (TypeStr.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: type"));
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TEXT("Missing required parameter: type")).WithErrorMessage(TEXT("Missing required parameter: type"));
 	}
 
 	// Normalize common aliases so users get sensible errors instead of silent bool fallback.
@@ -348,13 +349,13 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleRemoveVariable(co
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString Name = Params->GetStringField(TEXT("name"));
 	if (Name.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required parameter: name")).WithErrorMessage(TEXT("Missing required parameter: name"));
 	}
 
 	FName VarName(*Name);
@@ -371,7 +372,7 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleRemoveVariable(co
 	}
 	if (!bFound)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Variable not found: %s"), *Name));
+		return FMonolithActionResult::NotFound(TEXT("Variable"), Name).WithErrorMessage(FString::Printf(TEXT("Variable not found: %s"), *Name));
 	}
 
 	FBlueprintEditorUtils::RemoveMemberVariable(BP, VarName);
@@ -394,7 +395,7 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleRenameVariable(co
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString OldName = Params->GetStringField(TEXT("old_name"));
@@ -402,11 +403,11 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleRenameVariable(co
 
 	if (OldName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: old_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("old_name"), TEXT("Missing required parameter: old_name")).WithErrorMessage(TEXT("Missing required parameter: old_name"));
 	}
 	if (NewName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: new_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("new_name"), TEXT("Missing required parameter: new_name")).WithErrorMessage(TEXT("Missing required parameter: new_name"));
 	}
 
 	FName OldVarName(*OldName);
@@ -423,7 +424,7 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleRenameVariable(co
 	}
 	if (!bFound)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Variable not found: %s"), *OldName));
+		return FMonolithActionResult::NotFound(TEXT("Variable"), OldName).WithErrorMessage(FString::Printf(TEXT("Variable not found: %s"), *OldName));
 	}
 
 	FBlueprintEditorUtils::RenameMemberVariable(BP, OldVarName, FName(*NewName));
@@ -447,19 +448,19 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleSetVariableType(c
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString Name = Params->GetStringField(TEXT("name"));
 	if (Name.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required parameter: name")).WithErrorMessage(TEXT("Missing required parameter: name"));
 	}
 
 	FString TypeStr = Params->GetStringField(TEXT("type"));
 	if (TypeStr.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: type"));
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TEXT("Missing required parameter: type")).WithErrorMessage(TEXT("Missing required parameter: type"));
 	}
 
 	FName VarName(*Name);
@@ -476,7 +477,7 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleSetVariableType(c
 	}
 	if (!bFound)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Variable not found: %s"), *Name));
+		return FMonolithActionResult::NotFound(TEXT("Variable"), Name).WithErrorMessage(FString::Printf(TEXT("Variable not found: %s"), *Name));
 	}
 
 	FEdGraphPinType NewType = MonolithPinTypeGrammar::ParsePinTypeFromString(TypeStr);
@@ -501,13 +502,13 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleSetVariableDefaul
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString Name = Params->GetStringField(TEXT("name"));
 	if (Name.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required parameter: name")).WithErrorMessage(TEXT("Missing required parameter: name"));
 	}
 
 	FName VarName(*Name);
@@ -524,7 +525,7 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleSetVariableDefaul
 	}
 	if (!bFound)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Variable not found: %s"), *Name));
+		return FMonolithActionResult::NotFound(TEXT("Variable"), Name).WithErrorMessage(FString::Printf(TEXT("Variable not found: %s"), *Name));
 	}
 
 	// Apply category if provided
@@ -572,31 +573,31 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleAddLocalVariable(
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString FunctionName = Params->GetStringField(TEXT("function_name"));
 	if (FunctionName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: function_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("function_name"), TEXT("Missing required parameter: function_name")).WithErrorMessage(TEXT("Missing required parameter: function_name"));
 	}
 
 	FString Name = Params->GetStringField(TEXT("name"));
 	if (Name.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required parameter: name")).WithErrorMessage(TEXT("Missing required parameter: name"));
 	}
 
 	FString TypeStr = Params->GetStringField(TEXT("type"));
 	if (TypeStr.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: type"));
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TEXT("Missing required parameter: type")).WithErrorMessage(TEXT("Missing required parameter: type"));
 	}
 
 	UEdGraph* FuncGraph = MonolithBlueprintInternal::FindGraphByName(BP, FunctionName);
 	if (!FuncGraph)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Function graph not found: %s"), *FunctionName));
+		return FMonolithActionResult::NotFound(TEXT("Function graph"), FunctionName).WithErrorMessage(FString::Printf(TEXT("Function graph not found: %s"), *FunctionName));
 	}
 
 	// Verify this graph is actually a function graph
@@ -631,25 +632,25 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleRemoveLocalVariab
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString FunctionName = Params->GetStringField(TEXT("function_name"));
 	if (FunctionName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: function_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("function_name"), TEXT("Missing required parameter: function_name")).WithErrorMessage(TEXT("Missing required parameter: function_name"));
 	}
 
 	FString Name = Params->GetStringField(TEXT("name"));
 	if (Name.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required parameter: name")).WithErrorMessage(TEXT("Missing required parameter: name"));
 	}
 
 	UEdGraph* FuncGraph = MonolithBlueprintInternal::FindGraphByName(BP, FunctionName);
 	if (!FuncGraph)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Function graph not found: %s"), *FunctionName));
+		return FMonolithActionResult::NotFound(TEXT("Function graph"), FunctionName).WithErrorMessage(FString::Printf(TEXT("Function graph not found: %s"), *FunctionName));
 	}
 
 	// Resolve the UFunction from the skeleton class — required by RemoveLocalVariable
@@ -708,19 +709,19 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleAddReplicatedVari
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString VarNameStr = Params->GetStringField(TEXT("variable_name"));
 	if (VarNameStr.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: variable_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("variable_name"), TEXT("Missing required parameter: variable_name")).WithErrorMessage(TEXT("Missing required parameter: variable_name"));
 	}
 
 	FString TypeStr = Params->GetStringField(TEXT("type"));
 	if (TypeStr.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: type"));
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TEXT("Missing required parameter: type")).WithErrorMessage(TEXT("Missing required parameter: type"));
 	}
 
 	// Normalize type string the same way HandleAddVariable does

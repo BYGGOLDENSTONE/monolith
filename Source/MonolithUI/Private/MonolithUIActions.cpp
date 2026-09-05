@@ -612,7 +612,7 @@ FMonolithActionResult FMonolithUIActions::HandleRemoveWidget(const TSharedPtr<FJ
     FString WidgetName = Params->GetStringField(TEXT("widget_name"));
     if (WidgetName.IsEmpty())
     {
-        return FMonolithActionResult::Error(TEXT("Missing required param: widget_name"));
+        return FMonolithActionResult::InvalidParam(TEXT("widget_name"), TEXT("Missing required param: widget_name")).WithErrorMessage(TEXT("Missing required param: widget_name"));
     }
 
     FMonolithActionResult Err;
@@ -622,8 +622,7 @@ FMonolithActionResult FMonolithUIActions::HandleRemoveWidget(const TSharedPtr<FJ
     UWidget* Widget = WBP->WidgetTree->FindWidget(FName(*WidgetName));
     if (!Widget)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Widget '%s' not found in widget tree"), *WidgetName));
+        return FMonolithActionResult::NotFound(TEXT("Widget"), WidgetName).WithErrorMessage(FString::Printf(TEXT("Widget '%s' not found in widget tree"), *WidgetName));
     }
 
     // Cannot remove root

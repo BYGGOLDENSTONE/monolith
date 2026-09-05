@@ -97,7 +97,7 @@ namespace MonolithCommonUINavigation
 					ExplicitTarget = W;
 			});
 			if (!ExplicitTarget)
-				return FMonolithActionResult::Error(FString::Printf(TEXT("explicit_target '%s' not found"), *ExplicitTargetName));
+				return FMonolithActionResult::NotFound(TEXT("explicit_target"), ExplicitTargetName).WithErrorMessage(FString::Printf(TEXT("explicit_target '%s' not found"), *ExplicitTargetName));
 
 			Target->SetNavigationRuleExplicit(Dir, ExplicitTarget);
 		}
@@ -452,7 +452,7 @@ namespace MonolithCommonUINavigation
 
 		UWidget* Target = FindWidgetInPIE(FName(*WidgetName));
 		if (!Target)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Widget '%s' not found in PIE"), *WidgetName));
+			return FMonolithActionResult::NotFound(TEXT("Widget"), WidgetName).WithErrorMessage(FString::Printf(TEXT("Widget '%s' not found in PIE"), *WidgetName));
 
 		Target->SetFocus();
 
@@ -896,7 +896,7 @@ namespace MonolithCommonUINavigation
 			if (W->GetFName() == FName(*WidgetName)) { Found = W; break; }
 		}
 		if (!Found)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Activatable widget '%s' not found in PIE"), *WidgetName));
+			return FMonolithActionResult::NotFound(TEXT("Activatable widget"), WidgetName).WithErrorMessage(FString::Printf(TEXT("Activatable widget '%s' not found in PIE"), *WidgetName));
 
 		Found->RequestRefreshFocus();
 

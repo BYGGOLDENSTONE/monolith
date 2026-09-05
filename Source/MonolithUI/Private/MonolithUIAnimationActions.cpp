@@ -406,7 +406,7 @@ FMonolithActionResult FMonolithUIAnimationActions::HandleCreateAnimation(const T
 
     if (AnimationName.IsEmpty())
     {
-        return FMonolithActionResult::Error(TEXT("Missing required param: animation_name"));
+        return FMonolithActionResult::InvalidParam(TEXT("animation_name"), TEXT("Missing required param: animation_name")).WithErrorMessage(TEXT("Missing required param: animation_name"));
     }
     if (Duration <= 0.0)
     {
@@ -725,8 +725,7 @@ FMonolithActionResult FMonolithUIAnimationActions::HandleAddAnimationKeyframe(co
     }
     if (!TargetAnim)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Animation '%s' not found"), *AnimationName));
+        return FMonolithActionResult::NotFound(TEXT("Animation"), AnimationName).WithErrorMessage(FString::Printf(TEXT("Animation '%s' not found"), *AnimationName));
     }
 
     UMovieScene* MovieScene = TargetAnim->GetMovieScene();
@@ -816,8 +815,7 @@ FMonolithActionResult FMonolithUIAnimationActions::HandleAddAnimationKeyframe(co
     UWidget* TargetWidget = WBP->WidgetTree ? WBP->WidgetTree->FindWidget(FName(*WidgetName)) : nullptr;
     if (!TargetWidget)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Widget '%s' not found"), *WidgetName));
+        return FMonolithActionResult::NotFound(TEXT("Widget"), WidgetName).WithErrorMessage(FString::Printf(TEXT("Widget '%s' not found"), *WidgetName));
     }
 
     const TRange<FFrameNumber> PlaybackRange = MovieScene->GetPlaybackRange();
@@ -915,8 +913,7 @@ FMonolithActionResult FMonolithUIAnimationActions::HandleRemoveAnimation(const T
 
     if (FoundIndex == INDEX_NONE)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Animation '%s' not found"), *AnimationName));
+        return FMonolithActionResult::NotFound(TEXT("Animation"), AnimationName).WithErrorMessage(FString::Printf(TEXT("Animation '%s' not found"), *AnimationName));
     }
 
     // AnimationBindings live on the UWidgetAnimation itself, not the WBP.

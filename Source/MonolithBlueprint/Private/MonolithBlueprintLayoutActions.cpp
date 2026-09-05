@@ -1,4 +1,5 @@
 #include "MonolithBlueprintLayoutActions.h"
+#include "MonolithAssetUtils.h"
 #include "MonolithBlueprintInternal.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
@@ -265,7 +266,7 @@ FMonolithActionResult FMonolithBlueprintLayoutActions::HandleAutoLayout(const TS
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString GraphName = Params->GetStringField(TEXT("graph_name"));

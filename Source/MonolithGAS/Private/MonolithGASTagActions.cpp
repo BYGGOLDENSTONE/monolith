@@ -208,7 +208,7 @@ FMonolithActionResult FMonolithGASTagActions::HandleAddGameplayTags(const TShare
 	TArray<FString> Tags = MonolithGAS::ParseStringArray(Params, TEXT("tags"));
 	if (Tags.Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: tags"));
+		return FMonolithActionResult::InvalidParam(TEXT("tags"), TEXT("Missing or empty required parameter: tags")).WithErrorMessage(TEXT("Missing or empty required parameter: tags"));
 	}
 
 	FString TablePath = Params->GetStringField(TEXT("table_path"));
@@ -420,8 +420,7 @@ FMonolithActionResult FMonolithGASTagActions::HandleGetTagHierarchy(const TShare
 		FGameplayTag RootTag = FGameplayTag::RequestGameplayTag(FName(*Root), false);
 		if (!RootTag.IsValid())
 		{
-			return FMonolithActionResult::Error(
-				FString::Printf(TEXT("Tag not found: %s"), *Root));
+			return FMonolithActionResult::NotFound(TEXT("Tag"), Root).WithErrorMessage(FString::Printf(TEXT("Tag not found: %s"), *Root));
 		}
 
 		TSharedPtr<FJsonObject> RootNode = BuildTagNode(
@@ -955,7 +954,7 @@ FMonolithActionResult FMonolithGASTagActions::HandleRemoveGameplayTags(const TSh
 	TArray<FString> Tags = MonolithGAS::ParseStringArray(Params, TEXT("tags"));
 	if (Tags.Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: tags"));
+		return FMonolithActionResult::InvalidParam(TEXT("tags"), TEXT("Missing or empty required parameter: tags")).WithErrorMessage(TEXT("Missing or empty required parameter: tags"));
 	}
 
 	bool bCheckReferences = true;

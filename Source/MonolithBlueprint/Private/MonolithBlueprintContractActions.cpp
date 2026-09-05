@@ -1,4 +1,5 @@
 #include "MonolithBlueprintContractActions.h"
+#include "MonolithAssetUtils.h"
 #include "MonolithBlueprintInternal.h"
 #include "MonolithParamSchema.h"
 
@@ -472,8 +473,8 @@ FMonolithActionResult FMonolithBlueprintContractActions::HandleCompareClassVaria
 
 	const FString LeftSide  = Params->GetStringField(TEXT("left"));
 	const FString RightSide = Params->GetStringField(TEXT("right"));
-	if (LeftSide.IsEmpty())  return FMonolithActionResult::Error(TEXT("Missing required parameter: left"));
-	if (RightSide.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: right"));
+	if (LeftSide.IsEmpty())  return FMonolithActionResult::InvalidParam(TEXT("left"), TEXT("Missing required parameter: left")).WithErrorMessage(TEXT("Missing required parameter: left"));
+	if (RightSide.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("right"), TEXT("Missing required parameter: right")).WithErrorMessage(TEXT("Missing required parameter: right"));
 
 	bool bIncludeInherited = false;
 	Params->TryGetBoolField(TEXT("include_inherited"), bIncludeInherited);
@@ -526,7 +527,7 @@ FMonolithActionResult FMonolithBlueprintContractActions::HandlePromoteVariablesT
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 	if (!BP->GeneratedClass)
 	{
@@ -551,7 +552,7 @@ FMonolithActionResult FMonolithBlueprintContractActions::HandlePromoteVariablesT
 	const TArray<TSharedPtr<FJsonValue>>* RequestedVars = nullptr;
 	if (!Params->TryGetArrayField(TEXT("variables"), RequestedVars) || !RequestedVars || RequestedVars->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: variables (non-empty array of names)"));
+		return FMonolithActionResult::InvalidParam(TEXT("variables"), TEXT("Missing required parameter: variables (non-empty array of names)")).WithErrorMessage(TEXT("Missing required parameter: variables (non-empty array of names)"));
 	}
 	TArray<FName> WantNames;
 	for (const TSharedPtr<FJsonValue>& V : *RequestedVars)

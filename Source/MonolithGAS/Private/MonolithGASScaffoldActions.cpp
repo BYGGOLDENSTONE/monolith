@@ -1019,7 +1019,7 @@ FMonolithActionResult FMonolithGASScaffoldActions::HandleScaffoldDamagePipeline(
 	TArray<FString> DamageTypes = MonolithGAS::ParseStringArray(Params, TEXT("damage_types"));
 	if (DamageTypes.Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: damage_types"));
+		return FMonolithActionResult::InvalidParam(TEXT("damage_types"), TEXT("Missing or empty required parameter: damage_types")).WithErrorMessage(TEXT("Missing or empty required parameter: damage_types"));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> CreatedAssets;
@@ -1183,7 +1183,7 @@ FMonolithActionResult FMonolithGASScaffoldActions::HandleScaffoldStatusEffect(co
 	const TSharedPtr<FJsonObject>* ConfigPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("config"), ConfigPtr) || !ConfigPtr || !(*ConfigPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: config (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("config"), TEXT("Missing required parameter: config (object)")).WithErrorMessage(TEXT("Missing required parameter: config (object)"));
 	}
 	const TSharedPtr<FJsonObject>& Config = *ConfigPtr;
 

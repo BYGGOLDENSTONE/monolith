@@ -327,7 +327,7 @@ FMonolithActionResult FMonolithLogicDriverRuntimeActions::HandleRuntimeSwitchSta
 	if (!Lookup.bSuccess) return Lookup.Error;
 
 	FString StateGuidStr = Params->GetStringField(TEXT("state_guid"));
-	if (StateGuidStr.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'state_guid'"));
+	if (StateGuidStr.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("state_guid"), TEXT("Missing required param 'state_guid'")).WithErrorMessage(TEXT("Missing required param 'state_guid'"));
 
 	FGuid StateGuid;
 	if (!FGuid::Parse(StateGuidStr, StateGuid))

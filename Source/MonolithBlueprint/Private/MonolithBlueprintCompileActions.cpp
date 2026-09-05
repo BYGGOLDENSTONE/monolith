@@ -94,7 +94,7 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleCompileBlueprint(c
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FCompilerResultsLog Results;
@@ -183,7 +183,7 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleValidateBlueprint(
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	TArray<UEdGraph*> AllGraphs;
@@ -375,13 +375,13 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleCreateBlueprint(co
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
 	if (SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required parameter: save_path")).WithErrorMessage(TEXT("Missing required parameter: save_path"));
 	}
 
 	FString ParentClassName = Params->GetStringField(TEXT("parent_class"));
 	if (ParentClassName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: parent_class"));
+		return FMonolithActionResult::InvalidParam(TEXT("parent_class"), TEXT("Missing required parameter: parent_class")).WithErrorMessage(TEXT("Missing required parameter: parent_class"));
 	}
 
 	FString BlueprintTypeStr = Params->GetStringField(TEXT("blueprint_type"));
@@ -410,7 +410,7 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleCreateBlueprint(co
 	}
 	if (!ParentClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Parent class not found: %s"), *ParentClassName));
+		return FMonolithActionResult::NotFound(TEXT("Parent class"), ParentClassName).WithErrorMessage(FString::Printf(TEXT("Parent class not found: %s"), *ParentClassName));
 	}
 
 	// Parse blueprint type
@@ -553,13 +553,13 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleDuplicateBlueprint
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString NewPath = Params->GetStringField(TEXT("new_path"));
 	if (NewPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: new_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("new_path"), TEXT("Missing required parameter: new_path")).WithErrorMessage(TEXT("Missing required parameter: new_path"));
 	}
 
 	{
@@ -593,7 +593,7 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleGetDependencies(co
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString Direction = Params->GetStringField(TEXT("direction"));
@@ -648,13 +648,13 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleSaveAsset(const TS
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path"));
 	}
 
 	UObject* Asset = FMonolithAssetUtils::LoadAssetByPath(AssetPath);
 	if (!Asset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
 	}
 
 	{

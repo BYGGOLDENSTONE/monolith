@@ -1,4 +1,5 @@
 #include "MonolithBlueprintNodeActions.h"
+#include "MonolithAssetUtils.h"
 #include "MonolithBlueprintInternal.h"
 #include "MonolithBlueprintVariableActions.h"
 #include "MonolithBlueprintComponentActions.h"
@@ -871,13 +872,13 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddNode(const TShared
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString NodeType = Params->GetStringField(TEXT("node_type"));
 	if (NodeType.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: node_type"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_type"), TEXT("Missing required parameter: node_type")).WithErrorMessage(TEXT("Missing required parameter: node_type"));
 	}
 
 	// Normalize aliases to canonical node type names (shared map from 1G)
@@ -902,8 +903,8 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddNode(const TShared
 	UEdGraph* Graph = MonolithBlueprintInternal::FindGraphByName(BP, GraphName);
 	if (!Graph)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
-			TEXT("Graph not found: %s"), GraphName.IsEmpty() ? TEXT("EventGraph") : *GraphName));
+		return MonolithBlueprintInternal::GraphNotFound(BP, GraphName.IsEmpty() ? TEXT("EventGraph") : GraphName)
+			.WithErrorMessage(FString::Printf(TEXT("Graph not found: %s"), GraphName.IsEmpty() ? TEXT("EventGraph") : *GraphName));
 	}
 
 	// Parse position
@@ -1615,7 +1616,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddPropertyAccess(con
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	const FString MemberClassName = Params->GetStringField(TEXT("member_class"));
@@ -1637,8 +1638,8 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddPropertyAccess(con
 	UEdGraph* Graph = MonolithBlueprintInternal::FindGraphByName(BP, GraphName);
 	if (!Graph)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
-			TEXT("Graph not found: %s"), GraphName.IsEmpty() ? TEXT("EventGraph") : *GraphName));
+		return MonolithBlueprintInternal::GraphNotFound(BP, GraphName.IsEmpty() ? TEXT("EventGraph") : GraphName)
+			.WithErrorMessage(FString::Printf(TEXT("Graph not found: %s"), GraphName.IsEmpty() ? TEXT("EventGraph") : *GraphName));
 	}
 
 	// Parse position
@@ -1662,7 +1663,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddPropertyAccess(con
 
 	if (!MemberClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Class"), MemberClassName).WithErrorMessage(FString::Printf(
 			TEXT("Class '%s' not found (also tried U-prefix variants). Pass the property's owning class name."),
 			*MemberClassName));
 	}
@@ -1784,7 +1785,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddPropertyAccessNode
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	// Parse the verbatim path (array of strings). At least one element required.
@@ -1939,20 +1940,20 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleRemoveNode(const TSha
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString NodeId = Params->GetStringField(TEXT("node_id"));
 	if (NodeId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: node_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_id"), TEXT("Missing required parameter: node_id")).WithErrorMessage(TEXT("Missing required parameter: node_id"));
 	}
 
 	FString GraphName = Params->GetStringField(TEXT("graph_name"));
 	UEdGraphNode* Node = MonolithBlueprintInternal::FindNodeById(BP, GraphName, NodeId);
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found: %s"), *NodeId));
+		return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node not found: %s"), *NodeId));
 	}
 
 	FBlueprintEditorUtils::RemoveNode(BP, Node, /*bDontRecompile=*/false);
@@ -1974,7 +1975,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleConnectPins(const TSh
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString SourceNodeId = Params->GetStringField(TEXT("source_node"));
@@ -1982,10 +1983,10 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleConnectPins(const TSh
 	FString TargetNodeId = Params->GetStringField(TEXT("target_node"));
 	FString TargetPinName = Params->GetStringField(TEXT("target_pin"));
 
-	if (SourceNodeId.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: source_node"));
-	if (SourcePinName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: source_pin"));
-	if (TargetNodeId.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: target_node"));
-	if (TargetPinName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: target_pin"));
+	if (SourceNodeId.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("source_node"), TEXT("Missing required parameter: source_node")).WithErrorMessage(TEXT("Missing required parameter: source_node"));
+	if (SourcePinName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("source_pin"), TEXT("Missing required parameter: source_pin")).WithErrorMessage(TEXT("Missing required parameter: source_pin"));
+	if (TargetNodeId.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("target_node"), TEXT("Missing required parameter: target_node")).WithErrorMessage(TEXT("Missing required parameter: target_node"));
+	if (TargetPinName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("target_pin"), TEXT("Missing required parameter: target_pin")).WithErrorMessage(TEXT("Missing required parameter: target_pin"));
 
 	FString GraphName = Params->GetStringField(TEXT("graph_name"));
 
@@ -2000,7 +2001,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleConnectPins(const TSh
 	UEdGraphNode* SrcNode = MonolithBlueprintInternal::FindNodeById(BP, GraphName, SourceNodeId, &SrcMatchGraphs);
 	if (!SrcNode)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source node not found: %s"), *SourceNodeId));
+		return FMonolithActionResult::NotFound(TEXT("Source node"), SourceNodeId).WithErrorMessage(FString::Printf(TEXT("Source node not found: %s"), *SourceNodeId));
 	}
 	if (GraphName.IsEmpty() && SrcMatchGraphs.Num() > 1)
 	{
@@ -2013,7 +2014,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleConnectPins(const TSh
 	UEdGraphNode* TgtNode = MonolithBlueprintInternal::FindNodeById(BP, GraphName, TargetNodeId, &TgtMatchGraphs);
 	if (!TgtNode)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Target node not found: %s"), *TargetNodeId));
+		return FMonolithActionResult::NotFound(TEXT("Target node"), TargetNodeId).WithErrorMessage(FString::Printf(TEXT("Target node not found: %s"), *TargetNodeId));
 	}
 	if (GraphName.IsEmpty() && TgtMatchGraphs.Num() > 1)
 	{
@@ -2085,19 +2086,19 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleDisconnectPins(const 
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString NodeId = Params->GetStringField(TEXT("node_id"));
 	if (NodeId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: node_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_id"), TEXT("Missing required parameter: node_id")).WithErrorMessage(TEXT("Missing required parameter: node_id"));
 	}
 
 	FString PinName = Params->GetStringField(TEXT("pin_name"));
 	if (PinName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: pin_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("pin_name"), TEXT("Missing required parameter: pin_name")).WithErrorMessage(TEXT("Missing required parameter: pin_name"));
 	}
 
 	FString GraphName = Params->GetStringField(TEXT("graph_name"));
@@ -2105,7 +2106,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleDisconnectPins(const 
 	UEdGraphNode* Node = MonolithBlueprintInternal::FindNodeById(BP, GraphName, NodeId);
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found: %s"), *NodeId));
+		return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node not found: %s"), *NodeId));
 	}
 
 	FString AvailPins;
@@ -2182,25 +2183,25 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleSetPinDefault(const T
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString NodeId = Params->GetStringField(TEXT("node_id"));
 	if (NodeId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: node_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_id"), TEXT("Missing required parameter: node_id")).WithErrorMessage(TEXT("Missing required parameter: node_id"));
 	}
 
 	FString PinName = Params->GetStringField(TEXT("pin_name"));
 	if (PinName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: pin_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("pin_name"), TEXT("Missing required parameter: pin_name")).WithErrorMessage(TEXT("Missing required parameter: pin_name"));
 	}
 
 	FString Value = Params->GetStringField(TEXT("value"));
 	if (Value.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: value"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required parameter: value")).WithErrorMessage(TEXT("Missing required parameter: value"));
 	}
 
 	FString GraphName = Params->GetStringField(TEXT("graph_name"));
@@ -2208,7 +2209,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleSetPinDefault(const T
 	UEdGraphNode* Node = MonolithBlueprintInternal::FindNodeById(BP, GraphName, NodeId);
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found: %s"), *NodeId));
+		return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node not found: %s"), *NodeId));
 	}
 
 	FString SetPinAvailPins;
@@ -2272,13 +2273,13 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleSetNodePosition(const
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString NodeId = Params->GetStringField(TEXT("node_id"));
 	if (NodeId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: node_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_id"), TEXT("Missing required parameter: node_id")).WithErrorMessage(TEXT("Missing required parameter: node_id"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* PosArray = nullptr;
@@ -2295,7 +2296,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleSetNodePosition(const
 	UEdGraphNode* Node = MonolithBlueprintInternal::FindNodeById(BP, GraphName, NodeId);
 	if (!Node)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found: %s"), *NodeId));
+		return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node not found: %s"), *NodeId));
 	}
 
 	Node->NodePosX = PosX;
@@ -2325,7 +2326,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleBatchExecute(const TS
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	// Parse operations — handle both EJson::Array (normal) and EJson::String (Claude Code quirk)
@@ -2528,7 +2529,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleResolveNode(const TSh
 	FString NodeType = Params->GetStringField(TEXT("node_type"));
 	if (NodeType.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: node_type"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_type"), TEXT("Missing required parameter: node_type")).WithErrorMessage(TEXT("Missing required parameter: node_type"));
 	}
 
 	// Apply same alias normalization as add_node (shared map from 1G)
@@ -2991,7 +2992,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddNodesBulk(const TS
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	// Parse nodes array — handle both EJson::Array (normal) and EJson::String (Claude Code quirk)
@@ -3118,7 +3119,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleConnectPinsBulk(const
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	// Parse connections array — handle both EJson::Array and EJson::String (Claude Code quirk)
@@ -3216,7 +3217,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleSetPinDefaultsBulk(co
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	// Parse defaults array — handle both EJson::Array and EJson::String (Claude Code quirk)
@@ -3314,7 +3315,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddTimeline(const TSh
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	// Timelines are only supported in actor-based blueprints
@@ -3480,13 +3481,13 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddEventNode(const TS
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString EventName = Params->GetStringField(TEXT("event_name"));
 	if (EventName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: event_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("event_name"), TEXT("Missing required parameter: event_name")).WithErrorMessage(TEXT("Missing required parameter: event_name"));
 	}
 
 	// Resolve graph — must be an event graph
@@ -3715,21 +3716,21 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddCommentNode(const 
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString CommentText = Params->GetStringField(TEXT("text"));
 	if (CommentText.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: text"));
+		return FMonolithActionResult::InvalidParam(TEXT("text"), TEXT("Missing required parameter: text")).WithErrorMessage(TEXT("Missing required parameter: text"));
 	}
 
 	FString GraphName = Params->GetStringField(TEXT("graph_name"));
 	UEdGraph* Graph = MonolithBlueprintInternal::FindGraphByName(BP, GraphName);
 	if (!Graph)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
-			TEXT("Graph not found: %s"), GraphName.IsEmpty() ? TEXT("EventGraph") : *GraphName));
+		return MonolithBlueprintInternal::GraphNotFound(BP, GraphName.IsEmpty() ? TEXT("EventGraph") : GraphName)
+			.WithErrorMessage(FString::Printf(TEXT("Graph not found: %s"), GraphName.IsEmpty() ? TEXT("EventGraph") : *GraphName));
 	}
 
 	// Parse color — default yellow (semi-transparent)
@@ -3845,19 +3846,19 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandlePromotePinToVariable(
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString NodeId = Params->GetStringField(TEXT("node_id"));
 	if (NodeId.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: node_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("node_id"), TEXT("Missing required parameter: node_id")).WithErrorMessage(TEXT("Missing required parameter: node_id"));
 	}
 
 	FString PinName = Params->GetStringField(TEXT("pin_name"));
 	if (PinName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: pin_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("pin_name"), TEXT("Missing required parameter: pin_name")).WithErrorMessage(TEXT("Missing required parameter: pin_name"));
 	}
 
 	FString GraphName = Params->GetStringField(TEXT("graph_name"));
@@ -3866,7 +3867,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandlePromotePinToVariable(
 	UEdGraphNode* SourceNode = MonolithBlueprintInternal::FindNodeById(BP, GraphName, NodeId);
 	if (!SourceNode)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Node not found: %s"), *NodeId));
+		return FMonolithActionResult::NotFound(TEXT("Node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Node not found: %s"), *NodeId));
 	}
 
 	// Find the pin
@@ -4245,7 +4246,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleGetTimelineData(const
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString TimelineName = Params->GetStringField(TEXT("timeline_name"));
@@ -4301,19 +4302,19 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddTimelineTrack(cons
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString TimelineName = Params->GetStringField(TEXT("timeline_name"));
 	if (TimelineName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: timeline_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("timeline_name"), TEXT("Missing required parameter: timeline_name")).WithErrorMessage(TEXT("Missing required parameter: timeline_name"));
 	}
 
 	FString TrackNameStr = Params->GetStringField(TEXT("track_name"));
 	if (TrackNameStr.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: track_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("track_name"), TEXT("Missing required parameter: track_name")).WithErrorMessage(TEXT("Missing required parameter: track_name"));
 	}
 
 	FString TrackTypeStr = Params->GetStringField(TEXT("track_type"));
@@ -4335,7 +4336,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleAddTimelineTrack(cons
 
 	if (!Template)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Timeline '%s' not found in Blueprint"), *TimelineName));
+		return FMonolithActionResult::NotFound(TEXT("Timeline"), TimelineName).WithErrorMessage(FString::Printf(TEXT("Timeline '%s' not found in Blueprint"), *TimelineName));
 	}
 
 	FName TrackName(*TrackNameStr);
@@ -4457,19 +4458,19 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleSetTimelineKeys(const
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString TimelineName = Params->GetStringField(TEXT("timeline_name"));
 	if (TimelineName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: timeline_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("timeline_name"), TEXT("Missing required parameter: timeline_name")).WithErrorMessage(TEXT("Missing required parameter: timeline_name"));
 	}
 
 	FString TrackNameStr = Params->GetStringField(TEXT("track_name"));
 	if (TrackNameStr.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: track_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("track_name"), TEXT("Missing required parameter: track_name")).WithErrorMessage(TEXT("Missing required parameter: track_name"));
 	}
 
 	// Parse keys array — handle both EJson::Array and EJson::String (Claude Code quirk)
@@ -4477,7 +4478,7 @@ FMonolithActionResult FMonolithBlueprintNodeActions::HandleSetTimelineKeys(const
 	TSharedPtr<FJsonValue> KeysField = Params->TryGetField(TEXT("keys"));
 	if (!KeysField.IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: keys"));
+		return FMonolithActionResult::InvalidParam(TEXT("keys"), TEXT("Missing required parameter: keys")).WithErrorMessage(TEXT("Missing required parameter: keys"));
 	}
 	if (KeysField->Type == EJson::Array)
 	{

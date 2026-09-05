@@ -383,13 +383,13 @@ FMonolithActionResult FMonolithMeshContextPropActions::ScatterOnSurface(const TS
 	FString SurfaceActorName;
 	if (!Params->TryGetStringField(TEXT("surface_actor"), SurfaceActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: surface_actor"));
+		return FMonolithActionResult::InvalidParam(TEXT("surface_actor"), TEXT("Missing required param: surface_actor")).WithErrorMessage(TEXT("Missing required param: surface_actor"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* AssetPathsArr;
 	if (!Params->TryGetArrayField(TEXT("asset_paths"), AssetPathsArr) || AssetPathsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: asset_paths"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_paths"), TEXT("Missing or empty required param: asset_paths")).WithErrorMessage(TEXT("Missing or empty required param: asset_paths"));
 	}
 
 	double CountD = 5;
@@ -651,13 +651,13 @@ FMonolithActionResult FMonolithMeshContextPropActions::SetRoomDisturbance(const 
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	FString Disturbance;
 	if (!Params->TryGetStringField(TEXT("disturbance"), Disturbance))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: disturbance"));
+		return FMonolithActionResult::InvalidParam(TEXT("disturbance"), TEXT("Missing required param: disturbance")).WithErrorMessage(TEXT("Missing required param: disturbance"));
 	}
 
 	// Validate disturbance level
@@ -1217,13 +1217,13 @@ FMonolithActionResult FMonolithMeshContextPropActions::CreatePropKit(const TShar
 	FString KitName;
 	if (!Params->TryGetStringField(TEXT("name"), KitName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: name"));
+		return FMonolithActionResult::InvalidParam(TEXT("name"), TEXT("Missing required param: name")).WithErrorMessage(TEXT("Missing required param: name"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* ItemsArr;
 	if (!Params->TryGetArrayField(TEXT("items"), ItemsArr) || ItemsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: items"));
+		return FMonolithActionResult::InvalidParam(TEXT("items"), TEXT("Missing or empty required param: items")).WithErrorMessage(TEXT("Missing or empty required param: items"));
 	}
 
 	bool bOverwrite = false;
@@ -1356,13 +1356,13 @@ FMonolithActionResult FMonolithMeshContextPropActions::PlacePropKit(const TShare
 	FString KitName;
 	if (!Params->TryGetStringField(TEXT("kit_name"), KitName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: kit_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("kit_name"), TEXT("Missing required param: kit_name")).WithErrorMessage(TEXT("Missing required param: kit_name"));
 	}
 
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location")).WithErrorMessage(TEXT("Missing or invalid required param: location"));
 	}
 
 	FRotator Rotation = FRotator::ZeroRotator;
@@ -1603,13 +1603,13 @@ FMonolithActionResult FMonolithMeshContextPropActions::ScatterOnWalls(const TSha
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* AssetPathsArr;
 	if (!Params->TryGetArrayField(TEXT("asset_paths"), AssetPathsArr) || AssetPathsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: asset_paths"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_paths"), TEXT("Missing or empty required param: asset_paths")).WithErrorMessage(TEXT("Missing or empty required param: asset_paths"));
 	}
 
 	double CountD = 10;
@@ -1859,13 +1859,13 @@ FMonolithActionResult FMonolithMeshContextPropActions::ScatterOnCeiling(const TS
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* AssetPathsArr;
 	if (!Params->TryGetArrayField(TEXT("asset_paths"), AssetPathsArr) || AssetPathsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: asset_paths"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_paths"), TEXT("Missing or empty required param: asset_paths")).WithErrorMessage(TEXT("Missing or empty required param: asset_paths"));
 	}
 
 	double CountD = 8;

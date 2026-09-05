@@ -178,7 +178,7 @@ FMonolithActionResult FMonolithLocomotionAuthoringActions::HandleGetRootMotionSp
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AnimPath);
 	if (!Seq)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AnimPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AnimPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AnimPath));
 	}
 
 	FString Mode = TEXT("average");
@@ -284,7 +284,7 @@ FMonolithActionResult FMonolithLocomotionAuthoringActions::HandleBakeDistanceCur
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AnimPath);
 	if (!Seq)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AnimPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AnimPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AnimPath));
 	}
 
 	// The DistanceCurveModifier early-returns (and logs an error) when the clip has no root motion

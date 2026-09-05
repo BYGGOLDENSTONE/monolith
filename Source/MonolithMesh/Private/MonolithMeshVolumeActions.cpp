@@ -262,13 +262,13 @@ FMonolithActionResult FMonolithMeshVolumeActions::SpawnVolume(const TSharedPtr<F
 	FString TypeStr;
 	if (!Params->TryGetStringField(TEXT("type"), TypeStr))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: type"));
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TEXT("Missing required param: type")).WithErrorMessage(TEXT("Missing required param: type"));
 	}
 
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
 	}
 
 	// Parse extent (half-extents) — defaults to 500x500x300
@@ -426,7 +426,7 @@ FMonolithActionResult FMonolithMeshVolumeActions::GetActorProperties(const TShar
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString Error;
@@ -552,13 +552,13 @@ FMonolithActionResult FMonolithMeshVolumeActions::CopyActorProperties(const TSha
 	FString SourceName;
 	if (!Params->TryGetStringField(TEXT("source_actor"), SourceName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: source_actor"));
+		return FMonolithActionResult::InvalidParam(TEXT("source_actor"), TEXT("Missing required param: source_actor")).WithErrorMessage(TEXT("Missing required param: source_actor"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* TargetsArr;
 	if (!Params->TryGetArrayField(TEXT("target_actors"), TargetsArr) || TargetsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: target_actors"));
+		return FMonolithActionResult::InvalidParam(TEXT("target_actors"), TEXT("Missing or empty required param: target_actors")).WithErrorMessage(TEXT("Missing or empty required param: target_actors"));
 	}
 
 	FString Error;
@@ -822,7 +822,7 @@ FMonolithActionResult FMonolithMeshVolumeActions::SelectActors(const TSharedPtr<
 	FString SubAction;
 	if (!Params->TryGetStringField(TEXT("sub_action"), SubAction))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: sub_action"));
+		return FMonolithActionResult::InvalidParam(TEXT("sub_action"), TEXT("Missing required param: sub_action")).WithErrorMessage(TEXT("Missing required param: sub_action"));
 	}
 
 	if (!GEditor)
@@ -1064,7 +1064,7 @@ FMonolithActionResult FMonolithMeshVolumeActions::SnapToSurface(const TSharedPtr
 	const TArray<TSharedPtr<FJsonValue>>* ActorsArr;
 	if (!Params->TryGetArrayField(TEXT("actors"), ActorsArr) || ActorsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: actors"));
+		return FMonolithActionResult::InvalidParam(TEXT("actors"), TEXT("Missing or empty required param: actors")).WithErrorMessage(TEXT("Missing or empty required param: actors"));
 	}
 
 	// Parse direction (default: down)
@@ -1112,7 +1112,7 @@ FMonolithActionResult FMonolithMeshVolumeActions::SnapToSurface(const TSharedPtr
 		AActor* Actor = MonolithMeshUtils::FindActorByName(Name, Error);
 		if (!Actor)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Actor not found: %s"), *Name));
+			return FMonolithActionResult::NotFound(TEXT("Actor"), Name).WithErrorMessage(FString::Printf(TEXT("Actor not found: %s"), *Name));
 		}
 		Actors.Add(Actor);
 	}
@@ -1215,13 +1215,13 @@ FMonolithActionResult FMonolithMeshVolumeActions::SetCollisionPreset(const TShar
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString Preset;
 	if (!Params->TryGetStringField(TEXT("preset"), Preset))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: preset"));
+		return FMonolithActionResult::InvalidParam(TEXT("preset"), TEXT("Missing required param: preset")).WithErrorMessage(TEXT("Missing required param: preset"));
 	}
 
 	FString Error;

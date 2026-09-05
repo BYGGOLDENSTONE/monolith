@@ -1248,7 +1248,7 @@ FMonolithActionResult FMonolithGASASCActions::HandleSetDefaultAbilities(const TS
 	TArray<FString> AbilityPaths = MonolithGAS::ParseStringArray(Params, TEXT("abilities"));
 	if (AbilityPaths.Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: abilities (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("abilities"), TEXT("Missing or empty required parameter: abilities (array)")).WithErrorMessage(TEXT("Missing or empty required parameter: abilities (array)"));
 	}
 
 	FString Mode = Params->GetStringField(TEXT("mode"));
@@ -1327,7 +1327,7 @@ FMonolithActionResult FMonolithGASASCActions::HandleSetDefaultEffects(const TSha
 	TArray<FString> EffectPaths = MonolithGAS::ParseStringArray(Params, TEXT("effects"));
 	if (EffectPaths.Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: effects (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("effects"), TEXT("Missing or empty required parameter: effects (array)")).WithErrorMessage(TEXT("Missing or empty required parameter: effects (array)"));
 	}
 
 	FString Mode = Params->GetStringField(TEXT("mode"));
@@ -1404,7 +1404,7 @@ FMonolithActionResult FMonolithGASASCActions::HandleSetDefaultAttributeSets(cons
 	const TArray<TSharedPtr<FJsonValue>>* SetsArray;
 	if (!Params->TryGetArrayField(TEXT("attribute_sets"), SetsArray) || !SetsArray || SetsArray->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: attribute_sets (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("attribute_sets"), TEXT("Missing or empty required parameter: attribute_sets (array)")).WithErrorMessage(TEXT("Missing or empty required parameter: attribute_sets (array)"));
 	}
 
 	FString Mode = Params->GetStringField(TEXT("mode"));
@@ -1923,8 +1923,7 @@ FMonolithActionResult FMonolithGASASCActions::HandleGrantAbility(const TSharedPt
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorId);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorId).WithErrorMessage(FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
 	}
 
 	UAbilitySystemComponent* ASC = MonolithGAS::GetASCFromActor(Actor);
@@ -1993,8 +1992,7 @@ FMonolithActionResult FMonolithGASASCActions::HandleRevokeAbility(const TSharedP
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorId);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorId).WithErrorMessage(FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
 	}
 
 	UAbilitySystemComponent* ASC = MonolithGAS::GetASCFromActor(Actor);
@@ -2068,8 +2066,7 @@ FMonolithActionResult FMonolithGASASCActions::HandleGetASCSnapshot(const TShared
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorId);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorId).WithErrorMessage(FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
 	}
 
 	UAbilitySystemComponent* ASC = MonolithGAS::GetASCFromActor(Actor);

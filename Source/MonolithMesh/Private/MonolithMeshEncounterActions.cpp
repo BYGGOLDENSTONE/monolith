@@ -504,7 +504,7 @@ FMonolithActionResult FMonolithMeshEncounterActions::DesignEncounter(const TShar
 	float Radius;
 	if (!ParseRegion(Params, Center, Radius))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)"));
+		return FMonolithActionResult::InvalidParam(TEXT("region"), TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)")).WithErrorMessage(TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -811,7 +811,7 @@ FMonolithActionResult FMonolithMeshEncounterActions::SuggestPatrolRoute(const TS
 	float Radius;
 	if (!ParseRegion(Params, Center, Radius))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)"));
+		return FMonolithActionResult::InvalidParam(TEXT("region"), TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)")).WithErrorMessage(TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1085,7 +1085,7 @@ FMonolithActionResult FMonolithMeshEncounterActions::AnalyzeAiTerritory(const TS
 	float Radius;
 	if (!ParseRegion(Params, Center, Radius))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)"));
+		return FMonolithActionResult::InvalidParam(TEXT("region"), TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)")).WithErrorMessage(TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1254,7 +1254,7 @@ FMonolithActionResult FMonolithMeshEncounterActions::EvaluateSafeRoom(const TSha
 	float Radius;
 	if (!ParseRegion(Params, Center, Radius))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)"));
+		return FMonolithActionResult::InvalidParam(TEXT("region"), TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)")).WithErrorMessage(TEXT("Missing or invalid required param: region (object with center [x,y,z] and radius)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1477,11 +1477,11 @@ FMonolithActionResult FMonolithMeshEncounterActions::AnalyzeLevelPacingStructure
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1742,7 +1742,7 @@ FMonolithActionResult FMonolithMeshEncounterActions::GenerateScareSequence(const
 	TArray<FVector> PathPoints;
 	if (!MEnc_ParseVectorArray(Params, TEXT("path_points"), PathPoints) || PathPoints.Num() < 2)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])"));
+		return FMonolithActionResult::InvalidParam(TEXT("path_points"), TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])")).WithErrorMessage(TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -2009,11 +2009,11 @@ FMonolithActionResult FMonolithMeshEncounterActions::ValidateHorrorIntensity(con
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -2279,11 +2279,11 @@ FMonolithActionResult FMonolithMeshEncounterActions::GenerateHospiceReport(const
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();

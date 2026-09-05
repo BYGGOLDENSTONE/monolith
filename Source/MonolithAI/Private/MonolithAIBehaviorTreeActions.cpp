@@ -2041,7 +2041,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleDeleteBehaviorTree(c
 	UObject* Asset = FMonolithAssetUtils::LoadAssetByPath(UBehaviorTree::StaticClass(), AssetPath);
 	if (!Asset)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Behavior Tree not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Behavior Tree"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Behavior Tree not found: %s"), *AssetPath));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Delete Behavior Tree")));
@@ -2081,7 +2081,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleDuplicateBehaviorTre
 	UBehaviorTree* SourceBT = Cast<UBehaviorTree>(FMonolithAssetUtils::LoadAssetByPath(UBehaviorTree::StaticClass(), SourcePath));
 	if (!SourceBT)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source Behavior Tree not found: %s"), *SourcePath));
+		return FMonolithActionResult::NotFound(TEXT("Source Behavior Tree"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source Behavior Tree not found: %s"), *SourcePath));
 	}
 
 	FString DestAssetName = FPackageName::GetShortName(DestPath);
@@ -2237,7 +2237,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTNode(const TSha
 	}
 	if (!BTNodeClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("BT node class not found: %s"), *NodeClassName));
+		return FMonolithActionResult::NotFound(TEXT("BT node class"), NodeClassName).WithErrorMessage(FString::Printf(TEXT("BT node class not found: %s"), *NodeClassName));
 	}
 
 	// Validate it's a BT node type
@@ -2514,7 +2514,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTDecorator(const
 	}
 	if (!DecClass || !DecClass->IsChildOf(UBTDecorator::StaticClass()))
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Decorator class not found or invalid: %s"), *DecoratorClassName));
+		return FMonolithActionResult::NotFound(TEXT("Decorator class"), DecoratorClassName).WithErrorMessage(FString::Printf(TEXT("Decorator class not found or invalid: %s"), *DecoratorClassName));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Add BT Decorator")));
@@ -2647,7 +2647,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTService(const T
 	}
 	if (!SvcClass || !SvcClass->IsChildOf(UBTService::StaticClass()))
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Service class not found or invalid: %s"), *ServiceClassName));
+		return FMonolithActionResult::NotFound(TEXT("Service class"), ServiceClassName).WithErrorMessage(FString::Printf(TEXT("Service class not found or invalid: %s"), *ServiceClassName));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Add BT Service")));
@@ -2781,7 +2781,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleSetBTNodeProperty(co
 	TSharedPtr<FJsonValue> Value = Params->TryGetField(TEXT("value"));
 	if (!Value.IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: value"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required parameter: value")).WithErrorMessage(TEXT("Missing required parameter: value"));
 	}
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Set BT Node Property")));
@@ -2889,7 +2889,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleReorderBTChildren(co
 	const TArray<TSharedPtr<FJsonValue>>* NewOrderArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("new_order"), NewOrderArr) || !NewOrderArr)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: new_order (array of node GUIDs)"));
+		return FMonolithActionResult::InvalidParam(TEXT("new_order"), TEXT("Missing required parameter: new_order (array of node GUIDs)")).WithErrorMessage(TEXT("Missing required parameter: new_order (array of node GUIDs)"));
 	}
 
 	// Get current children
@@ -3014,7 +3014,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTRunEQSTask(cons
 	UEnvQuery* EQSQuery = Cast<UEnvQuery>(FMonolithAssetUtils::LoadAssetByPath(UEnvQuery::StaticClass(), EQSPath));
 	if (!EQSQuery)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("EQS query not found: %s"), *EQSPath));
+		return FMonolithActionResult::NotFound(TEXT("EQS query"), EQSPath).WithErrorMessage(FString::Printf(TEXT("EQS query not found: %s"), *EQSPath));
 	}
 
 	// Find the RunEQSQuery task class
@@ -3537,7 +3537,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleBuildBTFromSpec(cons
 	const TSharedPtr<FJsonObject>* SpecObjPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("spec"), SpecObjPtr) || !SpecObjPtr || !(*SpecObjPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: spec (JSON object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("spec"), TEXT("Missing required parameter: spec (JSON object)")).WithErrorMessage(TEXT("Missing required parameter: spec (JSON object)"));
 	}
 	const TSharedPtr<FJsonObject>& Spec = *SpecObjPtr;
 
@@ -3891,7 +3891,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleImportBTSpec(const T
 	const TSharedPtr<FJsonObject>* SpecObjPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("spec"), SpecObjPtr) || !SpecObjPtr || !(*SpecObjPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: spec (JSON object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("spec"), TEXT("Missing required parameter: spec (JSON object)")).WithErrorMessage(TEXT("Missing required parameter: spec (JSON object)"));
 	}
 	const TSharedPtr<FJsonObject>& Spec = *SpecObjPtr;
 
@@ -4690,7 +4690,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleCreateBTTaskBlueprin
 		}
 		else
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Parent class '%s' not found or not a BTTask"), *ParentClassName));
+			return FMonolithActionResult::NotFound(TEXT("Parent class"), ParentClassName).WithErrorMessage(FString::Printf(TEXT("Parent class '%s' not found or not a BTTask"), *ParentClassName));
 		}
 	}
 
@@ -4771,7 +4771,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleCreateBTDecoratorBlu
 		}
 		else
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Parent class '%s' not found or not a BTDecorator"), *ParentClassName));
+			return FMonolithActionResult::NotFound(TEXT("Parent class"), ParentClassName).WithErrorMessage(FString::Printf(TEXT("Parent class '%s' not found or not a BTDecorator"), *ParentClassName));
 		}
 	}
 
@@ -4852,7 +4852,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleCreateBTServiceBluep
 		}
 		else
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Parent class '%s' not found or not a BTService"), *ParentClassName));
+			return FMonolithActionResult::NotFound(TEXT("Parent class"), ParentClassName).WithErrorMessage(FString::Printf(TEXT("Parent class '%s' not found or not a BTService"), *ParentClassName));
 		}
 	}
 

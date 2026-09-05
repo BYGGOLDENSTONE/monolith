@@ -205,7 +205,7 @@ FMonolithActionResult FMonolithMeshTechArtActions::ImportMesh(const TSharedPtr<F
 		FString Path = Val->AsString();
 		if (!FPaths::FileExists(Path))
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("File not found: %s"), *Path));
+			return FMonolithActionResult::NotFound(TEXT("File"), Path).WithErrorMessage(FString::Printf(TEXT("File not found: %s"), *Path));
 		}
 		Filenames.Add(Path);
 	}

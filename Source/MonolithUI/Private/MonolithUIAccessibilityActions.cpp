@@ -89,8 +89,7 @@ FMonolithActionResult FMonolithUIAccessibilityActions::HandleScaffoldAccessibili
     FString SourceDir = FPaths::Combine(ProjectDir, TEXT("Source"), ModuleName);
     if (!FPaths::DirectoryExists(SourceDir))
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Source directory not found: %s"), *SourceDir));
+        return FMonolithActionResult::NotFound(TEXT("Source directory"), SourceDir).WithErrorMessage(FString::Printf(TEXT("Source directory not found: %s"), *SourceDir));
     }
 
     // Check for existing file
@@ -253,7 +252,7 @@ FMonolithActionResult FMonolithUIAccessibilityActions::HandleAuditAccessibility(
     FString AssetPath = Params->GetStringField(TEXT("asset_path"));
     if (AssetPath.IsEmpty())
     {
-        return FMonolithActionResult::Error(TEXT("Missing required param: asset_path"));
+        return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param: asset_path")).WithErrorMessage(TEXT("Missing required param: asset_path"));
     }
 
     // Load widget blueprint
@@ -270,8 +269,7 @@ FMonolithActionResult FMonolithUIAccessibilityActions::HandleAuditAccessibility(
     UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(Loaded);
     if (!WBP)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Widget Blueprint not found: %s"), *AssetPath));
+        return FMonolithActionResult::NotFound(TEXT("Widget Blueprint"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Widget Blueprint not found: %s"), *AssetPath));
     }
 
     if (!WBP->WidgetTree)
@@ -443,7 +441,7 @@ FMonolithActionResult FMonolithUIAccessibilityActions::HandleSetColorblindMode(c
     FString Mode = Params->GetStringField(TEXT("mode"));
     if (Mode.IsEmpty())
     {
-        return FMonolithActionResult::Error(TEXT("Missing required param: mode"));
+        return FMonolithActionResult::InvalidParam(TEXT("mode"), TEXT("Missing required param: mode")).WithErrorMessage(TEXT("Missing required param: mode"));
     }
 
     int32 Severity = 5;
@@ -487,7 +485,7 @@ FMonolithActionResult FMonolithUIAccessibilityActions::HandleSetTextScale(const 
 {
     if (!Params->HasField(TEXT("scale")))
     {
-        return FMonolithActionResult::Error(TEXT("Missing required param: scale"));
+        return FMonolithActionResult::InvalidParam(TEXT("scale"), TEXT("Missing required param: scale")).WithErrorMessage(TEXT("Missing required param: scale"));
     }
 
     float Scale = (float)Params->GetNumberField(TEXT("scale"));

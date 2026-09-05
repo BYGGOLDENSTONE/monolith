@@ -447,14 +447,14 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::PlaceLight(const TSharedP
 	FString TypeStr;
 	if (!Params->TryGetStringField(TEXT("type"), TypeStr))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: type (point, spot, rect, directional)"));
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TEXT("Missing required param: type (point, spot, rect, directional)")).WithErrorMessage(TEXT("Missing required param: type (point, spot, rect, directional)"));
 	}
 	TypeStr = TypeStr.ToLower();
 
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
 	}
 
 	FRotator Rotation(0, 0, 0);
@@ -559,7 +559,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::SetLightProperties(const 
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString Error;
@@ -608,13 +608,13 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::SetActorMaterial(const TS
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString MaterialPath;
 	if (!Params->TryGetStringField(TEXT("material"), MaterialPath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: material"));
+		return FMonolithActionResult::InvalidParam(TEXT("material"), TEXT("Missing required param: material")).WithErrorMessage(TEXT("Missing required param: material"));
 	}
 
 	FString Error;
@@ -628,7 +628,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::SetActorMaterial(const TS
 	UMaterialInterface* Material = FMonolithAssetUtils::LoadAssetByPath<UMaterialInterface>(MaterialPath);
 	if (!Material)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Material not found: %s"), *MaterialPath));
+		return FMonolithActionResult::NotFound(TEXT("Material"), MaterialPath).WithErrorMessage(FString::Printf(TEXT("Material not found: %s"), *MaterialPath));
 	}
 
 	// Find mesh component
@@ -706,7 +706,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::SetActorMaterial(const TS
 		}
 		if (FoundIndex == INDEX_NONE)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Material slot name '%s' not found on component"), *SlotName));
+			return FMonolithActionResult::NotFound(TEXT("Material slot name"), SlotName).WithErrorMessage(FString::Printf(TEXT("Material slot name '%s' not found on component"), *SlotName));
 		}
 		SlotIndex = FoundIndex;
 	}
@@ -746,11 +746,11 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::SwapMaterialInLevel(const
 	FString SourcePath, TargetPath;
 	if (!Params->TryGetStringField(TEXT("source_material"), SourcePath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: source_material"));
+		return FMonolithActionResult::InvalidParam(TEXT("source_material"), TEXT("Missing required param: source_material")).WithErrorMessage(TEXT("Missing required param: source_material"));
 	}
 	if (!Params->TryGetStringField(TEXT("target_material"), TargetPath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: target_material"));
+		return FMonolithActionResult::InvalidParam(TEXT("target_material"), TEXT("Missing required param: target_material")).WithErrorMessage(TEXT("Missing required param: target_material"));
 	}
 
 	bool bPreview = false;
@@ -759,7 +759,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::SwapMaterialInLevel(const
 	UMaterialInterface* SourceMat = FMonolithAssetUtils::LoadAssetByPath<UMaterialInterface>(SourcePath);
 	if (!SourceMat)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source material not found: %s"), *SourcePath));
+		return FMonolithActionResult::NotFound(TEXT("Source material"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source material not found: %s"), *SourcePath));
 	}
 
 	UMaterialInterface* TargetMat = nullptr;
@@ -768,7 +768,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::SwapMaterialInLevel(const
 		TargetMat = FMonolithAssetUtils::LoadAssetByPath<UMaterialInterface>(TargetPath);
 		if (!TargetMat)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Target material not found: %s"), *TargetPath));
+			return FMonolithActionResult::NotFound(TEXT("Target material"), TargetPath).WithErrorMessage(FString::Printf(TEXT("Target material not found: %s"), *TargetPath));
 		}
 	}
 
@@ -864,11 +864,11 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::FindReplaceMesh(const TSh
 	FString SourcePath, TargetPath;
 	if (!Params->TryGetStringField(TEXT("source_mesh"), SourcePath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: source_mesh"));
+		return FMonolithActionResult::InvalidParam(TEXT("source_mesh"), TEXT("Missing required param: source_mesh")).WithErrorMessage(TEXT("Missing required param: source_mesh"));
 	}
 	if (!Params->TryGetStringField(TEXT("target_mesh"), TargetPath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: target_mesh"));
+		return FMonolithActionResult::InvalidParam(TEXT("target_mesh"), TEXT("Missing required param: target_mesh")).WithErrorMessage(TEXT("Missing required param: target_mesh"));
 	}
 
 	FString MatchMode = TEXT("exact");
@@ -880,7 +880,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::FindReplaceMesh(const TSh
 	UStaticMesh* SourceMesh = FMonolithAssetUtils::LoadAssetByPath<UStaticMesh>(SourcePath);
 	if (!SourceMesh)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source mesh not found: %s"), *SourcePath));
+		return FMonolithActionResult::NotFound(TEXT("Source mesh"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source mesh not found: %s"), *SourcePath));
 	}
 
 	UStaticMesh* TargetMesh = nullptr;
@@ -889,7 +889,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::FindReplaceMesh(const TSh
 		TargetMesh = FMonolithAssetUtils::LoadAssetByPath<UStaticMesh>(TargetPath);
 		if (!TargetMesh)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Target mesh not found: %s"), *TargetPath));
+			return FMonolithActionResult::NotFound(TEXT("Target mesh"), TargetPath).WithErrorMessage(FString::Printf(TEXT("Target mesh not found: %s"), *TargetPath));
 		}
 	}
 
@@ -1009,19 +1009,19 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::SetLodScreenSizes(const T
 	FString AssetPath;
 	if (!Params->TryGetStringField(TEXT("asset_path"), AssetPath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param: asset_path")).WithErrorMessage(TEXT("Missing required param: asset_path"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* ScreenSizesArr;
 	if (!Params->TryGetArrayField(TEXT("screen_sizes"), ScreenSizesArr) || ScreenSizesArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: screen_sizes"));
+		return FMonolithActionResult::InvalidParam(TEXT("screen_sizes"), TEXT("Missing or empty required param: screen_sizes")).WithErrorMessage(TEXT("Missing or empty required param: screen_sizes"));
 	}
 
 	UStaticMesh* SM = FMonolithAssetUtils::LoadAssetByPath<UStaticMesh>(AssetPath);
 	if (!SM)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Static mesh not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Static mesh"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Static mesh not found: %s"), *AssetPath));
 	}
 
 	int32 LODCount = SM->GetNumSourceModels();
@@ -1229,13 +1229,13 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::ConvertToHism(const TShar
 	FString MeshPath;
 	if (!Params->TryGetStringField(TEXT("mesh"), MeshPath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: mesh"));
+		return FMonolithActionResult::InvalidParam(TEXT("mesh"), TEXT("Missing required param: mesh")).WithErrorMessage(TEXT("Missing required param: mesh"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* ActorsArr;
 	if (!Params->TryGetArrayField(TEXT("actors"), ActorsArr) || ActorsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: actors"));
+		return FMonolithActionResult::InvalidParam(TEXT("actors"), TEXT("Missing or empty required param: actors")).WithErrorMessage(TEXT("Missing or empty required param: actors"));
 	}
 
 	bool bPreserveMaterials = true;
@@ -1244,7 +1244,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::ConvertToHism(const TShar
 	UStaticMesh* Mesh = FMonolithAssetUtils::LoadAssetByPath<UStaticMesh>(MeshPath);
 	if (!Mesh)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Static mesh not found: %s"), *MeshPath));
+		return FMonolithActionResult::NotFound(TEXT("Static mesh"), MeshPath).WithErrorMessage(FString::Printf(TEXT("Static mesh not found: %s"), *MeshPath));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1262,7 +1262,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::ConvertToHism(const TShar
 		AActor* Actor = MonolithMeshUtils::FindActorByName(Name, Error);
 		if (!Actor)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Actor not found: %s"), *Name));
+			return FMonolithActionResult::NotFound(TEXT("Actor"), Name).WithErrorMessage(FString::Printf(TEXT("Actor not found: %s"), *Name));
 		}
 		SourceActors.Add(Actor);
 	}
@@ -1401,7 +1401,7 @@ FMonolithActionResult FMonolithMeshLevelDesignActions::GetActorComponentProperti
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString Error;

@@ -652,7 +652,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::GetBlockoutVolumeInfo(const 
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -748,13 +748,13 @@ FMonolithActionResult FMonolithMeshBlockoutActions::SetupBlockoutVolume(const TS
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	FString RoomType;
 	if (!Params->TryGetStringField(TEXT("room_type"), RoomType) || RoomType.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: room_type"));
+		return FMonolithActionResult::InvalidParam(TEXT("room_type"), TEXT("Missing or empty required param: room_type")).WithErrorMessage(TEXT("Missing or empty required param: room_type"));
 	}
 
 	FString Error;
@@ -825,7 +825,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::CreateBlockoutPrimitive(cons
 	FString ShapeName;
 	if (!Params->TryGetStringField(TEXT("shape"), ShapeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: shape"));
+		return FMonolithActionResult::InvalidParam(TEXT("shape"), TEXT("Missing required param: shape")).WithErrorMessage(TEXT("Missing required param: shape"));
 	}
 
 	bool bValidShape = false;
@@ -839,13 +839,13 @@ FMonolithActionResult FMonolithMeshBlockoutActions::CreateBlockoutPrimitive(cons
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
 	}
 
 	FVector Scale;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("scale"), Scale))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: scale (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("scale"), TEXT("Missing or invalid required param: scale (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: scale (array of 3 numbers)"));
 	}
 
 	FRotator Rotation(0, 0, 0);
@@ -953,7 +953,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::CreateBlockoutPrimitivesBatc
 	const TArray<TSharedPtr<FJsonValue>>* PrimitivesArr;
 	if (!Params->TryGetArrayField(TEXT("primitives"), PrimitivesArr) || PrimitivesArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: primitives"));
+		return FMonolithActionResult::InvalidParam(TEXT("primitives"), TEXT("Missing or empty required param: primitives")).WithErrorMessage(TEXT("Missing or empty required param: primitives"));
 	}
 
 	if (PrimitivesArr->Num() > 200)
@@ -1142,13 +1142,13 @@ FMonolithActionResult FMonolithMeshBlockoutActions::CreateBlockoutGrid(const TSh
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	double CellSize = 0.0;
 	if (!Params->TryGetNumberField(TEXT("cell_size"), CellSize) || CellSize <= 0.0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: cell_size (must be > 0)"));
+		return FMonolithActionResult::InvalidParam(TEXT("cell_size"), TEXT("Missing or invalid required param: cell_size (must be > 0)")).WithErrorMessage(TEXT("Missing or invalid required param: cell_size (must be > 0)"));
 	}
 
 	double WallThickness = 10.0;
@@ -1253,7 +1253,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::MatchAssetToBlockout(const T
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("blockout_actor"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: blockout_actor"));
+		return FMonolithActionResult::InvalidParam(TEXT("blockout_actor"), TEXT("Missing required param: blockout_actor")).WithErrorMessage(TEXT("Missing required param: blockout_actor"));
 	}
 
 	FString Error;
@@ -1437,7 +1437,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::MatchAllInVolume(const TShar
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	FSQLiteDatabase* DB = BlockoutHelpers::GetCatalogDB();
@@ -1521,7 +1521,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::ApplyReplacement(const TShar
 	const TArray<TSharedPtr<FJsonValue>>* ReplacementsArr;
 	if (!Params->TryGetArrayField(TEXT("replacements"), ReplacementsArr) || ReplacementsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: replacements"));
+		return FMonolithActionResult::InvalidParam(TEXT("replacements"), TEXT("Missing or empty required param: replacements")).WithErrorMessage(TEXT("Missing or empty required param: replacements"));
 	}
 
 	FString VolumeName;
@@ -1732,7 +1732,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::SetActorTags(const TSharedPt
 	const TArray<TSharedPtr<FJsonValue>>* ActorTagsArr;
 	if (!Params->TryGetArrayField(TEXT("actor_tags"), ActorTagsArr) || ActorTagsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: actor_tags"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_tags"), TEXT("Missing or empty required param: actor_tags")).WithErrorMessage(TEXT("Missing or empty required param: actor_tags"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1808,7 +1808,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::ClearBlockout(const TSharedP
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	bool bKeepTagged = false;
@@ -1881,7 +1881,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::ExportBlockoutLayout(const T
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	FString Error;
@@ -1963,7 +1963,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::ImportBlockoutLayout(const T
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	FString Error;
@@ -2146,7 +2146,7 @@ FMonolithActionResult FMonolithMeshBlockoutActions::ScanVolume(const TSharedPtr<
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	FString Error;
@@ -2500,19 +2500,19 @@ FMonolithActionResult FMonolithMeshBlockoutActions::ScatterProps(const TSharedPt
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* AssetPathsArr;
 	if (!Params->TryGetArrayField(TEXT("asset_paths"), AssetPathsArr) || AssetPathsArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required param: asset_paths"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_paths"), TEXT("Missing or empty required param: asset_paths")).WithErrorMessage(TEXT("Missing or empty required param: asset_paths"));
 	}
 
 	double CountD = 0;
 	if (!Params->TryGetNumberField(TEXT("count"), CountD) || CountD <= 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: count (must be > 0)"));
+		return FMonolithActionResult::InvalidParam(TEXT("count"), TEXT("Missing or invalid required param: count (must be > 0)")).WithErrorMessage(TEXT("Missing or invalid required param: count (must be > 0)"));
 	}
 	int32 Count = FMath::Clamp(static_cast<int32>(CountD), 1, 200);
 

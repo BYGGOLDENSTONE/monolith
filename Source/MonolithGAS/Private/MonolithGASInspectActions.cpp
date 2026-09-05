@@ -828,7 +828,7 @@ FMonolithActionResult FMonolithGASInspectActions::HandleGetTagState(const TShare
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorIdent);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorIdent).WithErrorMessage(FString::Printf(
 			TEXT("Actor '%s' not found in PIE world. Is PIE running?"), *ActorIdent));
 	}
 
@@ -894,7 +894,7 @@ FMonolithActionResult FMonolithGASInspectActions::HandleGetCooldownState(const T
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorIdent);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorIdent).WithErrorMessage(FString::Printf(
 			TEXT("Actor '%s' not found in PIE world. Is PIE running?"), *ActorIdent));
 	}
 
@@ -981,7 +981,7 @@ FMonolithActionResult FMonolithGASInspectActions::HandleTraceAbilityActivation(c
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorIdent);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorIdent).WithErrorMessage(FString::Printf(
 			TEXT("Actor '%s' not found in PIE world. Is PIE running?"), *ActorIdent));
 	}
 
@@ -1509,11 +1509,11 @@ FMonolithActionResult FMonolithGASInspectActions::HandleCompareGASStates(const T
 
 	if (!Params->TryGetObjectField(TEXT("snapshot_a"), SnapshotA) || !*SnapshotA)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: snapshot_a (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("snapshot_a"), TEXT("Missing required parameter: snapshot_a (object)")).WithErrorMessage(TEXT("Missing required parameter: snapshot_a (object)"));
 	}
 	if (!Params->TryGetObjectField(TEXT("snapshot_b"), SnapshotB) || !*SnapshotB)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: snapshot_b (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("snapshot_b"), TEXT("Missing required parameter: snapshot_b (object)")).WithErrorMessage(TEXT("Missing required parameter: snapshot_b (object)"));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> AllDiffs;

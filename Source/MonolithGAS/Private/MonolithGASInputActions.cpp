@@ -413,7 +413,7 @@ FMonolithActionResult FMonolithGASInputActions::HandleBatchBindAbilities(const T
 	const TArray<TSharedPtr<FJsonValue>>* BindingsArray = nullptr;
 	if (!Params->TryGetArrayField(TEXT("bindings"), BindingsArray) || !BindingsArray || BindingsArray->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: bindings (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("bindings"), TEXT("Missing or empty required parameter: bindings (array)")).WithErrorMessage(TEXT("Missing or empty required parameter: bindings (array)"));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> Results;
@@ -621,7 +621,7 @@ FMonolithActionResult FMonolithGASInputActions::HandleScaffoldInputBindingCompon
 	const TSharedPtr<FJsonObject>* ConfigPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("input_config"), ConfigPtr) || !ConfigPtr || !(*ConfigPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: input_config (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("input_config"), TEXT("Missing required parameter: input_config (object)")).WithErrorMessage(TEXT("Missing required parameter: input_config (object)"));
 	}
 	const TSharedPtr<FJsonObject>& Config = *ConfigPtr;
 

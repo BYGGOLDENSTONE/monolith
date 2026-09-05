@@ -1070,7 +1070,7 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::GetMetaSoundGraph(const TS
 	UObject* Loaded = AssetData.IsValid() ? AssetData.GetAsset() : StaticLoadObject(UObject::StaticClass(), nullptr, *AssetPath);
 	if (!Loaded)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("MetaSound asset not found at '%s'"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("MetaSound asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("MetaSound asset not found at '%s'"), *AssetPath));
 	}
 
 	IMetaSoundDocumentInterface* DocInterface = Cast<IMetaSoundDocumentInterface>(Loaded);
@@ -1191,7 +1191,7 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::ListMetaSoundConnections(c
 	UObject* Loaded = AssetData.IsValid() ? AssetData.GetAsset() : StaticLoadObject(UObject::StaticClass(), nullptr, *AssetPath);
 	if (!Loaded)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("MetaSound asset not found at '%s'"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("MetaSound asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("MetaSound asset not found at '%s'"), *AssetPath));
 	}
 
 	IMetaSoundDocumentInterface* DocInterface = Cast<IMetaSoundDocumentInterface>(Loaded);
@@ -1530,7 +1530,7 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::GetMetaSoundInputNames(con
 	UObject* Loaded = AssetData.IsValid() ? AssetData.GetAsset() : StaticLoadObject(UObject::StaticClass(), nullptr, *AssetPath);
 	if (!Loaded)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("MetaSound asset not found at '%s'"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("MetaSound asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("MetaSound asset not found at '%s'"), *AssetPath));
 	}
 
 	IMetaSoundDocumentInterface* DocInterface = Cast<IMetaSoundDocumentInterface>(Loaded);
@@ -2218,7 +2218,7 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateMetaSoundPreset(cons
 	UObject* RefObj = StaticLoadObject(UObject::StaticClass(), nullptr, *ReferencePath);
 	if (!RefObj)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Reference MetaSound not found at '%s'"), *ReferencePath));
+		return FMonolithActionResult::NotFound(TEXT("Reference MetaSound"), ReferencePath).WithErrorMessage(FString::Printf(TEXT("Reference MetaSound not found at '%s'"), *ReferencePath));
 	}
 
 	TScriptInterface<IMetaSoundDocumentInterface> RefInterface;
@@ -2288,7 +2288,7 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateOneShotSfx(const TSh
 	USoundWave* Wave = Cast<USoundWave>(StaticLoadObject(USoundWave::StaticClass(), nullptr, *WavePath));
 	if (!Wave)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("SoundWave not found at '%s'"), *WavePath));
+		return FMonolithActionResult::NotFound(TEXT("SoundWave"), WavePath).WithErrorMessage(FString::Printf(TEXT("SoundWave not found at '%s'"), *WavePath));
 	}
 
 	FString PackagePath, AssetName;
@@ -2398,7 +2398,7 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateLoopingAmbientMetaSo
 	USoundWave* Wave = Cast<USoundWave>(StaticLoadObject(USoundWave::StaticClass(), nullptr, *WavePath));
 	if (!Wave)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("SoundWave not found at '%s'"), *WavePath));
+		return FMonolithActionResult::NotFound(TEXT("SoundWave"), WavePath).WithErrorMessage(FString::Printf(TEXT("SoundWave not found at '%s'"), *WavePath));
 	}
 
 	float LfoFrequency = 0.25f;
@@ -2750,7 +2750,7 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateInteractiveMetaSound
 		USoundWave* Wave = Cast<USoundWave>(StaticLoadObject(USoundWave::StaticClass(), nullptr, *WavePath));
 		if (!Wave)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("SoundWave not found at '%s'"), *WavePath));
+			return FMonolithActionResult::NotFound(TEXT("SoundWave"), WavePath).WithErrorMessage(FString::Printf(TEXT("SoundWave not found at '%s'"), *WavePath));
 		}
 		Waves.Add(Wave);
 	}

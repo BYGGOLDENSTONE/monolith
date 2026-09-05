@@ -1036,7 +1036,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleGetAttributeSet(const 
 		SetClass = FindAttributeSetClass(AttrSet);
 		if (!SetClass)
 		{
-			return FMonolithActionResult::Error(FString::Printf(
+			return FMonolithActionResult::NotFound(TEXT("AttributeSet class"), AttrSet).WithErrorMessage(FString::Printf(
 				TEXT("AttributeSet class not found: %s"), *AttrSet));
 		}
 		SetName = SetClass->GetName();
@@ -1174,7 +1174,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleSetAttributeDefaults(c
 	const TSharedPtr<FJsonObject>* DefaultsObj;
 	if (!Params->TryGetObjectField(TEXT("defaults"), DefaultsObj) || !DefaultsObj || !(*DefaultsObj).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: defaults (object mapping attribute_name to value)"));
+		return FMonolithActionResult::InvalidParam(TEXT("defaults"), TEXT("Missing required parameter: defaults (object mapping attribute_name to value)")).WithErrorMessage(TEXT("Missing required parameter: defaults (object mapping attribute_name to value)"));
 	}
 
 	// ---- Blueprint mode ----
@@ -1450,7 +1450,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleConfigureAttributeClam
 	const TArray<TSharedPtr<FJsonValue>>* ClampRulesArr;
 	if (!Params->TryGetArrayField(TEXT("clamp_rules"), ClampRulesArr) || !ClampRulesArr)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: clamp_rules (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("clamp_rules"), TEXT("Missing required parameter: clamp_rules (array)")).WithErrorMessage(TEXT("Missing required parameter: clamp_rules (array)"));
 	}
 
 	// ---- Blueprint mode ----
@@ -1729,7 +1729,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleConfigureMetaAttribute
 	const TArray<TSharedPtr<FJsonValue>>* MetaArray;
 	if (!Params->TryGetArrayField(TEXT("meta_attributes"), MetaArray) || !MetaArray)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: meta_attributes (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("meta_attributes"), TEXT("Missing required parameter: meta_attributes (array)")).WithErrorMessage(TEXT("Missing required parameter: meta_attributes (array)"));
 	}
 
 	// Meta attributes are a C++ pattern — for BP mode we describe what to do, for C++ we generate code
@@ -2192,7 +2192,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleCreateAttributeInitDat
 
 	if (!SetClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("AttributeSet not found: %s"), *AttrSet));
+		return FMonolithActionResult::NotFound(TEXT("AttributeSet"), AttrSet).WithErrorMessage(FString::Printf(TEXT("AttributeSet not found: %s"), *AttrSet));
 	}
 
 	FString SetClassName = SetClass->GetName();
@@ -2379,7 +2379,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleDuplicateAttributeSet(
 
 	if (!SourceClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source AttributeSet not found: %s"), *Source));
+		return FMonolithActionResult::NotFound(TEXT("Source AttributeSet"), Source).WithErrorMessage(FString::Printf(TEXT("Source AttributeSet not found: %s"), *Source));
 	}
 
 	// Collect source attributes
@@ -2483,7 +2483,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleConfigureAttributeRepl
 	const TArray<TSharedPtr<FJsonValue>>* RepArray;
 	if (!Params->TryGetArrayField(TEXT("replication"), RepArray) || !RepArray || RepArray->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: replication (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("replication"), TEXT("Missing or empty required parameter: replication (array)")).WithErrorMessage(TEXT("Missing or empty required parameter: replication (array)"));
 	}
 
 	// ---- Blueprint mode ----
@@ -2721,7 +2721,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleLinkDataTableToASC(con
 	const TArray<TSharedPtr<FJsonValue>>* EntriesArray;
 	if (!Params->TryGetArrayField(TEXT("entries"), EntriesArray) || !EntriesArray || EntriesArray->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: entries (array of {attribute_set_class, datatable_path})"));
+		return FMonolithActionResult::InvalidParam(TEXT("entries"), TEXT("Missing or empty required parameter: entries (array of {attribute_set_class, datatable_path})")).WithErrorMessage(TEXT("Missing or empty required parameter: entries (array of {attribute_set_class, datatable_path})"));
 	}
 
 	// Load the Blueprint containing the ASC
@@ -2847,7 +2847,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleBulkEditAttributes(con
 	const TArray<TSharedPtr<FJsonValue>>* OpsArray;
 	if (!Params->TryGetArrayField(TEXT("operations"), OpsArray) || !OpsArray || OpsArray->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: operations (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("operations"), TEXT("Missing or empty required parameter: operations (array)")).WithErrorMessage(TEXT("Missing or empty required parameter: operations (array)"));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> Results;
@@ -2988,8 +2988,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleValidateAttributeSet(c
 		SetClass = FindAttributeSetClass(AttrSetId);
 		if (!SetClass)
 		{
-			return FMonolithActionResult::Error(
-				FString::Printf(TEXT("AttributeSet class not found: %s"), *AttrSetId));
+			return FMonolithActionResult::NotFound(TEXT("AttributeSet class"), AttrSetId).WithErrorMessage(FString::Printf(TEXT("AttributeSet class not found: %s"), *AttrSetId));
 		}
 		SetName = SetClass->GetName();
 	}
@@ -3417,7 +3416,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleGetAttributeDependency
 	const TArray<TSharedPtr<FJsonValue>>* SetsArray;
 	if (!Params->TryGetArrayField(TEXT("attribute_sets"), SetsArray) || !SetsArray || SetsArray->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: attribute_sets (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("attribute_sets"), TEXT("Missing or empty required parameter: attribute_sets (array)")).WithErrorMessage(TEXT("Missing or empty required parameter: attribute_sets (array)"));
 	}
 
 	FString Format = TEXT("json");
@@ -3636,8 +3635,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleRemoveAttribute(const 
 		UClass* SetClass = FindAttributeSetClass(AttrSetId);
 		if (!SetClass)
 		{
-			return FMonolithActionResult::Error(
-				FString::Printf(TEXT("AttributeSet class not found: %s"), *AttrSetId));
+			return FMonolithActionResult::NotFound(TEXT("AttributeSet class"), AttrSetId).WithErrorMessage(FString::Printf(TEXT("AttributeSet class not found: %s"), *AttrSetId));
 		}
 
 		FProperty* Prop = FindAttributeProperty(SetClass, AttrName);
@@ -3814,8 +3812,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleGetAttributeValue(cons
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorId);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorId).WithErrorMessage(FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
 	}
 
 	UAbilitySystemComponent* ASC = MonolithGAS::GetASCFromActor(Actor);
@@ -3840,8 +3837,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleGetAttributeValue(cons
 	}
 	if (!AttrClass)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Attribute class not found: %s"), *ClassName));
+		return FMonolithActionResult::NotFound(TEXT("Attribute class"), ClassName).WithErrorMessage(FString::Printf(TEXT("Attribute class not found: %s"), *ClassName));
 	}
 
 	FProperty* Prop = FindFProperty<FProperty>(AttrClass, FName(*PropName));
@@ -3862,8 +3858,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleGetAttributeValue(cons
 	float CurrentValue = ASC->GetGameplayAttributeValue(Attribute, bFound);
 	if (!bFound)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Attribute '%s' not found on ASC (AttributeSet may not be registered)"), *AttrStr));
+		return FMonolithActionResult::NotFound(TEXT("Attribute"), AttrStr).WithErrorMessage(FString::Printf(TEXT("Attribute '%s' not found on ASC (AttributeSet may not be registered)"), *AttrStr));
 	}
 
 	// Get base value via the attribute set
@@ -3908,7 +3903,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleSetAttributeValue(cons
 	double Value = 0.0;
 	if (!Params->TryGetNumberField(TEXT("value"), Value))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: value (number)"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required parameter: value (number)")).WithErrorMessage(TEXT("Missing required parameter: value (number)"));
 	}
 
 	bool bSetBase = false;
@@ -3923,8 +3918,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleSetAttributeValue(cons
 	AActor* Actor = MonolithGAS::FindActorInPIE(ActorId);
 	if (!Actor)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
+		return FMonolithActionResult::NotFound(TEXT("Actor"), ActorId).WithErrorMessage(FString::Printf(TEXT("Actor not found in PIE world: '%s'"), *ActorId));
 	}
 
 	UAbilitySystemComponent* ASC = MonolithGAS::GetASCFromActor(Actor);
@@ -3949,8 +3943,7 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleSetAttributeValue(cons
 	}
 	if (!AttrClass)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Attribute class not found: %s"), *ClassName));
+		return FMonolithActionResult::NotFound(TEXT("Attribute class"), ClassName).WithErrorMessage(FString::Printf(TEXT("Attribute class not found: %s"), *ClassName));
 	}
 
 	FProperty* Prop = FindFProperty<FProperty>(AttrClass, FName(*PropName));

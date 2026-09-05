@@ -146,7 +146,7 @@ namespace MonolithCommonUIActivatable
 		}
 
 		if (!Parent)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Parent panel '%s' not found or not a UPanelWidget"), *ParentWidgetName));
+			return FMonolithActionResult::NotFound(TEXT("Parent panel"), ParentWidgetName).WithErrorMessage(FString::Printf(TEXT("Parent panel '%s' not found or not a UPanelWidget"), *ParentWidgetName));
 
 		UWidget* New = Wbp->WidgetTree->ConstructWidget<UWidget>(ContainerClass, FName(*WidgetName));
 		if (!New)
@@ -313,7 +313,7 @@ namespace MonolithCommonUIActivatable
 
 		UCommonActivatableWidgetContainerBase* Container = FindContainerInPIE(FName(*ContainerName));
 		if (!Container)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Container '%s' not found in PIE"), *ContainerName));
+			return FMonolithActionResult::NotFound(TEXT("Container"), ContainerName).WithErrorMessage(FString::Printf(TEXT("Container '%s' not found in PIE"), *ContainerName));
 
 		UClass* ResolvedClass = LoadClass<UCommonActivatableWidget>(nullptr, *WidgetClassPath);
 		if (!ResolvedClass)
@@ -344,7 +344,7 @@ namespace MonolithCommonUIActivatable
 
 		UCommonActivatableWidgetContainerBase* Container = FindContainerInPIE(FName(*ContainerName));
 		if (!Container)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Container '%s' not found in PIE"), *ContainerName));
+			return FMonolithActionResult::NotFound(TEXT("Container"), ContainerName).WithErrorMessage(FString::Printf(TEXT("Container '%s' not found in PIE"), *ContainerName));
 
 		FString Action;
 		if (Mode.Equals(TEXT("all"), ESearchCase::IgnoreCase))
@@ -387,7 +387,7 @@ namespace MonolithCommonUIActivatable
 
 		UCommonActivatableWidgetContainerBase* Container = FindContainerInPIE(FName(*ContainerName));
 		if (!Container)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Container '%s' not found in PIE"), *ContainerName));
+			return FMonolithActionResult::NotFound(TEXT("Container"), ContainerName).WithErrorMessage(FString::Printf(TEXT("Container '%s' not found in PIE"), *ContainerName));
 
 		TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
 		Result->SetStringField(TEXT("container_name"), ContainerName);

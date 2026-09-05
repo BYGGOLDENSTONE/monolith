@@ -381,7 +381,7 @@ FMonolithActionResult FMonolithAIControllerActions::HandleSetAIControllerBT(cons
 	UBehaviorTree* BT = Cast<UBehaviorTree>(FMonolithAssetUtils::LoadAssetByPath(UBehaviorTree::StaticClass(), BTPath));
 	if (!BT)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Behavior Tree not found: %s"), *BTPath));
+		return FMonolithActionResult::NotFound(TEXT("Behavior Tree"), BTPath).WithErrorMessage(FString::Printf(TEXT("Behavior Tree not found: %s"), *BTPath));
 	}
 
 	// Optionally load BB (use BT's BB if not specified)
@@ -392,7 +392,7 @@ FMonolithActionResult FMonolithAIControllerActions::HandleSetAIControllerBT(cons
 		BB = Cast<UBlackboardData>(FMonolithAssetUtils::LoadAssetByPath(UBlackboardData::StaticClass(), BBPath));
 		if (!BB)
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Blackboard not found: %s"), *BBPath));
+			return FMonolithActionResult::NotFound(TEXT("Blackboard"), BBPath).WithErrorMessage(FString::Printf(TEXT("Blackboard not found: %s"), *BBPath));
 		}
 	}
 	else if (BT->BlackboardAsset)
@@ -459,7 +459,7 @@ FMonolithActionResult FMonolithAIControllerActions::HandleSetPawnAIControllerCla
 	UBlueprint* PawnBP = Cast<UBlueprint>(FMonolithAssetUtils::LoadAssetByPath(UBlueprint::StaticClass(), BlueprintPath));
 	if (!PawnBP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+		return FMonolithActionResult::NotFound(TEXT("Blueprint"), BlueprintPath).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
 	}
 
 	if (!PawnBP->GeneratedClass || !PawnBP->GeneratedClass->IsChildOf(APawn::StaticClass()))
@@ -488,7 +488,7 @@ FMonolithActionResult FMonolithAIControllerActions::HandleSetPawnAIControllerCla
 
 	if (!ControllerClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Controller class not found: %s"), *ControllerClassStr));
+		return FMonolithActionResult::NotFound(TEXT("Controller class"), ControllerClassStr).WithErrorMessage(FString::Printf(TEXT("Controller class not found: %s"), *ControllerClassStr));
 	}
 
 	if (!ControllerClass->IsChildOf(AController::StaticClass()))
@@ -706,7 +706,7 @@ FMonolithActionResult FMonolithAIControllerActions::HandleSpawnAIActor(const TSh
 	}
 	else
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'location' as {x,y,z}"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing required param 'location' as {x,y,z}")).WithErrorMessage(TEXT("Missing required param 'location' as {x,y,z}"));
 	}
 
 	// Parse optional rotation
@@ -726,7 +726,7 @@ FMonolithActionResult FMonolithAIControllerActions::HandleSpawnAIActor(const TSh
 	UBlueprint* BP = Cast<UBlueprint>(FMonolithAssetUtils::LoadAssetByPath(UBlueprint::StaticClass(), ClassPath));
 	if (!BP || !BP->GeneratedClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found or not compiled: %s"), *ClassPath));
+		return FMonolithActionResult::NotFound(TEXT("Blueprint"), ClassPath).WithErrorMessage(FString::Printf(TEXT("Blueprint not found or not compiled: %s"), *ClassPath));
 	}
 
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;

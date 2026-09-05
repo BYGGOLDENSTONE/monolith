@@ -232,11 +232,11 @@ FMonolithActionResult FMonolithBlueprintTemplateActions::HandleApplyTemplate(con
 
 	if (TemplateName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: template_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("template_name"), TEXT("Missing required parameter: template_name")).WithErrorMessage(TEXT("Missing required parameter: template_name"));
 	}
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path"));
 	}
 
 	// Find template

@@ -181,7 +181,7 @@ namespace MonolithCommonUIList
 			if (W->GetFName() == FName(*TabListName)) { TabList = W; break; }
 		}
 		if (!TabList)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("TabList '%s' not found in PIE"), *TabListName));
+			return FMonolithActionResult::NotFound(TEXT("TabList"), TabListName).WithErrorMessage(FString::Printf(TEXT("TabList '%s' not found in PIE"), *TabListName));
 
 		UClass* BtnClass = LoadClass<UCommonButtonBase>(nullptr, *ButtonClassPath);
 		if (!BtnClass)

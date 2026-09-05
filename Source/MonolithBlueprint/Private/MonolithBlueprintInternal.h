@@ -89,6 +89,18 @@ namespace MonolithBlueprintInternal
 		return TryLoadLevelBlueprint(OutAssetPath);
 	}
 
+	inline FMonolithActionResult GraphNotFound(UBlueprint* BP, const FString& GraphName)
+	{
+		TArray<UEdGraph*> Graphs;
+		BP->GetAllGraphs(Graphs);
+		TArray<FString> Candidates;
+		for (const UEdGraph* Graph : Graphs)
+		{
+			if (Graph) Candidates.AddUnique(Graph->GetName());
+		}
+		return FMonolithActionResult::NotFound(TEXT("Graph"), GraphName, Candidates);
+	}
+
 	inline void AddGraphArray(
 		TArray<TSharedPtr<FJsonValue>>& OutArr,
 		const TArray<TObjectPtr<UEdGraph>>& Graphs,

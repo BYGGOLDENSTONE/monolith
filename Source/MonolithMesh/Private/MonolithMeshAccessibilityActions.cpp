@@ -104,11 +104,11 @@ FMonolithActionResult FMonolithMeshAccessibilityActions::ValidatePathWidth(const
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start")).WithErrorMessage(TEXT("Missing or invalid required param: start"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end")).WithErrorMessage(TEXT("Missing or invalid required param: end"));
 	}
 
 	double MinWidth = 120.0;
@@ -238,11 +238,11 @@ FMonolithActionResult FMonolithMeshAccessibilityActions::ValidateNavigationCompl
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start")).WithErrorMessage(TEXT("Missing or invalid required param: start"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end")).WithErrorMessage(TEXT("Missing or invalid required param: end"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -365,7 +365,7 @@ FMonolithActionResult FMonolithMeshAccessibilityActions::AnalyzeVisualContrast(c
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location")).WithErrorMessage(TEXT("Missing or invalid required param: location"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -589,11 +589,11 @@ FMonolithActionResult FMonolithMeshAccessibilityActions::FindRestPoints(const TS
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start")).WithErrorMessage(TEXT("Missing or invalid required param: start"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end")).WithErrorMessage(TEXT("Missing or invalid required param: end"));
 	}
 
 	double MaxGap = 3000.0; // 30m default
@@ -1012,11 +1012,11 @@ FMonolithActionResult FMonolithMeshAccessibilityActions::GenerateAccessibilityRe
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start")).WithErrorMessage(TEXT("Missing or invalid required param: start"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end")).WithErrorMessage(TEXT("Missing or invalid required param: end"));
 	}
 
 	FString Profile;

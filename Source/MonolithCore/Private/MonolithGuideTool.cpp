@@ -225,10 +225,9 @@ FMonolithActionResult FMonolithGuideTool::HandleGuide(const TSharedPtr<FJsonObje
 		const FString* Body = Sections.Find(RequestedSection);
 		if (!Body)
 		{
-			return FMonolithActionResult::Error(
+			return FMonolithActionResult::NotFound(TEXT("section"), RequestedSection, OrderedNames).WithErrorMessage(
 				FString::Printf(TEXT("Unknown section '%s'. Valid sections: %s."),
-					*RequestedSection, *JoinCanonicalSectionNames()),
-				FMonolithJsonUtils::ErrInvalidParams);
+					*RequestedSection, *JoinCanonicalSectionNames()));
 		}
 
 		TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();

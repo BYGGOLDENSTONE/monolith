@@ -262,7 +262,7 @@ FMonolithActionResult FMonolithAIAdvancedActions::HandleCreateMassEntityConfig(c
 	FString SavePath = Params->GetStringField(TEXT("save_path"));
 	if (SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'save_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param 'save_path'")).WithErrorMessage(TEXT("Missing required param 'save_path'"));
 	}
 	SavePath = FMonolithAssetUtils::ResolveAssetPath(SavePath);
 
@@ -352,7 +352,7 @@ FMonolithActionResult FMonolithAIAdvancedActions::HandleAddMassTrait(const TShar
 	}
 	if (!TraitClass || !TraitClass->IsChildOf(UMassEntityTraitBase::StaticClass()))
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Trait class"), TraitClassName).WithErrorMessage(FString::Printf(
 			TEXT("Trait class '%s' not found or not a UMassEntityTraitBase subclass"), *TraitClassName));
 	}
 
@@ -699,7 +699,7 @@ FMonolithActionResult FMonolithAIAdvancedActions::HandleQueryZoneLanes(const TSh
 	const TSharedPtr<FJsonObject>* LocationPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("location"), LocationPtr) || !LocationPtr || !LocationPtr->IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'location' (object with x, y, z)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing required param 'location' (object with x, y, z)")).WithErrorMessage(TEXT("Missing required param 'location' (object with x, y, z)"));
 	}
 
 	FVector Location;
@@ -759,7 +759,7 @@ FMonolithActionResult FMonolithAIAdvancedActions::HandleGetZoneLaneInfo(const TS
 {
 	if (!Params->HasField(TEXT("lane_handle")))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'lane_handle'"));
+		return FMonolithActionResult::InvalidParam(TEXT("lane_handle"), TEXT("Missing required param 'lane_handle'")).WithErrorMessage(TEXT("Missing required param 'lane_handle'"));
 	}
 
 	int32 LaneIndex = static_cast<int32>(Params->GetNumberField(TEXT("lane_handle")));

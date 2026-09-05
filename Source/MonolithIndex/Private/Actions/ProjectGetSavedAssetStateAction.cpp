@@ -71,7 +71,7 @@ FMonolithActionResult FProjectGetSavedAssetStateAction::Execute(const TSharedPtr
 
 	if (ClassName.IsEmpty() && !bExistsOnDisk)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset '%s' not found in registry or on disk"), *PackagePath));
+		return FMonolithActionResult::NotFound(TEXT("Asset"), PackagePath).WithErrorMessage(FString::Printf(TEXT("Asset '%s' not found in registry or on disk"), *PackagePath));
 	}
 
 	// Dependencies + referencers (package-level, on-disk references only).

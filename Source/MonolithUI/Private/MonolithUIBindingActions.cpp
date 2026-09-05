@@ -144,8 +144,7 @@ FMonolithActionResult FMonolithUIBindingActions::HandleListWidgetProperties(cons
     UWidget* Widget = WBP->WidgetTree->FindWidget(FName(*WidgetName));
     if (!Widget)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Widget '%s' not found"), *WidgetName));
+        return FMonolithActionResult::NotFound(TEXT("Widget"), WidgetName).WithErrorMessage(FString::Printf(TEXT("Widget '%s' not found"), *WidgetName));
     }
 
     TArray<TSharedPtr<FJsonValue>> PropsArray;
@@ -231,8 +230,7 @@ FMonolithActionResult FMonolithUIBindingActions::HandleSetupListView(const TShar
     UWidget* Widget = WBP->WidgetTree->FindWidget(FName(*ListWidgetName));
     if (!Widget)
     {
-        return FMonolithActionResult::Error(
-            FString::Printf(TEXT("Widget '%s' not found"), *ListWidgetName));
+        return FMonolithActionResult::NotFound(TEXT("Widget"), ListWidgetName).WithErrorMessage(FString::Printf(TEXT("Widget '%s' not found"), *ListWidgetName));
     }
 
     // Load the entry widget blueprint to get its generated class
@@ -242,8 +240,7 @@ FMonolithActionResult FMonolithUIBindingActions::HandleSetupListView(const TShar
         EntryWBP = MonolithUIInternal::LoadWidgetBlueprint(EntryWidgetClass, EntryErr);
         if (!EntryWBP)
         {
-            return FMonolithActionResult::Error(
-                FString::Printf(TEXT("Entry widget class not found: %s"), *EntryWidgetClass));
+            return FMonolithActionResult::NotFound(TEXT("Entry widget class"), EntryWidgetClass).WithErrorMessage(FString::Printf(TEXT("Entry widget class not found: %s"), *EntryWidgetClass));
         }
     }
 

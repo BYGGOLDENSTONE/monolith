@@ -140,7 +140,7 @@ FMonolithActionResult FMonolithBlueprintCDOActions::HandleGetCDOProperties(const
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path"));
 	}
 
 	// Try Blueprint first (has GeneratedClass -> CDO), then fall back to any UObject
@@ -165,7 +165,7 @@ FMonolithActionResult FMonolithBlueprintCDOActions::HandleGetCDOProperties(const
 
 	if (!TargetObject || !TargetClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset not found or has no class: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Asset not found or has no class: %s"), *AssetPath));
 	}
 
 	// Find the native parent class
@@ -281,18 +281,18 @@ FMonolithActionResult FMonolithBlueprintCDOActions::HandleSetCDOProperty(const T
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path"));
 	}
 
 	FString PropertyName = Params->GetStringField(TEXT("property_name"));
 	if (PropertyName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: property_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("property_name"), TEXT("Missing required parameter: property_name")).WithErrorMessage(TEXT("Missing required parameter: property_name"));
 	}
 
 	if (!Params->HasField(TEXT("value")))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: value"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required parameter: value")).WithErrorMessage(TEXT("Missing required parameter: value"));
 	}
 
 	// --- Load asset: Blueprint CDO or generic UObject (same dual-path as get_cdo_properties) ---
@@ -318,7 +318,7 @@ FMonolithActionResult FMonolithBlueprintCDOActions::HandleSetCDOProperty(const T
 
 	if (!TargetObject || !TargetClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset not found or has no class: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Asset not found or has no class: %s"), *AssetPath));
 	}
 
 	// --- Find property (exact match, then case-insensitive fallback) ---
@@ -501,18 +501,18 @@ FMonolithActionResult FMonolithBlueprintCDOActions::HandleSetPropertyAtPath(cons
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: asset_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required parameter: asset_path")).WithErrorMessage(TEXT("Missing required parameter: asset_path"));
 	}
 
 	const FString Path = Params->GetStringField(TEXT("path"));
 	if (Path.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: path"));
+		return FMonolithActionResult::InvalidParam(TEXT("path"), TEXT("Missing required parameter: path")).WithErrorMessage(TEXT("Missing required parameter: path"));
 	}
 
 	if (!Params->HasField(TEXT("value")))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: value"));
+		return FMonolithActionResult::InvalidParam(TEXT("value"), TEXT("Missing required parameter: value")).WithErrorMessage(TEXT("Missing required parameter: value"));
 	}
 	const TSharedPtr<FJsonValue> JsonVal = Params->TryGetField(TEXT("value"));
 	if (!JsonVal.IsValid())
@@ -546,7 +546,7 @@ FMonolithActionResult FMonolithBlueprintCDOActions::HandleSetPropertyAtPath(cons
 
 	if (!TargetObject || !TargetClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset not found or has no class: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Asset not found or has no class: %s"), *AssetPath));
 	}
 
 	FMonolithDryRunGuard DryRunGuard(Params);

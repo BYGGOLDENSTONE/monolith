@@ -1,4 +1,5 @@
 #include "MonolithBlueprintBuildActions.h"
+#include "MonolithAssetUtils.h"
 #include "MonolithBlueprintInternal.h"
 #include "MonolithBlueprintVariableActions.h"
 #include "MonolithBlueprintComponentActions.h"
@@ -98,7 +99,7 @@ FMonolithActionResult FMonolithBlueprintBuildActions::HandleBuildBlueprintFromSp
 	UBlueprint* BP = MonolithBlueprintInternal::LoadBlueprintFromParams(Params, AssetPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), AssetPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *AssetPath));
 	}
 
 	FString GraphName = GetStr(Params, TEXT("graph_name"));

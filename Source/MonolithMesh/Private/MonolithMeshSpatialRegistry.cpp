@@ -875,7 +875,7 @@ FMonolithActionResult FMonolithMeshSpatialRegistry::RegisterBuilding(const TShar
 	const TSharedPtr<FJsonObject>* DescPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("building_descriptor"), DescPtr) || !DescPtr || !(*DescPtr).IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: building_descriptor (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("building_descriptor"), TEXT("Missing required param: building_descriptor (object)")).WithErrorMessage(TEXT("Missing required param: building_descriptor (object)"));
 	}
 	const auto& Desc = *DescPtr;
 
@@ -1009,21 +1009,21 @@ FMonolithActionResult FMonolithMeshSpatialRegistry::RegisterRoom(const TSharedPt
 {
 	FString RoomId, RoomType, BuildingId;
 	if (!Params->TryGetStringField(TEXT("room_id"), RoomId) || RoomId.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: room_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("room_id"), TEXT("Missing required param: room_id")).WithErrorMessage(TEXT("Missing required param: room_id"));
 	if (!Params->TryGetStringField(TEXT("room_type"), RoomType) || RoomType.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: room_type"));
+		return FMonolithActionResult::InvalidParam(TEXT("room_type"), TEXT("Missing required param: room_type")).WithErrorMessage(TEXT("Missing required param: room_type"));
 	if (!Params->TryGetStringField(TEXT("building_id"), BuildingId) || BuildingId.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: building_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("building_id"), TEXT("Missing required param: building_id")).WithErrorMessage(TEXT("Missing required param: building_id"));
 
 	int32 FloorIndex = 0;
 	if (Params->HasField(TEXT("floor_index")))
 		FloorIndex = static_cast<int32>(Params->GetNumberField(TEXT("floor_index")));
 	else
-		return FMonolithActionResult::Error(TEXT("Missing required param: floor_index"));
+		return FMonolithActionResult::InvalidParam(TEXT("floor_index"), TEXT("Missing required param: floor_index")).WithErrorMessage(TEXT("Missing required param: floor_index"));
 
 	const TSharedPtr<FJsonObject>* BoundsPtr = nullptr;
 	if (!Params->TryGetObjectField(TEXT("world_bounds"), BoundsPtr) || !BoundsPtr || !(*BoundsPtr).IsValid())
-		return FMonolithActionResult::Error(TEXT("Missing required param: world_bounds (object with min/max arrays)"));
+		return FMonolithActionResult::InvalidParam(TEXT("world_bounds"), TEXT("Missing required param: world_bounds (object with min/max arrays)")).WithErrorMessage(TEXT("Missing required param: world_bounds (object with min/max arrays)"));
 
 	FBox WorldBounds(ForceInit);
 	if (!ParseBounds(*BoundsPtr, WorldBounds))
@@ -1090,13 +1090,13 @@ FMonolithActionResult FMonolithMeshSpatialRegistry::RegisterStreetFurniture(cons
 {
 	FString FurnitureId, FurnitureType;
 	if (!Params->TryGetStringField(TEXT("furniture_id"), FurnitureId) || FurnitureId.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: furniture_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("furniture_id"), TEXT("Missing required param: furniture_id")).WithErrorMessage(TEXT("Missing required param: furniture_id"));
 	if (!Params->TryGetStringField(TEXT("furniture_type"), FurnitureType) || FurnitureType.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: furniture_type"));
+		return FMonolithActionResult::InvalidParam(TEXT("furniture_type"), TEXT("Missing required param: furniture_type")).WithErrorMessage(TEXT("Missing required param: furniture_type"));
 
 	FVector WorldPos;
 	if (!ParseVector(Params, TEXT("world_position"), WorldPos))
-		return FMonolithActionResult::Error(TEXT("Missing required param: world_position (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("world_position"), TEXT("Missing required param: world_position (array of 3 numbers)")).WithErrorMessage(TEXT("Missing required param: world_position (array of 3 numbers)"));
 
 	FString BlockId = TEXT("default");
 	Params->TryGetStringField(TEXT("block_id"), BlockId);
@@ -1122,7 +1122,7 @@ FMonolithActionResult FMonolithMeshSpatialRegistry::QueryRoomAt(const TSharedPtr
 {
 	FVector Position;
 	if (!ParseVector(Params, TEXT("position"), Position))
-		return FMonolithActionResult::Error(TEXT("Missing required param: position (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("position"), TEXT("Missing required param: position (array of 3 numbers)")).WithErrorMessage(TEXT("Missing required param: position (array of 3 numbers)"));
 
 	FString BlockId = TEXT("default");
 	Params->TryGetStringField(TEXT("block_id"), BlockId);
@@ -1158,7 +1158,7 @@ FMonolithActionResult FMonolithMeshSpatialRegistry::QueryAdjacentRooms(const TSh
 {
 	FString RoomId;
 	if (!Params->TryGetStringField(TEXT("room_id"), RoomId) || RoomId.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: room_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("room_id"), TEXT("Missing required param: room_id")).WithErrorMessage(TEXT("Missing required param: room_id"));
 
 	FString BlockId = TEXT("default");
 	Params->TryGetStringField(TEXT("block_id"), BlockId);
@@ -1297,7 +1297,7 @@ FMonolithActionResult FMonolithMeshSpatialRegistry::QueryBuildingExits(const TSh
 {
 	FString BuildingId;
 	if (!Params->TryGetStringField(TEXT("building_id"), BuildingId) || BuildingId.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: building_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("building_id"), TEXT("Missing required param: building_id")).WithErrorMessage(TEXT("Missing required param: building_id"));
 
 	FString BlockId = TEXT("default");
 	Params->TryGetStringField(TEXT("block_id"), BlockId);
@@ -1342,9 +1342,9 @@ FMonolithActionResult FMonolithMeshSpatialRegistry::PathBetweenRooms(const TShar
 {
 	FString FromRoom, ToRoom;
 	if (!Params->TryGetStringField(TEXT("from_room_id"), FromRoom) || FromRoom.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: from_room_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("from_room_id"), TEXT("Missing required param: from_room_id")).WithErrorMessage(TEXT("Missing required param: from_room_id"));
 	if (!Params->TryGetStringField(TEXT("to_room_id"), ToRoom) || ToRoom.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: to_room_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("to_room_id"), TEXT("Missing required param: to_room_id")).WithErrorMessage(TEXT("Missing required param: to_room_id"));
 
 	FString BlockId = TEXT("default");
 	Params->TryGetStringField(TEXT("block_id"), BlockId);

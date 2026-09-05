@@ -286,11 +286,11 @@ FMonolithActionResult FMonolithMeshHorrorDesignActions::PredictPlayerPaths(const
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -754,7 +754,7 @@ FMonolithActionResult FMonolithMeshHorrorDesignActions::EvaluateSpawnPoint(const
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -957,7 +957,7 @@ FMonolithActionResult FMonolithMeshHorrorDesignActions::SuggestScarePositions(co
 	TArray<FVector> PathPoints;
 	if (!MHd_ParseVectorArray(Params, TEXT("path_points"), PathPoints) || PathPoints.Num() < 2)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])"));
+		return FMonolithActionResult::InvalidParam(TEXT("path_points"), TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])")).WithErrorMessage(TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1201,7 +1201,7 @@ FMonolithActionResult FMonolithMeshHorrorDesignActions::EvaluateEncounterPacing(
 	TArray<FVector> PathPoints;
 	if (!MHd_ParseVectorArray(Params, TEXT("path_points"), PathPoints) || PathPoints.Num() < 2)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])"));
+		return FMonolithActionResult::InvalidParam(TEXT("path_points"), TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])")).WithErrorMessage(TEXT("Missing or invalid required param: path_points (array of at least 2 [x,y,z])"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -1225,7 +1225,7 @@ FMonolithActionResult FMonolithMeshHorrorDesignActions::EvaluateEncounterPacing(
 		const TArray<TSharedPtr<FJsonValue>>* EncArr;
 		if (!Params->TryGetArrayField(TEXT("encounters"), EncArr) || EncArr->Num() == 0)
 		{
-			return FMonolithActionResult::Error(TEXT("Missing or invalid required param: encounters (array of encounter objects)"));
+			return FMonolithActionResult::InvalidParam(TEXT("encounters"), TEXT("Missing or invalid required param: encounters (array of encounter objects)")).WithErrorMessage(TEXT("Missing or invalid required param: encounters (array of encounter objects)"));
 		}
 
 		for (const TSharedPtr<FJsonValue>& Val : *EncArr)

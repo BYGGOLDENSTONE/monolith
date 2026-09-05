@@ -298,7 +298,7 @@ FMonolithActionResult FMonolithMeshDecalActions::PlaceDecals(const TSharedPtr<FJ
 	FString MaterialPath;
 	if (!Params->TryGetStringField(TEXT("material"), MaterialPath))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: material"));
+		return FMonolithActionResult::InvalidParam(TEXT("material"), TEXT("Missing required param: material")).WithErrorMessage(TEXT("Missing required param: material"));
 	}
 
 	// Validate decal material domain
@@ -843,7 +843,7 @@ FMonolithActionResult FMonolithMeshDecalActions::AnalyzePropDensity(const TShare
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	double GridSizeD = 200.0;
@@ -882,7 +882,7 @@ FMonolithActionResult FMonolithMeshDecalActions::AnalyzePropDensity(const TShare
 
 	if (!Volume)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Volume not found: %s"), *VolumeName));
+		return FMonolithActionResult::NotFound(TEXT("Volume"), VolumeName).WithErrorMessage(FString::Printf(TEXT("Volume not found: %s"), *VolumeName));
 	}
 
 	FVector VolumeOrigin, VolumeExtent;
@@ -1058,13 +1058,13 @@ FMonolithActionResult FMonolithMeshDecalActions::PlaceStorytellingScene(const TS
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
 	}
 
 	FString PatternName;
 	if (!Params->TryGetStringField(TEXT("pattern"), PatternName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: pattern"));
+		return FMonolithActionResult::InvalidParam(TEXT("pattern"), TEXT("Missing required param: pattern")).WithErrorMessage(TEXT("Missing required param: pattern"));
 	}
 
 	const FStorytellingPattern* Pattern = StorytellingPatterns::GetPattern(PatternName);

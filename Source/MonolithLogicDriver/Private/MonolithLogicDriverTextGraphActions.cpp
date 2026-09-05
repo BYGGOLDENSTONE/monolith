@@ -108,7 +108,7 @@ void FMonolithLogicDriverTextGraphActions::RegisterActions(FMonolithToolRegistry
 FMonolithActionResult FMonolithLogicDriverTextGraphActions::HandleGetTextGraphContent(const TSharedPtr<FJsonObject>& Params)
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 
 	FString LoadError;
 	UBlueprint* SMBlueprint = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);
@@ -168,7 +168,7 @@ FMonolithActionResult FMonolithLogicDriverTextGraphActions::HandleGetTextGraphCo
 FMonolithActionResult FMonolithLogicDriverTextGraphActions::HandleGetDialogueFlow(const TSharedPtr<FJsonObject>& Params)
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
-	if (AssetPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+	if (AssetPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 
 	FString LoadError;
 	UBlueprint* SMBlueprint = MonolithLD::LoadSMBlueprint(AssetPath, LoadError);

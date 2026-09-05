@@ -594,8 +594,7 @@ FMonolithActionResult FMonolithGASAbilityActions::HandleCreateAbility(const TSha
 
 	if (!ParentClass)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Parent class not found: %s"), *ParentClassName));
+		return FMonolithActionResult::NotFound(TEXT("Parent class"), ParentClassName).WithErrorMessage(FString::Printf(TEXT("Parent class not found: %s"), *ParentClassName));
 	}
 
 	if (!ParentClass->IsChildOf(UGameplayAbility::StaticClass()))
@@ -1326,7 +1325,7 @@ FMonolithActionResult FMonolithGASAbilityActions::HandleSetAbilityTriggers(const
 	const TArray<TSharedPtr<FJsonValue>>* TriggersArray;
 	if (!Params->TryGetArrayField(TEXT("triggers"), TriggersArray))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: triggers (array of {tag, trigger_source})"));
+		return FMonolithActionResult::InvalidParam(TEXT("triggers"), TEXT("Missing required parameter: triggers (array of {tag, trigger_source})")).WithErrorMessage(TEXT("Missing required parameter: triggers (array of {tag, trigger_source})"));
 	}
 
 	TArray<FAbilityTriggerData> NewTriggers;
@@ -1685,8 +1684,7 @@ FMonolithActionResult FMonolithGASAbilityActions::HandleAddCommitAndEndFlow(cons
 	UEdGraph* Graph = GetAbilityEventGraph(Ctx.BP, GraphName);
 	if (!Graph)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Graph '%s' not found"), *GraphName));
+		return FMonolithActionResult::NotFound(TEXT("Graph"), GraphName).WithErrorMessage(FString::Printf(TEXT("Graph '%s' not found"), *GraphName));
 	}
 
 	int32 PosX, PosY;
@@ -2142,7 +2140,7 @@ FMonolithActionResult FMonolithGASAbilityActions::HandleBuildAbilityFromSpec(con
 	const TSharedPtr<FJsonObject>* SpecPtr;
 	if (!Params->TryGetObjectField(TEXT("spec"), SpecPtr))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: spec (object)"));
+		return FMonolithActionResult::InvalidParam(TEXT("spec"), TEXT("Missing required parameter: spec (object)")).WithErrorMessage(TEXT("Missing required parameter: spec (object)"));
 	}
 	const TSharedPtr<FJsonObject>& Spec = *SpecPtr;
 
@@ -2285,7 +2283,7 @@ FMonolithActionResult FMonolithGASAbilityActions::HandleBatchCreateAbilities(con
 	const TArray<TSharedPtr<FJsonValue>>* AbilitiesArr;
 	if (!Params->TryGetArrayField(TEXT("abilities"), AbilitiesArr) || AbilitiesArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: abilities (array)"));
+		return FMonolithActionResult::InvalidParam(TEXT("abilities"), TEXT("Missing or empty required parameter: abilities (array)")).WithErrorMessage(TEXT("Missing or empty required parameter: abilities (array)"));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> Results;
@@ -2799,14 +2797,12 @@ FMonolithActionResult FMonolithGASAbilityActions::HandleWireAbilityTaskDelegate(
 
 	if (!TaskNode)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Task node '%s' not found"), *NodeId));
+		return FMonolithActionResult::NotFound(TEXT("Task node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Task node '%s' not found"), *NodeId));
 	}
 
 	if (!TargetNode)
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Target node '%s' not found"), *TargetNodeId));
+		return FMonolithActionResult::NotFound(TEXT("Target node"), TargetNodeId).WithErrorMessage(FString::Printf(TEXT("Target node '%s' not found"), *TargetNodeId));
 	}
 
 	// Find delegate output pin on task node

@@ -1345,7 +1345,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddMontageSection(const T
 	double StartTime = Params->GetNumberField(TEXT("start_time"));
 
 	UAnimMontage* Montage = FMonolithAssetUtils::LoadAssetByPath<UAnimMontage>(AssetPath);
-	if (!Montage) return FMonolithActionResult::Error(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
+	if (!Montage) return FMonolithAssetUtils::AssetNotFound(TEXT("Montage"), AssetPath, UAnimMontage::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("Add Montage Section")));
 	Montage->Modify();
@@ -1370,10 +1370,10 @@ FMonolithActionResult FMonolithAnimationActions::HandleDeleteMontageSection(cons
 	int32 SectionIndex = static_cast<int32>(Params->GetNumberField(TEXT("section_index")));
 
 	UAnimMontage* Montage = FMonolithAssetUtils::LoadAssetByPath<UAnimMontage>(AssetPath);
-	if (!Montage) return FMonolithActionResult::Error(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
+	if (!Montage) return FMonolithAssetUtils::AssetNotFound(TEXT("Montage"), AssetPath, UAnimMontage::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
 
 	if (!Montage->IsValidSectionIndex(SectionIndex))
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Invalid section index: %d"), SectionIndex));
+		return FMonolithActionResult::InvalidParam(TEXT("section_index"), FString::Printf(TEXT("Invalid section index: %d"), SectionIndex));
 
 	if (Montage->CompositeSections.Num() <= 1)
 		return FMonolithActionResult::Error(TEXT("Cannot delete the last remaining montage section"));
@@ -1401,11 +1401,19 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetSectionNext(const TSha
 	FString NextSectionName = Params->GetStringField(TEXT("next_section_name"));
 
 	UAnimMontage* Montage = FMonolithAssetUtils::LoadAssetByPath<UAnimMontage>(AssetPath);
-	if (!Montage) return FMonolithActionResult::Error(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
+	if (!Montage) return FMonolithAssetUtils::AssetNotFound(TEXT("Montage"), AssetPath, UAnimMontage::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
 
 	int32 SectionIndex = Montage->GetSectionIndex(FName(*SectionName));
 	if (SectionIndex == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Section not found: %s"), *SectionName));
+	{
+		TArray<FString> Candidates;
+		for (const FCompositeSection& Section : Montage->CompositeSections)
+		{
+			Candidates.Add(Section.SectionName.ToString());
+		}
+		return FMonolithActionResult::NotFound(TEXT("Section"), SectionName, Candidates)
+			.WithErrorMessage(FString::Printf(TEXT("Section not found: %s"), *SectionName));
+	}
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("Set Section Next")));
 	Montage->Modify();
@@ -1426,11 +1434,19 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetSectionTime(const TSha
 	float NewTime = static_cast<float>(Params->GetNumberField(TEXT("new_time")));
 
 	UAnimMontage* Montage = FMonolithAssetUtils::LoadAssetByPath<UAnimMontage>(AssetPath);
-	if (!Montage) return FMonolithActionResult::Error(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
+	if (!Montage) return FMonolithAssetUtils::AssetNotFound(TEXT("Montage"), AssetPath, UAnimMontage::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
 
 	int32 SectionIndex = Montage->GetSectionIndex(FName(*SectionName));
 	if (SectionIndex == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Section not found: %s"), *SectionName));
+	{
+		TArray<FString> Candidates;
+		for (const FCompositeSection& Section : Montage->CompositeSections)
+		{
+			Candidates.Add(Section.SectionName.ToString());
+		}
+		return FMonolithActionResult::NotFound(TEXT("Section"), SectionName, Candidates)
+			.WithErrorMessage(FString::Printf(TEXT("Section not found: %s"), *SectionName));
+	}
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("Set Section Time")));
 	Montage->Modify();
@@ -1457,10 +1473,10 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddBlendSpaceSample(const
 	float Y = static_cast<float>(Params->GetNumberField(TEXT("y")));
 
 	UBlendSpace* BS = FMonolithAssetUtils::LoadAssetByPath<UBlendSpace>(AssetPath);
-	if (!BS) return FMonolithActionResult::Error(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
+	if (!BS) return FMonolithAssetUtils::AssetNotFound(TEXT("BlendSpace"), AssetPath, UBlendSpace::StaticClass()).WithErrorMessage(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
 
 	UAnimSequence* Anim = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AnimPath);
-	if (!Anim) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AnimPath));
+	if (!Anim) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AnimPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AnimPath));
 
 	USkeleton* BSSkeleton = BS->GetSkeleton();
 	USkeleton* AnimSkeleton = Anim->GetSkeleton();
@@ -1502,7 +1518,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleEditBlendSpaceSample(cons
 	Params->TryGetStringField(TEXT("anim_path"), AnimPath);
 
 	UBlendSpace* BS = FMonolithAssetUtils::LoadAssetByPath<UBlendSpace>(AssetPath);
-	if (!BS) return FMonolithActionResult::Error(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
+	if (!BS) return FMonolithAssetUtils::AssetNotFound(TEXT("BlendSpace"), AssetPath, UBlendSpace::StaticClass()).WithErrorMessage(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
 
 	if (!BS->IsValidBlendSampleIndex(SampleIndex))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Invalid sample index: %d"), SampleIndex));
@@ -1543,7 +1559,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleDeleteBlendSpaceSample(co
 	int32 SampleIndex = static_cast<int32>(Params->GetNumberField(TEXT("sample_index")));
 
 	UBlendSpace* BS = FMonolithAssetUtils::LoadAssetByPath<UBlendSpace>(AssetPath);
-	if (!BS) return FMonolithActionResult::Error(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
+	if (!BS) return FMonolithAssetUtils::AssetNotFound(TEXT("BlendSpace"), AssetPath, UBlendSpace::StaticClass()).WithErrorMessage(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
 
 	if (!BS->IsValidBlendSampleIndex(SampleIndex))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Invalid sample index: %d"), SampleIndex));
@@ -1570,7 +1586,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleBakeBlendSpace(const TSha
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UBlendSpace* BS = FMonolithAssetUtils::LoadAssetByPath<UBlendSpace>(AssetPath);
-	if (!BS) return FMonolithActionResult::Error(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
+	if (!BS) return FMonolithAssetUtils::AssetNotFound(TEXT("BlendSpace"), AssetPath, UBlendSpace::StaticClass()).WithErrorMessage(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
 
 	const int32 SampleCount = BS->GetBlendSamples().Num();
 
@@ -1596,7 +1612,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetBlendSpaceInterpolatio
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UBlendSpace* BS = FMonolithAssetUtils::LoadAssetByPath<UBlendSpace>(AssetPath);
-	if (!BS) return FMonolithActionResult::Error(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
+	if (!BS) return FMonolithAssetUtils::AssetNotFound(TEXT("BlendSpace"), AssetPath, UBlendSpace::StaticClass()).WithErrorMessage(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
 
 	if (Params->HasField(TEXT("use_grid")))
 		BS->bInterpolateUsingGrid = Params->GetBoolField(TEXT("use_grid"));
@@ -1647,7 +1663,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetNotifyTime(const TShar
 	float NewTime = static_cast<float>(Params->GetNumberField(TEXT("new_time")));
 
 	UAnimSequenceBase* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AssetPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
 
 	if (!Seq->Notifies.IsValidIndex(NotifyIndex))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Invalid notify index: %d (total: %d)"), NotifyIndex, Seq->Notifies.Num()));
@@ -1671,7 +1687,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetNotifyDuration(const T
 	float NewDuration = static_cast<float>(Params->GetNumberField(TEXT("new_duration")));
 
 	UAnimSequenceBase* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AssetPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
 
 	if (!Seq->Notifies.IsValidIndex(NotifyIndex))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Invalid notify index: %d (total: %d)"), NotifyIndex, Seq->Notifies.Num()));
@@ -1700,7 +1716,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddBoneTrack(const TShare
 	FString BoneName = Params->GetStringField(TEXT("bone_name"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	IAnimationDataController& Controller = Seq->GetController();
 
@@ -1722,7 +1738,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveBoneTrack(const TSh
 	Params->TryGetBoolField(TEXT("include_children"), bIncludeChildren);
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	IAnimationDataController& Controller = Seq->GetController();
 
@@ -1784,7 +1800,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetBoneTrackKeys(const TS
 	FString ScalesJson = Params->GetStringField(TEXT("scales_json"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	// Parse positions: [[x,y,z], ...]
 	TArray<FVector> Positions;
@@ -1867,16 +1883,16 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddVirtualBone(const TSha
 	FString TargetBone = Params->GetStringField(TEXT("target_bone"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	const FReferenceSkeleton& RefSkel = Skeleton->GetReferenceSkeleton();
 	if (RefSkel.FindBoneIndex(FName(*SourceBone)) == INDEX_NONE)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source bone not found in skeleton: %s"), *SourceBone));
+		return FMonolithActionResult::NotFound(TEXT("Source bone"), SourceBone).WithErrorMessage(FString::Printf(TEXT("Source bone not found in skeleton: %s"), *SourceBone));
 	}
 	if (RefSkel.FindBoneIndex(FName(*TargetBone)) == INDEX_NONE)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Target bone not found in skeleton: %s"), *TargetBone));
+		return FMonolithActionResult::NotFound(TEXT("Target bone"), TargetBone).WithErrorMessage(FString::Printf(TEXT("Target bone not found in skeleton: %s"), *TargetBone));
 	}
 
 	FName VBoneName;
@@ -1901,7 +1917,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveVirtualBones(const 
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	// Extract bone names from JSON array
 	TArray<FString> BoneNames;
@@ -1991,7 +2007,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetSkeletonInfo(const TSh
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	const FReferenceSkeleton& RefSkel = Skeleton->GetReferenceSkeleton();
 	int32 BoneCount = RefSkel.GetNum();
@@ -2033,7 +2049,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetSkeletalMeshInfo(const
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	USkeletalMesh* Mesh = FMonolithAssetUtils::LoadAssetByPath<USkeletalMesh>(AssetPath);
-	if (!Mesh) return FMonolithActionResult::Error(FString::Printf(TEXT("SkeletalMesh not found: %s"), *AssetPath));
+	if (!Mesh) return FMonolithAssetUtils::AssetNotFound(TEXT("SkeletalMesh"), AssetPath, USkeletalMesh::StaticClass()).WithErrorMessage(FString::Printf(TEXT("SkeletalMesh not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -2099,7 +2115,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetStateMachines(const TS
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -2195,15 +2211,15 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetStateInfo(const TShare
 
 	if (MachineName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
 	}
 	if (StateName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: state_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("state_name"), TEXT("Missing required parameter: state_name")).WithErrorMessage(TEXT("Missing required parameter: state_name"));
 	}
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	for (UEdGraph* Graph : ABP->FunctionGraphs)
 	{
@@ -2269,7 +2285,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetTransitions(const TSha
 	FString MachineName = Params->GetStringField(TEXT("machine_name"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// Helper lambda to collect transitions from a state machine graph
 	auto CollectTransitions = [](UAnimationStateMachineGraph* SMGraph, TArray<TSharedPtr<FJsonValue>>& OutArr)
@@ -2367,7 +2383,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetBlendNodes(const TShar
 	Params->TryGetStringField(TEXT("graph_name"), GraphName);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	for (UEdGraph* Graph : ABP->FunctionGraphs)
 	{
@@ -2406,7 +2422,12 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetBlendNodes(const TShar
 		return FMonolithActionResult::Success(Root);
 	}
 
-	return FMonolithActionResult::Error(FString::Printf(TEXT("Graph '%s' not found"), *GraphName));
+	TArray<FString> Candidates;
+	for (const UEdGraph* Graph : ABP->FunctionGraphs)
+	{
+		if (Graph) Candidates.Add(Graph->GetName());
+	}
+	return FMonolithActionResult::NotFound(TEXT("Graph"), GraphName, Candidates);
 }
 
 FMonolithActionResult FMonolithAnimationActions::HandleGetGraphs(const TSharedPtr<FJsonObject>& Params)
@@ -2414,7 +2435,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetGraphs(const TSharedPt
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -2456,7 +2477,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetNodes(const TSharedPtr
 	Params->TryGetBoolField(TEXT("include_anim_graph"), bIncludeAnimGraph);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -2583,7 +2604,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetAnimGraphChoosers(cons
 	Params->TryGetBoolField(TEXT("recursive"), bRecursive);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -2666,7 +2687,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetLinkedLayers(const TSh
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -2702,7 +2723,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetSequenceInfo(const TSh
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -2763,7 +2784,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetSequenceNotifies(const
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequenceBase* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AssetPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -2816,14 +2837,14 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetBoneTrackKeys(const TS
 		EndFrame = static_cast<int32>(TempVal);
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	const IAnimationDataModel* DataModel = Seq->GetDataModel();
 	if (!DataModel) return FMonolithActionResult::Error(TEXT("No animation data model"));
 
 	const FName BoneFName(*BoneName);
 	if (!DataModel->IsValidBoneTrackName(BoneFName))
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Bone track not found: %s"), *BoneName));
+		return FMonolithActionResult::NotFound(TEXT("Bone track"), BoneName).WithErrorMessage(FString::Printf(TEXT("Bone track not found: %s"), *BoneName));
 
 	// Use non-deprecated API: evaluate the bone track at every keyframe via
 	// GetBoneTrackTransforms. Works regardless of underlying compressed storage.
@@ -2884,7 +2905,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleListBoneTracks(const TSha
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	const IAnimationDataModel* DataModel = Seq->GetDataModel();
 	if (!DataModel) return FMonolithActionResult::Error(TEXT("No animation data model"));
@@ -2908,7 +2929,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetSequenceCurves(const T
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	const IAnimationDataModel* DataModel = Seq->GetDataModel();
 	if (!DataModel) return FMonolithActionResult::Error(TEXT("No animation data model"));
@@ -2950,7 +2971,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetMontageInfo(const TSha
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimMontage* Montage = FMonolithAssetUtils::LoadAssetByPath<UAnimMontage>(AssetPath);
-	if (!Montage) return FMonolithActionResult::Error(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
+	if (!Montage) return FMonolithAssetUtils::AssetNotFound(TEXT("Montage"), AssetPath, UAnimMontage::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -2999,7 +3020,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetBlendSpaceInfo(const T
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UBlendSpace* BS = FMonolithAssetUtils::LoadAssetByPath<UBlendSpace>(AssetPath);
-	if (!BS) return FMonolithActionResult::Error(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
+	if (!BS) return FMonolithAssetUtils::AssetNotFound(TEXT("BlendSpace"), AssetPath, UBlendSpace::StaticClass()).WithErrorMessage(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -3107,7 +3128,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetSkeletonSockets(const 
 	{
 		USkeletalMesh* Mesh = FMonolithAssetUtils::LoadAssetByPath<USkeletalMesh>(AssetPath);
 		if (!Mesh)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton or SkeletalMesh not found: %s"), *AssetPath));
+			return FMonolithActionResult::NotFound(TEXT("Skeleton or SkeletalMesh"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Skeleton or SkeletalMesh not found: %s"), *AssetPath));
 
 		for (int32 i = 0; i < Mesh->NumSockets(); ++i)
 		{
@@ -3161,7 +3182,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetSkeletonPreviewAttache
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
 	if (!Skeleton)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	const FPreviewAssetAttachContainer& Container = Skeleton->PreviewAttachedAssetContainer;
 	const int32 NumAttached = Container.Num();
@@ -3218,7 +3239,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetBoneRefPose(const TSha
 	}
 	else
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton or SkeletalMesh not found: %s"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("Skeleton or SkeletalMesh"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Skeleton or SkeletalMesh not found: %s"), *AssetPath));
 	}
 
 	const TArray<FTransform>& RefBonePose = RefSkel->GetRefBonePose(); // parent-relative
@@ -3329,7 +3350,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetAnimatedBoneTransform(
 	}
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	// Validate the bone exists on the sequence's skeleton up front (clearer error than
 	// a silent identity transform from GetBonePose).
@@ -3464,7 +3485,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetAbpInfo(const TSharedP
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -3524,7 +3545,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddNotify(const TSharedPt
 	Params->TryGetStringField(TEXT("track_name"), TrackName);
 
 	UAnimSequenceBase* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AssetPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
 
 	if (Time < 0.f || Time > Seq->GetPlayLength())
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Time %.3f out of range [0, %.3f]"), Time, Seq->GetPlayLength()));
@@ -3533,7 +3554,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddNotify(const TSharedPt
 	if (!NotifyClass)
 		NotifyClass = FindFirstObject<UClass>(*FString::Printf(TEXT("AnimNotify_%s"), *NotifyClassName), EFindFirstObjectOptions::NativeFirst);
 	if (!NotifyClass || !NotifyClass->IsChildOf(UAnimNotify::StaticClass()))
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Notify class not found or not a UAnimNotify subclass: %s"), *NotifyClassName));
+		return FMonolithActionResult::NotFound(TEXT("Notify class"), NotifyClassName).WithErrorMessage(FString::Printf(TEXT("Notify class not found or not a UAnimNotify subclass: %s"), *NotifyClassName));
 
 	UAnimNotify* NewNotify = NewObject<UAnimNotify>(Seq, NotifyClass);
 	if (!NewNotify)
@@ -3568,7 +3589,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddNotifyState(const TSha
 	Params->TryGetStringField(TEXT("track_name"), TrackName);
 
 	UAnimSequenceBase* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AssetPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
 
 	if (Time < 0.f || Time > Seq->GetPlayLength())
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Time %.3f out of range [0, %.3f]"), Time, Seq->GetPlayLength()));
@@ -3581,7 +3602,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddNotifyState(const TSha
 	if (!NotifyClass)
 		NotifyClass = FindFirstObject<UClass>(*FString::Printf(TEXT("AnimNotifyState_%s"), *NotifyClassName), EFindFirstObjectOptions::NativeFirst);
 	if (!NotifyClass || !NotifyClass->IsChildOf(UAnimNotifyState::StaticClass()))
-		return FMonolithActionResult::Error(FString::Printf(TEXT("NotifyState class not found or not a UAnimNotifyState subclass: %s"), *NotifyClassName));
+		return FMonolithActionResult::NotFound(TEXT("NotifyState class"), NotifyClassName).WithErrorMessage(FString::Printf(TEXT("NotifyState class not found or not a UAnimNotifyState subclass: %s"), *NotifyClassName));
 
 	UAnimNotifyState* NewNotifyState = NewObject<UAnimNotifyState>(Seq, NotifyClass);
 	if (!NewNotifyState)
@@ -3613,7 +3634,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveNotify(const TShare
 	int32 NotifyIndex = static_cast<int32>(Params->GetNumberField(TEXT("notify_index")));
 
 	UAnimSequenceBase* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AssetPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
 
 	if (!Seq->Notifies.IsValidIndex(NotifyIndex))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Invalid notify index: %d (total: %d)"), NotifyIndex, Seq->Notifies.Num()));
@@ -3643,7 +3664,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetNotifyTrack(const TSha
 	int32 TrackIndex = static_cast<int32>(Params->GetNumberField(TEXT("track_index")));
 
 	UAnimSequenceBase* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AssetPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
 
 	if (!Seq->Notifies.IsValidIndex(NotifyIndex))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Invalid notify index: %d (total: %d)"), NotifyIndex, Seq->Notifies.Num()));
@@ -3696,7 +3717,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleListCurves(const TSharedP
 	bool bIncludeKeys = Params->HasField(TEXT("include_keys")) && Params->GetBoolField(TEXT("include_keys"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	const IAnimationDataModel* DataModel = Seq->GetDataModel();
 	if (!DataModel) return FMonolithActionResult::Error(TEXT("No animation data model"));
@@ -3765,7 +3786,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddCurve(const TSharedPtr
 	FString CurveTypeStr = Params->HasField(TEXT("curve_type")) ? Params->GetStringField(TEXT("curve_type")) : TEXT("Float");
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	ERawCurveTrackTypes CurveType = CurveTypeStr.Equals(TEXT("Transform"), ESearchCase::IgnoreCase)
 		? ERawCurveTrackTypes::RCT_Transform
@@ -3801,7 +3822,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveCurve(const TShared
 	FString CurveTypeStr = Params->HasField(TEXT("curve_type")) ? Params->GetStringField(TEXT("curve_type")) : TEXT("Float");
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	ERawCurveTrackTypes CurveType = CurveTypeStr.Equals(TEXT("Transform"), ESearchCase::IgnoreCase)
 		? ERawCurveTrackTypes::RCT_Transform
@@ -3810,7 +3831,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveCurve(const TShared
 	const FAnimationCurveIdentifier CurveId(FName(*CurveName), CurveType);
 
 	if (!Seq->GetDataModel()->FindCurve(CurveId))
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Curve '%s' not found"), *CurveName));
+		return FMonolithActionResult::NotFound(TEXT("Curve"), CurveName).WithErrorMessage(FString::Printf(TEXT("Curve '%s' not found"), *CurveName));
 
 	IAnimationDataController& Controller = Seq->GetController();
 	Controller.OpenBracket(FText::FromString(TEXT("Remove Curve")));
@@ -3835,12 +3856,12 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetCurveKeys(const TShare
 	FString KeysJson = Params->GetStringField(TEXT("keys_json"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	const FAnimationCurveIdentifier CurveId(FName(*CurveName), ERawCurveTrackTypes::RCT_Float);
 
 	if (!Seq->GetDataModel()->FindCurve(CurveId))
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Curve '%s' not found — add it first"), *CurveName));
+		return FMonolithActionResult::NotFound(TEXT("Curve"), CurveName).WithErrorMessage(FString::Printf(TEXT("Curve '%s' not found — add it first"), *CurveName));
 
 	// Parse keys JSON
 	TArray<TSharedPtr<FJsonValue>> JsonKeys;
@@ -3887,12 +3908,12 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetCurveKeys(const TShare
 	FString CurveName = Params->GetStringField(TEXT("curve_name"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	const FAnimationCurveIdentifier CurveId(FName(*CurveName), ERawCurveTrackTypes::RCT_Float);
 	const FAnimCurveBase* CurveBase = Seq->GetDataModel()->FindCurve(CurveId);
 	if (!CurveBase)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Curve '%s' not found"), *CurveName));
+		return FMonolithActionResult::NotFound(TEXT("Curve"), CurveName).WithErrorMessage(FString::Printf(TEXT("Curve '%s' not found"), *CurveName));
 
 	const FFloatCurve* FloatCurve = static_cast<const FFloatCurve*>(CurveBase);
 	const TArray<FRichCurveKey>& Keys = FloatCurve->FloatCurve.GetConstRefOfKeys();
@@ -4004,11 +4025,11 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddSocket(const TSharedPt
 	FString SocketName = Params->GetStringField(TEXT("socket_name"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	// Validate bone exists
 	if (Skeleton->GetReferenceSkeleton().FindBoneIndex(FName(*BoneName)) == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Bone '%s' not found in skeleton"), *BoneName));
+		return FMonolithActionResult::NotFound(TEXT("Bone"), BoneName).WithErrorMessage(FString::Printf(TEXT("Bone '%s' not found in skeleton"), *BoneName));
 
 	// Check socket doesn't already exist
 	if (Skeleton->FindSocket(FName(*SocketName)))
@@ -4063,7 +4084,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveSocket(const TShare
 	FString SocketName = Params->GetStringField(TEXT("socket_name"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	USkeletalMeshSocket* FoundSocket = nullptr;
 	for (USkeletalMeshSocket* Socket : Skeleton->Sockets)
@@ -4076,7 +4097,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveSocket(const TShare
 	}
 
 	if (!FoundSocket)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Socket '%s' not found"), *SocketName));
+		return FMonolithActionResult::NotFound(TEXT("Socket"), SocketName).WithErrorMessage(FString::Printf(TEXT("Socket '%s' not found"), *SocketName));
 
 	Skeleton->Sockets.Remove(FoundSocket);
 	Skeleton->MarkPackageDirty();
@@ -4093,7 +4114,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetSocketTransform(const 
 	FString SocketName = Params->GetStringField(TEXT("socket_name"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	USkeletalMeshSocket* FoundSocket = nullptr;
 	for (USkeletalMeshSocket* Socket : Skeleton->Sockets)
@@ -4106,7 +4127,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetSocketTransform(const 
 	}
 
 	if (!FoundSocket)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Socket '%s' not found"), *SocketName));
+		return FMonolithActionResult::NotFound(TEXT("Socket"), SocketName).WithErrorMessage(FString::Printf(TEXT("Socket '%s' not found"), *SocketName));
 
 	bool bAnySet = false;
 
@@ -4161,7 +4182,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetSkeletonCurves(const T
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	TArray<TSharedPtr<FJsonValue>> CurvesArray;
 	Skeleton->ForEachCurveMetaData([&CurvesArray](FName CurveName, const FCurveMetaData& MetaData)
@@ -4184,7 +4205,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetBlendSpaceAxis(const T
 	FString AxisStr = Params->GetStringField(TEXT("axis"));
 
 	UBlendSpace* BS = FMonolithAssetUtils::LoadAssetByPath<UBlendSpace>(AssetPath);
-	if (!BS) return FMonolithActionResult::Error(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
+	if (!BS) return FMonolithAssetUtils::AssetNotFound(TEXT("BlendSpace"), AssetPath, UBlendSpace::StaticClass()).WithErrorMessage(FString::Printf(TEXT("BlendSpace not found: %s"), *AssetPath));
 
 	int32 AxisIndex;
 	if (AxisStr.Equals(TEXT("X"), ESearchCase::IgnoreCase))
@@ -4255,7 +4276,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetRootMotionSettings(con
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	bool bAnySet = false;
 
@@ -4328,7 +4349,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateSequence(const TSha
 	FString SkeletonPath = Params->GetStringField(TEXT("skeleton_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	// Extract asset name from path
 	FString AssetName;
@@ -4384,7 +4405,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleDuplicateSequence(const T
 	UObject* SourceObj = FMonolithAssetUtils::LoadAssetByPath<UObject>(SourcePath);
 	if (!SourceObj)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Source asset not found: %s"), *SourcePath));
+		return FMonolithActionResult::NotFound(TEXT("Source asset"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source asset not found: %s"), *SourcePath));
 	}
 
 	// Check dest doesn't exist
@@ -4419,7 +4440,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateMontage(const TShar
 	FString SkeletonPath = Params->GetStringField(TEXT("skeleton_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	// Extract asset name from path
 	FString AssetName;
@@ -4483,7 +4504,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetMontageBlend(const TSh
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimMontage* Montage = FMonolithAssetUtils::LoadAssetByPath<UAnimMontage>(AssetPath);
-	if (!Montage) return FMonolithActionResult::Error(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
+	if (!Montage) return FMonolithAssetUtils::AssetNotFound(TEXT("Montage"), AssetPath, UAnimMontage::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
 
 	bool bAnySet = false;
 
@@ -4535,7 +4556,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddMontageSlot(const TSha
 	FString SlotName = Params->GetStringField(TEXT("slot_name"));
 
 	UAnimMontage* Montage = FMonolithAssetUtils::LoadAssetByPath<UAnimMontage>(AssetPath);
-	if (!Montage) return FMonolithActionResult::Error(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
+	if (!Montage) return FMonolithAssetUtils::AssetNotFound(TEXT("Montage"), AssetPath, UAnimMontage::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
 
 	// Check if slot already exists
 	for (const FSlotAnimationTrack& Track : Montage->SlotAnimTracks)
@@ -4568,7 +4589,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetMontageSlot(const TSha
 	FString SlotName = Params->GetStringField(TEXT("slot_name"));
 
 	UAnimMontage* Montage = FMonolithAssetUtils::LoadAssetByPath<UAnimMontage>(AssetPath);
-	if (!Montage) return FMonolithActionResult::Error(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
+	if (!Montage) return FMonolithAssetUtils::AssetNotFound(TEXT("Montage"), AssetPath, UAnimMontage::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
 
 	if (SlotIndex < 0 || SlotIndex >= Montage->SlotAnimTracks.Num())
 	{
@@ -4601,7 +4622,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleApplyAnimModifier(const T
 	FString ModifierClass = Params->GetStringField(TEXT("modifier_class"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	// Try to find the class — with and without U prefix
 	UClass* ModifierUClass = FindFirstObject<UClass>(*ModifierClass, EFindFirstObjectOptions::NativeFirst);
@@ -4611,7 +4632,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleApplyAnimModifier(const T
 	}
 	if (!ModifierUClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Modifier class not found: %s"), *ModifierClass));
+		return FMonolithActionResult::NotFound(TEXT("Modifier class"), ModifierClass).WithErrorMessage(FString::Printf(TEXT("Modifier class not found: %s"), *ModifierClass));
 	}
 
 	if (!ModifierUClass->IsChildOf(UAnimationModifier::StaticClass()))
@@ -4796,7 +4817,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleListAnimModifiers(const T
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	TArray<TSharedPtr<FJsonValue>> ModArray;
 
@@ -4849,7 +4870,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetCompositeInfo(const TS
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimComposite* Composite = FMonolithAssetUtils::LoadAssetByPath<UAnimComposite>(AssetPath);
-	if (!Composite) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimComposite not found: %s"), *AssetPath));
+	if (!Composite) return FMonolithActionResult::NotFound(TEXT("AnimComposite"), AssetPath).WithErrorMessage(FString::Printf(TEXT("AnimComposite not found: %s"), *AssetPath));
 
 	TArray<TSharedPtr<FJsonValue>> SegArray;
 	const TArray<FAnimSegment>& Segments = Composite->AnimationTrack.AnimSegments;
@@ -4888,10 +4909,10 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddCompositeSegment(const
 	int32 LoopingCount = Params->HasField(TEXT("looping_count")) ? static_cast<int32>(Params->GetNumberField(TEXT("looping_count"))) : 1;
 
 	UAnimComposite* Composite = FMonolithAssetUtils::LoadAssetByPath<UAnimComposite>(AssetPath);
-	if (!Composite) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimComposite not found: %s"), *AssetPath));
+	if (!Composite) return FMonolithActionResult::NotFound(TEXT("AnimComposite"), AssetPath).WithErrorMessage(FString::Printf(TEXT("AnimComposite not found: %s"), *AssetPath));
 
 	UAnimSequenceBase* Anim = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AnimPath);
-	if (!Anim) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation not found: %s"), *AnimPath));
+	if (!Anim) return FMonolithActionResult::NotFound(TEXT("Animation"), AnimPath).WithErrorMessage(FString::Printf(TEXT("Animation not found: %s"), *AnimPath));
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("Add Composite Segment")));
 	Composite->Modify();
@@ -4925,7 +4946,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveCompositeSegment(co
 	int32 SegmentIndex = static_cast<int32>(Params->GetNumberField(TEXT("segment_index")));
 
 	UAnimComposite* Composite = FMonolithAssetUtils::LoadAssetByPath<UAnimComposite>(AssetPath);
-	if (!Composite) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimComposite not found: %s"), *AssetPath));
+	if (!Composite) return FMonolithActionResult::NotFound(TEXT("AnimComposite"), AssetPath).WithErrorMessage(FString::Printf(TEXT("AnimComposite not found: %s"), *AssetPath));
 
 	TArray<FAnimSegment>& Segments = Composite->AnimationTrack.AnimSegments;
 	if (SegmentIndex < 0 || SegmentIndex >= Segments.Num())
@@ -4962,7 +4983,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetAbpVariables(const TSh
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	TArray<TSharedPtr<FJsonValue>> VarsArr;
 	for (const FBPVariableDescription& Var : ABP->NewVariables)
@@ -4996,7 +5017,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetAbpLinkedAssets(const 
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	IAssetRegistry& AR = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
 	FName PackageName = FName(*ABP->GetPackage()->GetName());
@@ -5066,7 +5087,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetCompatibleSkeletons(co
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
 	if (!Skeleton)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
@@ -5093,7 +5114,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddCompatibleSkeleton(con
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
 	if (!Skeleton)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	{
 		FString WritableError;
@@ -5105,7 +5126,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddCompatibleSkeleton(con
 
 	USkeleton* Compat = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(CompatPath);
 	if (!Compat)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Compatible Skeleton not found: %s"), *CompatPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Compatible Skeleton"), CompatPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Compatible Skeleton not found: %s"), *CompatPath));
 
 	if (Skeleton == Compat)
 		return FMonolithActionResult::Error(TEXT("Cannot mark a skeleton compatible with itself"));
@@ -5149,7 +5170,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveCompatibleSkeleton(
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
 	if (!Skeleton)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), AssetPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
 	{
 		FString WritableError;
@@ -5162,7 +5183,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveCompatibleSkeleton(
 	// USkeleton::RemoveCompatibleSkeleton() exists in 5.7+.
 	USkeleton* Compat = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(CompatPath);
 	if (!Compat)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Compatible Skeleton not found: %s"), *CompatPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Compatible Skeleton"), CompatPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Compatible Skeleton not found: %s"), *CompatPath));
 
 	bool bWasCompatible = false;
 	for (const TSoftObjectPtr<USkeleton>& Existing : Skeleton->GetCompatibleSkeletons())
@@ -5204,7 +5225,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetControlRigInfo(const T
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UControlRigBlueprint* CRB = FMonolithAssetUtils::LoadAssetByPath<UControlRigBlueprint>(AssetPath);
-	if (!CRB) return FMonolithActionResult::Error(FString::Printf(TEXT("ControlRigBlueprint not found: %s"), *AssetPath));
+	if (!CRB) return FMonolithActionResult::NotFound(TEXT("ControlRigBlueprint"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ControlRigBlueprint not found: %s"), *AssetPath));
 
 	URigHierarchy* H = CRB->Hierarchy;
 	if (!H) return FMonolithActionResult::Error(TEXT("ControlRigBlueprint has no hierarchy"));
@@ -5289,7 +5310,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetControlRigVariables(co
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UControlRigBlueprint* CRB = FMonolithAssetUtils::LoadAssetByPath<UControlRigBlueprint>(AssetPath);
-	if (!CRB) return FMonolithActionResult::Error(FString::Printf(TEXT("ControlRigBlueprint not found: %s"), *AssetPath));
+	if (!CRB) return FMonolithActionResult::NotFound(TEXT("ControlRigBlueprint"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ControlRigBlueprint not found: %s"), *AssetPath));
 
 	// Part 1 — Animatable controls from hierarchy
 	TArray<TSharedPtr<FJsonValue>> AnimControlsArr;
@@ -5381,7 +5402,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddControlRigElement(cons
 		return FMonolithActionResult::Error(TEXT("name must not be empty"));
 
 	UControlRigBlueprint* CRB = FMonolithAssetUtils::LoadAssetByPath<UControlRigBlueprint>(AssetPath);
-	if (!CRB) return FMonolithActionResult::Error(FString::Printf(TEXT("ControlRigBlueprint not found: %s"), *AssetPath));
+	if (!CRB) return FMonolithActionResult::NotFound(TEXT("ControlRigBlueprint"), AssetPath).WithErrorMessage(FString::Printf(TEXT("ControlRigBlueprint not found: %s"), *AssetPath));
 
 	URigHierarchyController* HC = CRB->GetHierarchyController();
 	if (!HC) return FMonolithActionResult::Error(TEXT("Failed to get hierarchy controller"));
@@ -5408,7 +5429,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddControlRigElement(cons
 		// Validate parent exists
 		URigHierarchy* H = CRB->Hierarchy;
 		if (!H || !H->Find(ParentKey))
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Parent element not found: %s"), *ParentName));
+			return FMonolithActionResult::NotFound(TEXT("Parent element"), ParentName).WithErrorMessage(FString::Printf(TEXT("Parent element not found: %s"), *ParentName));
 	}
 
 	// Parse optional transform {tx, ty, tz, rx, ry, rz}
@@ -5519,7 +5540,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetIKRigInfo(const TShare
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UIKRigDefinition* Asset = FMonolithAssetUtils::LoadAssetByPath<UIKRigDefinition>(AssetPath);
-	if (!Asset) return FMonolithActionResult::Error(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
+	if (!Asset) return FMonolithActionResult::NotFound(TEXT("IKRigDefinition"), AssetPath).WithErrorMessage(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
 
 	UIKRigController* C = UIKRigController::GetController(Asset);
 	if (!C) return FMonolithActionResult::Error(TEXT("Failed to get IKRigController"));
@@ -5644,7 +5665,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddIKSolver(const TShared
 	FString SolverType = Params->GetStringField(TEXT("solver_type"));
 
 	UIKRigDefinition* Asset = FMonolithAssetUtils::LoadAssetByPath<UIKRigDefinition>(AssetPath);
-	if (!Asset) return FMonolithActionResult::Error(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
+	if (!Asset) return FMonolithActionResult::NotFound(TEXT("IKRigDefinition"), AssetPath).WithErrorMessage(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
 
 	UIKRigController* C = UIKRigController::GetController(Asset);
 	if (!C) return FMonolithActionResult::Error(TEXT("Failed to get IKRigController"));
@@ -5835,7 +5856,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveIKSolver(const TSha
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UIKRigDefinition* Asset = FMonolithAssetUtils::LoadAssetByPath<UIKRigDefinition>(AssetPath);
-	if (!Asset) return FMonolithActionResult::Error(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
+	if (!Asset) return FMonolithActionResult::NotFound(TEXT("IKRigDefinition"), AssetPath).WithErrorMessage(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
 
 	UIKRigController* C = UIKRigController::GetController(Asset);
 	if (!C) return FMonolithActionResult::Error(TEXT("Failed to get IKRigController"));
@@ -5955,7 +5976,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetRetargeterInfo(const T
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UIKRetargeter* Asset = FMonolithAssetUtils::LoadAssetByPath<UIKRetargeter>(AssetPath);
-	if (!Asset) return FMonolithActionResult::Error(FString::Printf(TEXT("IKRetargeter not found: %s"), *AssetPath));
+	if (!Asset) return FMonolithActionResult::NotFound(TEXT("IKRetargeter"), AssetPath).WithErrorMessage(FString::Printf(TEXT("IKRetargeter not found: %s"), *AssetPath));
 
 	UIKRetargeterController* C = UIKRetargeterController::GetController(Asset);
 	if (!C) return FMonolithActionResult::Error(TEXT("Failed to get UIKRetargeterController"));
@@ -6045,7 +6066,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetRetargetChainMapping(c
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UIKRetargeter* Asset = FMonolithAssetUtils::LoadAssetByPath<UIKRetargeter>(AssetPath);
-	if (!Asset) return FMonolithActionResult::Error(FString::Printf(TEXT("IKRetargeter not found: %s"), *AssetPath));
+	if (!Asset) return FMonolithActionResult::NotFound(TEXT("IKRetargeter"), AssetPath).WithErrorMessage(FString::Printf(TEXT("IKRetargeter not found: %s"), *AssetPath));
 
 	UIKRetargeterController* C = UIKRetargeterController::GetController(Asset);
 	if (!C) return FMonolithActionResult::Error(TEXT("Failed to get UIKRetargeterController"));
@@ -6281,14 +6302,14 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddStateToMachine(const T
 	if (Params->TryGetNumberField(TEXT("position_x"), TempVal)) PosX = static_cast<int32>(TempVal);
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<int32>(TempVal);
 
-	if (MachineName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
-	if (StateName.IsEmpty())   return FMonolithActionResult::Error(TEXT("Missing required parameter: state_name"));
+	if (MachineName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
+	if (StateName.IsEmpty())   return FMonolithActionResult::InvalidParam(TEXT("state_name"), TEXT("Missing required parameter: state_name")).WithErrorMessage(TEXT("Missing required parameter: state_name"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UAnimationStateMachineGraph* SMGraph = FindStateMachineGraphByName(ABP, MachineName);
-	if (!SMGraph) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
+	if (!SMGraph) return FMonolithActionResult::NotFound(TEXT("State machine"), MachineName).WithErrorMessage(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
 
 	// Reject duplicate state names up front
 	if (FindStateNodeByName(SMGraph, StateName))
@@ -6367,14 +6388,14 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddConduit(const TSharedP
 	if (Params->TryGetNumberField(TEXT("position_x"), TempVal)) PosX = static_cast<int32>(TempVal);
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<int32>(TempVal);
 
-	if (MachineName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
-	if (ConduitName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: conduit_name"));
+	if (MachineName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
+	if (ConduitName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("conduit_name"), TEXT("Missing required parameter: conduit_name")).WithErrorMessage(TEXT("Missing required parameter: conduit_name"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UAnimationStateMachineGraph* SMGraph = FindStateMachineGraphByName(ABP, MachineName);
-	if (!SMGraph) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
+	if (!SMGraph) return FMonolithActionResult::NotFound(TEXT("State machine"), MachineName).WithErrorMessage(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
 
 	// Reject name collisions against existing states AND conduits (both share the
 	// state-name namespace, since a conduit's name derives from its BoundGraph).
@@ -6445,15 +6466,15 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddTransition(const TShar
 	FString FromState   = Params->GetStringField(TEXT("from_state"));
 	FString ToState     = Params->GetStringField(TEXT("to_state"));
 
-	if (MachineName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
-	if (FromState.IsEmpty())   return FMonolithActionResult::Error(TEXT("Missing required parameter: from_state"));
-	if (ToState.IsEmpty())     return FMonolithActionResult::Error(TEXT("Missing required parameter: to_state"));
+	if (MachineName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
+	if (FromState.IsEmpty())   return FMonolithActionResult::InvalidParam(TEXT("from_state"), TEXT("Missing required parameter: from_state")).WithErrorMessage(TEXT("Missing required parameter: from_state"));
+	if (ToState.IsEmpty())     return FMonolithActionResult::InvalidParam(TEXT("to_state"), TEXT("Missing required parameter: to_state")).WithErrorMessage(TEXT("Missing required parameter: to_state"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UAnimationStateMachineGraph* SMGraph = FindStateMachineGraphByName(ABP, MachineName);
-	if (!SMGraph) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
+	if (!SMGraph) return FMonolithActionResult::NotFound(TEXT("State machine"), MachineName).WithErrorMessage(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
 
 	UAnimStateNode* FromNode = FindStateNodeByName(SMGraph, FromState);
 	if (!FromNode) return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found in machine '%s'"), *FromState, *MachineName));
@@ -6539,17 +6560,17 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveAnimState(const TSh
 	FString MachineName = Params->GetStringField(TEXT("machine_name"));
 	FString StateName   = Params->GetStringField(TEXT("state_name"));
 
-	if (MachineName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
-	if (StateName.IsEmpty())   return FMonolithActionResult::Error(TEXT("Missing required parameter: state_name"));
+	if (MachineName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
+	if (StateName.IsEmpty())   return FMonolithActionResult::InvalidParam(TEXT("state_name"), TEXT("Missing required parameter: state_name")).WithErrorMessage(TEXT("Missing required parameter: state_name"));
 
 	bool bRemoveDependentTransitions = true;
 	Params->TryGetBoolField(TEXT("remove_dependent_transitions"), bRemoveDependentTransitions);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UAnimationStateMachineGraph* SMGraph = FindStateMachineGraphByName(ABP, MachineName);
-	if (!SMGraph) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
+	if (!SMGraph) return FMonolithActionResult::NotFound(TEXT("State machine"), MachineName).WithErrorMessage(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
 
 	UAnimStateNode* StateNode = FindStateNodeByName(SMGraph, StateName);
 	if (!StateNode) return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found in machine '%s'"), *StateName, *MachineName));
@@ -6657,14 +6678,14 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetAnimEntryState(const T
 	FString MachineName = Params->GetStringField(TEXT("machine_name"));
 	FString StateName   = Params->GetStringField(TEXT("state_name"));
 
-	if (MachineName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
-	if (StateName.IsEmpty())   return FMonolithActionResult::Error(TEXT("Missing required parameter: state_name"));
+	if (MachineName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
+	if (StateName.IsEmpty())   return FMonolithActionResult::InvalidParam(TEXT("state_name"), TEXT("Missing required parameter: state_name")).WithErrorMessage(TEXT("Missing required parameter: state_name"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UAnimationStateMachineGraph* SMGraph = FindStateMachineGraphByName(ABP, MachineName);
-	if (!SMGraph) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
+	if (!SMGraph) return FMonolithActionResult::NotFound(TEXT("State machine"), MachineName).WithErrorMessage(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
 
 	UAnimStateEntryNode* EntryNode = FindEntryNode(SMGraph);
 	if (!EntryNode) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' has no entry node (corrupt)"), *MachineName));
@@ -6745,15 +6766,15 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveAnimTransition(cons
 	FString FromState   = Params->GetStringField(TEXT("from_state"));
 	FString ToState     = Params->GetStringField(TEXT("to_state"));
 
-	if (MachineName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
-	if (FromState.IsEmpty())   return FMonolithActionResult::Error(TEXT("Missing required parameter: from_state"));
-	if (ToState.IsEmpty())     return FMonolithActionResult::Error(TEXT("Missing required parameter: to_state"));
+	if (MachineName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
+	if (FromState.IsEmpty())   return FMonolithActionResult::InvalidParam(TEXT("from_state"), TEXT("Missing required parameter: from_state")).WithErrorMessage(TEXT("Missing required parameter: from_state"));
+	if (ToState.IsEmpty())     return FMonolithActionResult::InvalidParam(TEXT("to_state"), TEXT("Missing required parameter: to_state")).WithErrorMessage(TEXT("Missing required parameter: to_state"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UAnimationStateMachineGraph* SMGraph = FindStateMachineGraphByName(ABP, MachineName);
-	if (!SMGraph) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
+	if (!SMGraph) return FMonolithActionResult::NotFound(TEXT("State machine"), MachineName).WithErrorMessage(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
 
 	UAnimStateNode* FromNode = FindStateNodeByName(SMGraph, FromState);
 	if (!FromNode) return FMonolithActionResult::Error(FString::Printf(TEXT("State '%s' not found in machine '%s'"), *FromState, *MachineName));
@@ -7433,12 +7454,12 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetTransitionRule(const T
 	FString FromState    = Params->GetStringField(TEXT("from_state"));
 	FString ToState      = Params->GetStringField(TEXT("to_state"));
 
-	if (MachineName.IsEmpty())  return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
-	if (FromState.IsEmpty())    return FMonolithActionResult::Error(TEXT("Missing required parameter: from_state"));
-	if (ToState.IsEmpty())      return FMonolithActionResult::Error(TEXT("Missing required parameter: to_state"));
+	if (MachineName.IsEmpty())  return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
+	if (FromState.IsEmpty())    return FMonolithActionResult::InvalidParam(TEXT("from_state"), TEXT("Missing required parameter: from_state")).WithErrorMessage(TEXT("Missing required parameter: from_state"));
+	if (ToState.IsEmpty())      return FMonolithActionResult::InvalidParam(TEXT("to_state"), TEXT("Missing required parameter: to_state")).WithErrorMessage(TEXT("Missing required parameter: to_state"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// --- Resolve the rule spec (back-compat) ---------------------------------------------
 	// Legacy form: a bare `variable_name` (string) meaning a bool-variable rule. New form: a
@@ -7481,7 +7502,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetTransitionRule(const T
 		}
 		else if (!IsInheritedBlueprintVisibleBool(ABP, ParsedRule.Variable))
 		{
-			return FMonolithActionResult::Error(FString::Printf(
+			return FMonolithActionResult::NotFound(TEXT("Variable"), ParsedRule.Variable).WithErrorMessage(FString::Printf(
 				TEXT("Variable '%s' not found in ABP (no BP variable or inherited Blueprint-visible bool). Use get_abp_variables to list available variables."), *ParsedRule.Variable));
 		}
 	}
@@ -7514,7 +7535,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetTransitionRule(const T
 	}
 
 	UAnimationStateMachineGraph* SMGraph = FindStateMachineGraphByName(ABP, MachineName);
-	if (!SMGraph) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
+	if (!SMGraph) return FMonolithActionResult::NotFound(TEXT("State machine"), MachineName).WithErrorMessage(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
 
 	UAnimStateTransitionNode* TransNode = FindTransitionNode(SMGraph, FromState, ToState);
 	if (!TransNode)
@@ -7845,15 +7866,15 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetTransitionRule(const T
 	FString FromState   = Params->GetStringField(TEXT("from_state"));
 	FString ToState     = Params->GetStringField(TEXT("to_state"));
 
-	if (MachineName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: machine_name"));
-	if (FromState.IsEmpty())   return FMonolithActionResult::Error(TEXT("Missing required parameter: from_state"));
-	if (ToState.IsEmpty())     return FMonolithActionResult::Error(TEXT("Missing required parameter: to_state"));
+	if (MachineName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("machine_name"), TEXT("Missing required parameter: machine_name")).WithErrorMessage(TEXT("Missing required parameter: machine_name"));
+	if (FromState.IsEmpty())   return FMonolithActionResult::InvalidParam(TEXT("from_state"), TEXT("Missing required parameter: from_state")).WithErrorMessage(TEXT("Missing required parameter: from_state"));
+	if (ToState.IsEmpty())     return FMonolithActionResult::InvalidParam(TEXT("to_state"), TEXT("Missing required parameter: to_state")).WithErrorMessage(TEXT("Missing required parameter: to_state"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UAnimationStateMachineGraph* SMGraph = FindStateMachineGraphByName(ABP, MachineName);
-	if (!SMGraph) return FMonolithActionResult::Error(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
+	if (!SMGraph) return FMonolithActionResult::NotFound(TEXT("State machine"), MachineName).WithErrorMessage(FString::Printf(TEXT("State machine '%s' not found in ABP"), *MachineName));
 
 	UAnimStateTransitionNode* TransNode = FindTransitionNode(SMGraph, FromState, ToState);
 	if (!TransNode)
@@ -8138,7 +8159,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateStateMachine(const 
 	if (Params->TryGetNumberField(TEXT("position_y"), TempVal)) PosY = static_cast<int32>(TempVal);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UEdGraph* AnimGraph = FindAnimGraph(ABP, GraphName);
 	if (!AnimGraph)
@@ -8244,14 +8265,14 @@ FMonolithActionResult FMonolithAnimationActions::HandleBuildStateMachine(const T
 	const TArray<TSharedPtr<FJsonValue>>* StatesJson = nullptr;
 	if (!Params->TryGetArrayField(TEXT("states"), StatesJson) || !StatesJson || StatesJson->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or empty required parameter: states (array of {name, animation?})"));
+		return FMonolithActionResult::InvalidParam(TEXT("states"), TEXT("Missing or empty required parameter: states (array of {name, animation?})")).WithErrorMessage(TEXT("Missing or empty required parameter: states (array of {name, animation?})"));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* TransJson = nullptr;
 	Params->TryGetArrayField(TEXT("transitions"), TransJson);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UEdGraph* AnimGraph = FindAnimGraph(ABP, GraphName);
 	if (!AnimGraph)
@@ -8620,7 +8641,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateBlendSpace(const TS
 	FString SkeletonPath = Params->GetStringField(TEXT("skeleton_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	FString AssetName;
 	int32 LastSlash;
@@ -8684,7 +8705,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateBlendSpace1D(const 
 	FString SkeletonPath = Params->GetStringField(TEXT("skeleton_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	FString AssetName;
 	int32 LastSlash;
@@ -8740,7 +8761,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateAimOffset(const TSh
 	FString SkeletonPath = Params->GetStringField(TEXT("skeleton_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	FString AssetName;
 	int32 LastSlash;
@@ -8802,7 +8823,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateAimOffset1D(const T
 	FString SkeletonPath = Params->GetStringField(TEXT("skeleton_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	FString AssetName;
 	int32 LastSlash;
@@ -8857,7 +8878,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateComposite(const TSh
 	FString SkeletonPath = Params->GetStringField(TEXT("skeleton_path"));
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	FString AssetName;
 	int32 LastSlash;
@@ -8903,7 +8924,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateAnimBlueprint(const
 	FString ParentClassName = Params->HasField(TEXT("parent_class")) ? Params->GetStringField(TEXT("parent_class")) : TEXT("AnimInstance");
 
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPath);
-	if (!Skeleton) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+	if (!Skeleton) return FMonolithAssetUtils::AssetNotFound(TEXT("Skeleton"), SkeletonPath, USkeleton::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
 
 	FString AssetName;
 	int32 LastSlash;
@@ -8937,7 +8958,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateAnimBlueprint(const
 		}
 		if (!ParentClass || !ParentClass->IsChildOf(UAnimInstance::StaticClass()))
 		{
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Parent class '%s' not found or not derived from UAnimInstance"), *ParentClassName));
+			return FMonolithActionResult::NotFound(TEXT("Parent class"), ParentClassName).WithErrorMessage(FString::Printf(TEXT("Parent class '%s' not found or not derived from UAnimInstance"), *ParentClassName));
 		}
 	}
 
@@ -9002,10 +9023,10 @@ FMonolithActionResult FMonolithAnimationActions::HandleCompareSkeletons(const TS
 	FString SkeletonPathB = Params->GetStringField(TEXT("skeleton_b"));
 
 	USkeleton* SkeletonA = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPathA);
-	if (!SkeletonA) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton A not found: %s"), *SkeletonPathA));
+	if (!SkeletonA) return FMonolithActionResult::NotFound(TEXT("Skeleton A"), SkeletonPathA).WithErrorMessage(FString::Printf(TEXT("Skeleton A not found: %s"), *SkeletonPathA));
 
 	USkeleton* SkeletonB = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(SkeletonPathB);
-	if (!SkeletonB) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton B not found: %s"), *SkeletonPathB));
+	if (!SkeletonB) return FMonolithActionResult::NotFound(TEXT("Skeleton B"), SkeletonPathB).WithErrorMessage(FString::Printf(TEXT("Skeleton B not found: %s"), *SkeletonPathB));
 
 	const FReferenceSkeleton& RefA = SkeletonA->GetReferenceSkeleton();
 	const FReferenceSkeleton& RefB = SkeletonB->GetReferenceSkeleton();
@@ -9088,7 +9109,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetSequenceProperties(con
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	bool bAnySet = false;
 
@@ -9145,7 +9166,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetAdditiveSettings(const
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	bool bAnySet = false;
 
@@ -9265,7 +9286,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetCompressionSettings(co
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	bool bAnySet = false;
 
@@ -9333,7 +9354,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetSyncMarkers(const TSha
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	TArray<TSharedPtr<FJsonValue>> MarkersArr;
 	for (int32 i = 0; i < Seq->AuthoredSyncMarkers.Num(); ++i)
@@ -9365,7 +9386,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddSyncMarker(const TShar
 	int32 TrackIndex = Params->HasField(TEXT("track_index")) ? static_cast<int32>(Params->GetNumberField(TEXT("track_index"))) : 0;
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("Add Sync Marker")));
 	Seq->Modify();
@@ -9399,7 +9420,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveSyncMarker(const TS
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	bool bHasName = Params->HasField(TEXT("marker_name"));
 	bool bHasIndex = Params->HasField(TEXT("marker_index"));
@@ -9455,7 +9476,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRenameSyncMarker(const TS
 	FString NewName = Params->GetStringField(TEXT("new_name"));
 
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 
 	// Count how many markers have the old name before renaming
 	FName OldFName(*OldName);
@@ -9497,7 +9518,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleBatchExecute(const TShare
 	TSharedPtr<FJsonValue> OpsField = Params->TryGetField(TEXT("operations"));
 	if (!OpsField.IsValid())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required field: operations"));
+		return FMonolithActionResult::InvalidParam(TEXT("operations"), TEXT("Missing required field: operations"));
 	}
 	if (OpsField->Type == EJson::Array)
 	{
@@ -9682,7 +9703,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddMontageAnimSegment(con
 	int32 LoopingCount = Params->HasField(TEXT("looping_count")) ? static_cast<int32>(Params->GetNumberField(TEXT("looping_count"))) : 1;
 
 	UAnimMontage* Montage = FMonolithAssetUtils::LoadAssetByPath<UAnimMontage>(AssetPath);
-	if (!Montage) return FMonolithActionResult::Error(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
+	if (!Montage) return FMonolithAssetUtils::AssetNotFound(TEXT("Montage"), AssetPath, UAnimMontage::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Montage not found: %s"), *AssetPath));
 
 	if (SlotIndex < 0 || SlotIndex >= Montage->SlotAnimTracks.Num())
 	{
@@ -9690,7 +9711,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddMontageAnimSegment(con
 	}
 
 	UAnimSequenceBase* Anim = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AnimPath);
-	if (!Anim) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation not found: %s"), *AnimPath));
+	if (!Anim) return FMonolithActionResult::NotFound(TEXT("Animation"), AnimPath).WithErrorMessage(FString::Printf(TEXT("Animation not found: %s"), *AnimPath));
 
 	// Auto-calculate StartPos from existing segments if not provided
 	float StartPos = 0.0f;
@@ -9751,10 +9772,10 @@ FMonolithActionResult FMonolithAnimationActions::HandleCloneNotifySetup(const TS
 	Params->TryGetBoolField(TEXT("replace_existing"), bReplaceExisting);
 
 	UAnimSequenceBase* Source = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(SourcePath);
-	if (!Source) return FMonolithActionResult::Error(FString::Printf(TEXT("Source animation not found: %s"), *SourcePath));
+	if (!Source) return FMonolithActionResult::NotFound(TEXT("Source animation"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source animation not found: %s"), *SourcePath));
 
 	UAnimSequenceBase* Target = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(TargetPath);
-	if (!Target) return FMonolithActionResult::Error(FString::Printf(TEXT("Target animation not found: %s"), *TargetPath));
+	if (!Target) return FMonolithActionResult::NotFound(TEXT("Target animation"), TargetPath).WithErrorMessage(FString::Printf(TEXT("Target animation not found: %s"), *TargetPath));
 
 	if (Source == Target)
 		return FMonolithActionResult::Error(TEXT("Source and target cannot be the same asset"));
@@ -9895,7 +9916,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleBulkAddNotify(const TShar
 	TArray<TSharedPtr<FJsonValue>> PathValues;
 	TSharedPtr<FJsonValue> PathsField = Params->TryGetField(TEXT("asset_paths"));
 	if (!PathsField.IsValid())
-		return FMonolithActionResult::Error(TEXT("Missing required field: asset_paths"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_paths"), TEXT("Missing required field: asset_paths"));
 
 	if (PathsField->Type == EJson::Array)
 	{
@@ -10225,7 +10246,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleBuildSequenceFromPoses(co
 	TArray<TSharedPtr<FJsonValue>> FramesArr;
 	TSharedPtr<FJsonValue> FramesField = Params->TryGetField(TEXT("frames"));
 	if (!FramesField.IsValid())
-		return FMonolithActionResult::Error(TEXT("Missing required field: frames"));
+		return FMonolithActionResult::InvalidParam(TEXT("frames"), TEXT("Missing required field: frames"));
 
 	if (FramesField->Type == EJson::Array)
 	{
@@ -10404,7 +10425,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetNotifyProperties(const
 	int32 NotifyIndex = static_cast<int32>(Params->GetNumberField(TEXT("notify_index")));
 
 	UAnimSequenceBase* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequenceBase>(AssetPath);
-	if (!Seq) return FMonolithActionResult::Error(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
+	if (!Seq) return FMonolithAssetUtils::AssetNotFound(TEXT("Animation asset"), AssetPath, UAnimationAsset::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation asset not found: %s"), *AssetPath));
 
 	if (NotifyIndex < 0 || NotifyIndex >= Seq->Notifies.Num())
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Invalid notify_index %d (asset has %d notifies)"), NotifyIndex, Seq->Notifies.Num()));
@@ -10598,7 +10619,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetPhysicsAssetInfo(const
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UPhysicsAsset* PhysAsset = FMonolithAssetUtils::LoadAssetByPath<UPhysicsAsset>(AssetPath);
-	if (!PhysAsset) return FMonolithActionResult::Error(FString::Printf(TEXT("Physics asset not found: %s"), *AssetPath));
+	if (!PhysAsset) return FMonolithActionResult::NotFound(TEXT("Physics asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Physics asset not found: %s"), *AssetPath));
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), PhysAsset->GetPathName());
@@ -10704,11 +10725,11 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetBodyProperties(const T
 	FString BoneName = Params->GetStringField(TEXT("bone_name"));
 
 	UPhysicsAsset* PhysAsset = FMonolithAssetUtils::LoadAssetByPath<UPhysicsAsset>(AssetPath);
-	if (!PhysAsset) return FMonolithActionResult::Error(FString::Printf(TEXT("Physics asset not found: %s"), *AssetPath));
+	if (!PhysAsset) return FMonolithActionResult::NotFound(TEXT("Physics asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Physics asset not found: %s"), *AssetPath));
 
 	int32 BodyIdx = PhysAsset->FindBodyIndex(FName(*BoneName));
 	if (BodyIdx == INDEX_NONE)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Body not found for bone: %s"), *BoneName));
+		return FMonolithActionResult::NotFound(TEXT("Body"), BoneName).WithErrorMessage(FString::Printf(TEXT("Body not found for bone: %s"), *BoneName));
 
 	USkeletalBodySetup* BodySetup = PhysAsset->SkeletalBodySetups[BodyIdx];
 	if (!BodySetup) return FMonolithActionResult::Error(TEXT("BodySetup is null"));
@@ -10796,7 +10817,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetConstraintProperties(c
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
 	UPhysicsAsset* PhysAsset = FMonolithAssetUtils::LoadAssetByPath<UPhysicsAsset>(AssetPath);
-	if (!PhysAsset) return FMonolithActionResult::Error(FString::Printf(TEXT("Physics asset not found: %s"), *AssetPath));
+	if (!PhysAsset) return FMonolithActionResult::NotFound(TEXT("Physics asset"), AssetPath).WithErrorMessage(FString::Printf(TEXT("Physics asset not found: %s"), *AssetPath));
 
 	// Find constraint by index or bone pair
 	int32 ConstraintIdx = INDEX_NONE;
@@ -10919,7 +10940,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddRetargetChain(const TS
 	FString EndBone = Params->GetStringField(TEXT("end_bone"));
 
 	UIKRigDefinition* Asset = FMonolithAssetUtils::LoadAssetByPath<UIKRigDefinition>(AssetPath);
-	if (!Asset) return FMonolithActionResult::Error(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
+	if (!Asset) return FMonolithActionResult::NotFound(TEXT("IKRigDefinition"), AssetPath).WithErrorMessage(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
 
 	UIKRigController* C = UIKRigController::GetController(Asset);
 	if (!C) return FMonolithActionResult::Error(TEXT("Failed to get IKRigController"));
@@ -10953,7 +10974,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveRetargetChain(const
 	FString ChainName = Params->GetStringField(TEXT("chain_name"));
 
 	UIKRigDefinition* Asset = FMonolithAssetUtils::LoadAssetByPath<UIKRigDefinition>(AssetPath);
-	if (!Asset) return FMonolithActionResult::Error(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
+	if (!Asset) return FMonolithActionResult::NotFound(TEXT("IKRigDefinition"), AssetPath).WithErrorMessage(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
 
 	UIKRigController* C = UIKRigController::GetController(Asset);
 	if (!C) return FMonolithActionResult::Error(TEXT("Failed to get IKRigController"));
@@ -10976,7 +10997,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetRetargetChainBones(con
 	FString ChainName = Params->GetStringField(TEXT("chain_name"));
 
 	UIKRigDefinition* Asset = FMonolithAssetUtils::LoadAssetByPath<UIKRigDefinition>(AssetPath);
-	if (!Asset) return FMonolithActionResult::Error(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
+	if (!Asset) return FMonolithActionResult::NotFound(TEXT("IKRigDefinition"), AssetPath).WithErrorMessage(FString::Printf(TEXT("IKRigDefinition not found: %s"), *AssetPath));
 
 	UIKRigController* C = UIKRigController::GetController(Asset);
 	if (!C) return FMonolithActionResult::Error(TEXT("Failed to get IKRigController"));
@@ -10984,7 +11005,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetRetargetChainBones(con
 	// Verify chain exists
 	const FBoneChain* Chain = C->GetRetargetChainByName(FName(*ChainName));
 	if (!Chain)
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Retarget chain not found: %s"), *ChainName));
+		return FMonolithActionResult::NotFound(TEXT("Retarget chain"), ChainName).WithErrorMessage(FString::Printf(TEXT("Retarget chain not found: %s"), *ChainName));
 
 	TArray<FString> ModifiedProps;
 	FName CurrentChainName = FName(*ChainName);
@@ -11058,7 +11079,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateIKRig(const TShared
 	FString MeshPath = Params->GetStringField(TEXT("skeletal_mesh_path"));
 
 	USkeletalMesh* Mesh = FMonolithAssetUtils::LoadAssetByPath<USkeletalMesh>(MeshPath);
-	if (!Mesh) return FMonolithActionResult::Error(FString::Printf(TEXT("Skeletal mesh not found: %s"), *MeshPath));
+	if (!Mesh) return FMonolithActionResult::NotFound(TEXT("Skeletal mesh"), MeshPath).WithErrorMessage(FString::Printf(TEXT("Skeletal mesh not found: %s"), *MeshPath));
 
 	// Extract asset name from path
 	int32 LastSlash;
@@ -11247,15 +11268,15 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetRetargeterRigs(const T
 	FString TargetRigPath = Params->GetStringField(TEXT("target_ik_rig_path"));
 
 	UIKRetargeter* Retargeter = FMonolithAssetUtils::LoadAssetByPath<UIKRetargeter>(AssetPath);
-	if (!Retargeter) return FMonolithActionResult::Error(FString::Printf(TEXT("IKRetargeter not found: %s"), *AssetPath));
+	if (!Retargeter) return FMonolithActionResult::NotFound(TEXT("IKRetargeter"), AssetPath).WithErrorMessage(FString::Printf(TEXT("IKRetargeter not found: %s"), *AssetPath));
 
 	UIKRetargeterController* C = UIKRetargeterController::GetController(Retargeter);
 	if (!C) return FMonolithActionResult::Error(TEXT("Failed to get UIKRetargeterController"));
 
 	UIKRigDefinition* SourceRig = FMonolithAssetUtils::LoadAssetByPath<UIKRigDefinition>(SourceRigPath);
-	if (!SourceRig) return FMonolithActionResult::Error(FString::Printf(TEXT("Source IK Rig not found: %s"), *SourceRigPath));
+	if (!SourceRig) return FMonolithActionResult::NotFound(TEXT("Source IK Rig"), SourceRigPath).WithErrorMessage(FString::Printf(TEXT("Source IK Rig not found: %s"), *SourceRigPath));
 	UIKRigDefinition* TargetRig = FMonolithAssetUtils::LoadAssetByPath<UIKRigDefinition>(TargetRigPath);
-	if (!TargetRig) return FMonolithActionResult::Error(FString::Printf(TEXT("Target IK Rig not found: %s"), *TargetRigPath));
+	if (!TargetRig) return FMonolithActionResult::NotFound(TEXT("Target IK Rig"), TargetRigPath).WithErrorMessage(FString::Printf(TEXT("Target IK Rig not found: %s"), *TargetRigPath));
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("Set Retargeter Rigs")));
 	Retargeter->Modify();
@@ -11315,7 +11336,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleBatchRetargetAnimations(c
 	FString OutputFolder = Params->GetStringField(TEXT("output_folder"));
 
 	UIKRetargeter* Retargeter = FMonolithAssetUtils::LoadAssetByPath<UIKRetargeter>(RetargeterPath);
-	if (!Retargeter) return FMonolithActionResult::Error(FString::Printf(TEXT("IKRetargeter not found: %s"), *RetargeterPath));
+	if (!Retargeter) return FMonolithActionResult::NotFound(TEXT("IKRetargeter"), RetargeterPath).WithErrorMessage(FString::Printf(TEXT("IKRetargeter not found: %s"), *RetargeterPath));
 
 	UIKRetargeterController* C = UIKRetargeterController::GetController(Retargeter);
 	if (!C) return FMonolithActionResult::Error(TEXT("Failed to get UIKRetargeterController"));
@@ -11493,10 +11514,10 @@ FMonolithActionResult FMonolithAnimationActions::HandleCopyBonePoseBetweenSequen
 	}
 
 	UAnimSequence* SourceSeq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(SourcePath);
-	if (!SourceSeq) return FMonolithActionResult::Error(FString::Printf(TEXT("Source AnimSequence not found: %s"), *SourcePath));
+	if (!SourceSeq) return FMonolithActionResult::NotFound(TEXT("Source AnimSequence"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source AnimSequence not found: %s"), *SourcePath));
 
 	UAnimSequence* DestSeq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(DestPath);
-	if (!DestSeq) return FMonolithActionResult::Error(FString::Printf(TEXT("Dest AnimSequence not found: %s"), *DestPath));
+	if (!DestSeq) return FMonolithActionResult::NotFound(TEXT("Dest AnimSequence"), DestPath).WithErrorMessage(FString::Printf(TEXT("Dest AnimSequence not found: %s"), *DestPath));
 
 	// Clamp SourceTime to the source sequence's playable range. Out-of-range
 	// values (negative, or beyond GetPlayLength()) produce undefined sampling
@@ -11696,7 +11717,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetAnimNodeFunctionBindin
 	Params->TryGetStringField(TEXT("graph_name"), GraphFilter);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	// Resolve the owning class for the thread_safe flag (skeleton class first, fall
 	// back to generated class) — mirrors the engine validator's resolution target.
@@ -11779,10 +11800,10 @@ FMonolithActionResult FMonolithAnimationActions::HandleSetAnimNodeFunctionBindin
 	}
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	UAnimGraphNode_Base* AnimNode = MonolithAnimNodeBindingHelpers::FindAnimNode(ABP, NodeId, GraphFilter);
-	if (!AnimNode) return FMonolithActionResult::Error(FString::Printf(TEXT("Anim node not found: %s"), *NodeId));
+	if (!AnimNode) return FMonolithActionResult::NotFound(TEXT("Anim node"), NodeId).WithErrorMessage(FString::Printf(TEXT("Anim node not found: %s"), *NodeId));
 
 	FName PropertyName = NAME_None;
 	FMemberReference* Ref = MonolithAnimNodeBindingHelpers::ResolveFunctionRef(AnimNode, Binding, PropertyName);
@@ -11901,7 +11922,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleGetAnimNodePinBindings(co
 	Params->TryGetStringField(TEXT("graph_name"), GraphFilter);
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AssetPath);
-	if (!ABP) return FMonolithActionResult::Error(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
+	if (!ABP) return FMonolithAssetUtils::AssetNotFound(TEXT("AnimBlueprint"), AssetPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimBlueprint not found: %s"), *AssetPath));
 
 	auto EmitNode = [](UAnimGraphNode_Base* AnimNode, UEdGraph* Graph) -> TSharedPtr<FJsonObject>
 	{
@@ -12734,7 +12755,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleDeriveFootSyncMarkers(con
 	UAnimSequence* Seq = FMonolithAssetUtils::LoadAssetByPath<UAnimSequence>(AssetPath);
 	if (!Seq)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("AnimSequence"), AssetPath, UAnimSequence::StaticClass()).WithErrorMessage(FString::Printf(TEXT("AnimSequence not found: %s"), *AssetPath));
 	}
 
 	const FName LeftFName(*LeftMarkerName);

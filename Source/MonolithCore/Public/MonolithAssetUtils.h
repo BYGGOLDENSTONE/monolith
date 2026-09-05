@@ -5,6 +5,7 @@
 class UObject;
 class UPackage;
 class UBlueprint;
+struct FMonolithActionResult;
 
 class MONOLITHCORE_API FMonolithAssetUtils
 {
@@ -43,6 +44,14 @@ public:
 
 	/** Get all assets of a given class in a directory */
 	static TArray<FAssetData> GetAssetsByClass(const FTopLevelAssetPath& ClassPath, const FString& PackagePath = FString());
+
+	/** Metadata-only suggestions: at most 256 package names, expected class (including subclasses).
+	 * Searches the exact folder, then its parent and up to three similar immediate sibling
+	 * folders if empty. Never loads assets, scans synchronously, or traverses recursively. */
+	static TArray<FString> GetAssetPathCandidates(const FString& AssetPath, UClass* ExpectedClass = nullptr);
+
+	/** Structured lookup failure retaining the requested path; empty paths are invalid parameters. */
+	static FMonolithActionResult AssetNotFound(const FString& Kind, const FString& AssetPath, UClass* ExpectedClass = nullptr);
 
 	/** Get display-friendly name from an asset path */
 	static FString GetAssetName(const FString& AssetPath);

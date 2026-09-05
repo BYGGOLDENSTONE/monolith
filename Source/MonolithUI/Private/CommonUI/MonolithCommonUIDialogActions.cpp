@@ -48,7 +48,7 @@ namespace MonolithCommonUIDialog
 			if (C->GetFName() == FName(*ContainerName)) { Container = C; break; }
 		}
 		if (!Container)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Container '%s' not found in PIE"), *ContainerName));
+			return FMonolithActionResult::NotFound(TEXT("Container"), ContainerName).WithErrorMessage(FString::Printf(TEXT("Container '%s' not found in PIE"), *ContainerName));
 
 		UClass* DialogClass = LoadClass<UCommonActivatableWidget>(nullptr, *DialogClassPath);
 		if (!DialogClass)
@@ -93,7 +93,7 @@ namespace MonolithCommonUIDialog
 				Parent = Cast<UPanelWidget>(W);
 		});
 		if (!Parent)
-			return FMonolithActionResult::Error(FString::Printf(TEXT("Parent '%s' not found or not a panel"), *ParentName));
+			return FMonolithActionResult::NotFound(TEXT("Parent"), ParentName).WithErrorMessage(FString::Printf(TEXT("Parent '%s' not found or not a panel"), *ParentName));
 
 		UBackgroundBlur* Blur = Wbp->WidgetTree->ConstructWidget<UBackgroundBlur>(UBackgroundBlur::StaticClass(), FName(*BlurName));
 		Blur->SetBlurStrength(static_cast<float>(BlurStrength));

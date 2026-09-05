@@ -598,13 +598,13 @@ FMonolithActionResult FMonolithAIDiscoveryActions::HandleValidateAIDataFlow(cons
 	FString ControllerPath = Params->GetStringField(TEXT("controller_path"));
 	if (ControllerPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: controller_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("controller_path"), TEXT("Missing required param: controller_path")).WithErrorMessage(TEXT("Missing required param: controller_path"));
 	}
 
 	UBlueprint* BP = Cast<UBlueprint>(MonolithAI::ResolveAsset(UBlueprint::StaticClass(), ControllerPath));
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found at '%s'"), *ControllerPath));
+		return FMonolithActionResult::NotFound(TEXT("Blueprint"), ControllerPath).WithErrorMessage(FString::Printf(TEXT("Blueprint not found at '%s'"), *ControllerPath));
 	}
 
 	UBlueprintGeneratedClass* BPGC = Cast<UBlueprintGeneratedClass>(BP->GeneratedClass);
@@ -857,7 +857,7 @@ FMonolithActionResult FMonolithAIDiscoveryActions::HandleFindEQSReferences(const
 	FString EQSPath = Params->GetStringField(TEXT("eqs_path"));
 	if (EQSPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: eqs_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("eqs_path"), TEXT("Missing required param: eqs_path")).WithErrorMessage(TEXT("Missing required param: eqs_path"));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> References;
@@ -897,7 +897,7 @@ FMonolithActionResult FMonolithAIDiscoveryActions::HandleFindSOReferences(const 
 	FString SOPath = Params->GetStringField(TEXT("so_path"));
 	if (SOPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: so_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("so_path"), TEXT("Missing required param: so_path")).WithErrorMessage(TEXT("Missing required param: so_path"));
 	}
 
 	TArray<TSharedPtr<FJsonValue>> References;
@@ -1140,14 +1140,14 @@ FMonolithActionResult FMonolithAIDiscoveryActions::HandleLintStateTree(const TSh
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 	AssetPath = FMonolithAssetUtils::ResolveAssetPath(AssetPath);
 
 	UStateTree* ST = FMonolithAssetUtils::LoadAssetByPath<UStateTree>(AssetPath);
 	if (!ST)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("StateTree not found at '%s'"), *AssetPath));
+		return FMonolithActionResult::NotFound(TEXT("StateTree"), AssetPath).WithErrorMessage(FString::Printf(TEXT("StateTree not found at '%s'"), *AssetPath));
 	}
 
 #if WITH_EDITORONLY_DATA
@@ -1582,7 +1582,7 @@ FMonolithActionResult FMonolithAIDiscoveryActions::HandleGetAIBehaviorSummary(co
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	if (AssetPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param 'asset_path'"));
+		return FMonolithActionResult::InvalidParam(TEXT("asset_path"), TEXT("Missing required param 'asset_path'")).WithErrorMessage(TEXT("Missing required param 'asset_path'"));
 	}
 	AssetPath = FMonolithAssetUtils::ResolveAssetPath(AssetPath);
 

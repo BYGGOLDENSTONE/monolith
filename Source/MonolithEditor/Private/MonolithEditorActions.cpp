@@ -1360,7 +1360,7 @@ FMonolithActionResult FMonolithEditorActions::HandleSearchBuildOutput(const TSha
 	FString Pattern = Params->GetStringField(TEXT("pattern"));
 	if (Pattern.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: pattern"));
+		return FMonolithActionResult::InvalidParam(TEXT("pattern"), TEXT("Missing required parameter: pattern")).WithErrorMessage(TEXT("Missing required parameter: pattern"));
 	}
 
 	int32 Limit = 100;
@@ -3350,8 +3350,7 @@ FMonolithActionResult FMonolithEditorActions::HandleImportTexture(
 	// Verify source file exists
 	if (!FPaths::FileExists(SourcePath))
 	{
-		return FMonolithActionResult::Error(
-			FString::Printf(TEXT("Source file not found: %s"), *SourcePath));
+		return FMonolithActionResult::NotFound(TEXT("Source file"), SourcePath).WithErrorMessage(FString::Printf(TEXT("Source file not found: %s"), *SourcePath));
 	}
 
 	// Import using AssetTools
@@ -4408,7 +4407,7 @@ FMonolithActionResult FMonolithEditorActions::HandleRunPython(const TSharedPtr<F
 	FString Command;
 	if (!Params.IsValid() || !Params->TryGetStringField(TEXT("command"), Command) || Command.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: command"));
+		return FMonolithActionResult::InvalidParam(TEXT("command"), TEXT("Missing required parameter: command")).WithErrorMessage(TEXT("Missing required parameter: command"));
 	}
 
 	FString ModeStr = TEXT("execute_file");
@@ -4510,7 +4509,7 @@ FMonolithActionResult FMonolithEditorActions::HandleLoadLevel(const TSharedPtr<F
 	FString Path;
 	if (!Params.IsValid() || !Params->TryGetStringField(TEXT("path"), Path) || Path.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: path"));
+		return FMonolithActionResult::InvalidParam(TEXT("path"), TEXT("Missing required parameter: path")).WithErrorMessage(TEXT("Missing required parameter: path"));
 	}
 
 	if (!GEditor)
@@ -4741,7 +4740,7 @@ FMonolithActionResult FMonolithEditorActions::HandleSavePackages(const TSharedPt
 	const TArray<TSharedPtr<FJsonValue>>* PkgArr = nullptr;
 	if (!Params.IsValid() || !Params->TryGetArrayField(TEXT("packages"), PkgArr) || !PkgArr || PkgArr->Num() == 0)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: packages (non-empty array of long package names)"));
+		return FMonolithActionResult::InvalidParam(TEXT("packages"), TEXT("Missing required parameter: packages (non-empty array of long package names)")).WithErrorMessage(TEXT("Missing required parameter: packages (non-empty array of long package names)"));
 	}
 
 	TArray<FString> RequestedNames;
@@ -6695,7 +6694,7 @@ FMonolithActionResult FMonolithEditorActions::HandleCreateNavHarnessMap(const TS
 	FString MapPath;
 	if (!Params.IsValid() || !Params->TryGetStringField(TEXT("path"), MapPath) || MapPath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: path"));
+		return FMonolithActionResult::InvalidParam(TEXT("path"), TEXT("Missing required parameter: path")).WithErrorMessage(TEXT("Missing required parameter: path"));
 	}
 
 	FMonolithToolRegistry& Registry = FMonolithToolRegistry::Get();

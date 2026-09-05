@@ -1677,7 +1677,7 @@ FMonolithActionResult FMonolithMeshBuildingActions::CreateBuildingFromGrid(const
 	FString SavePath;
 	if (!Params->TryGetStringField(TEXT("save_path"), SavePath) || SavePath.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param: save_path")).WithErrorMessage(TEXT("Missing required param: save_path"));
 	}
 
 	FString BuildingId;
@@ -1710,7 +1710,7 @@ FMonolithActionResult FMonolithMeshBuildingActions::CreateBuildingFromGrid(const
 	const TArray<TSharedPtr<FJsonValue>>* RoomsArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("rooms"), RoomsArr) || !RoomsArr)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: rooms"));
+		return FMonolithActionResult::InvalidParam(TEXT("rooms"), TEXT("Missing required param: rooms")).WithErrorMessage(TEXT("Missing required param: rooms"));
 	}
 	TArray<FRoomDef> Rooms;
 	if (!ParseRooms(*RoomsArr, Rooms, ParseErr))
@@ -1722,7 +1722,7 @@ FMonolithActionResult FMonolithMeshBuildingActions::CreateBuildingFromGrid(const
 	const TArray<TSharedPtr<FJsonValue>>* DoorsArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("doors"), DoorsArr) || !DoorsArr)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: doors"));
+		return FMonolithActionResult::InvalidParam(TEXT("doors"), TEXT("Missing required param: doors")).WithErrorMessage(TEXT("Missing required param: doors"));
 	}
 	TArray<FDoorDef> Doors;
 	if (!ParseDoors(*DoorsArr, Doors, ParseErr))

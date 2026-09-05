@@ -293,7 +293,7 @@ FMonolithActionResult FMonolithMeshAutoVolumeActions::AutoVolumesForBuilding(con
 	FString BuildingId;
 	if (!Params->TryGetStringField(TEXT("building_id"), BuildingId))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: building_id"));
+		return FMonolithActionResult::InvalidParam(TEXT("building_id"), TEXT("Missing required param: building_id")).WithErrorMessage(TEXT("Missing required param: building_id"));
 	}
 
 	FString BlockId = TEXT("default");
@@ -301,7 +301,7 @@ FMonolithActionResult FMonolithMeshAutoVolumeActions::AutoVolumesForBuilding(con
 
 	if (!FMonolithMeshSpatialRegistry::HasBlock(BlockId))
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Block"), BlockId).WithErrorMessage(FString::Printf(
 			TEXT("Block '%s' not found in spatial registry. Use load_block_descriptor or register_building first."), *BlockId));
 	}
 
@@ -602,7 +602,7 @@ FMonolithActionResult FMonolithMeshAutoVolumeActions::AutoVolumesForBlock(const 
 
 	if (!FMonolithMeshSpatialRegistry::HasBlock(BlockId))
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithActionResult::NotFound(TEXT("Block"), BlockId).WithErrorMessage(FString::Printf(
 			TEXT("Block '%s' not found in spatial registry."), *BlockId));
 	}
 
@@ -790,7 +790,7 @@ FMonolithActionResult FMonolithMeshAutoVolumeActions::SpawnNavLink(const TShared
 	const TArray<TSharedPtr<FJsonValue>>* StartArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("start"), StartArr) || !StartArr)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: start (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing required param: start (array of 3 numbers)")).WithErrorMessage(TEXT("Missing required param: start (array of 3 numbers)"));
 	}
 	FVector StartPoint;
 	if (!AutoVolumeHelpers::ParseVectorFromArray(*StartArr, StartPoint))
@@ -802,7 +802,7 @@ FMonolithActionResult FMonolithMeshAutoVolumeActions::SpawnNavLink(const TShared
 	const TArray<TSharedPtr<FJsonValue>>* EndArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("end"), EndArr) || !EndArr)
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: end (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing required param: end (array of 3 numbers)")).WithErrorMessage(TEXT("Missing required param: end (array of 3 numbers)"));
 	}
 	FVector EndPoint;
 	if (!AutoVolumeHelpers::ParseVectorFromArray(*EndArr, EndPoint))

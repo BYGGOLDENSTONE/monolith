@@ -223,11 +223,11 @@ FMonolithActionResult FMonolithMeshSpatialActions::QueryRaycast(const TSharedPtr
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -308,11 +308,11 @@ FMonolithActionResult FMonolithMeshSpatialActions::QueryMultiRaycast(const TShar
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -376,7 +376,7 @@ FMonolithActionResult FMonolithMeshSpatialActions::QueryRadialSweep(const TShare
 	FVector Origin;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("origin"), Origin))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: origin (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("origin"), TEXT("Missing or invalid required param: origin (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: origin (array of 3 numbers)"));
 	}
 
 	double Radius = 1000.0;
@@ -625,13 +625,13 @@ FMonolithActionResult FMonolithMeshSpatialActions::QueryOverlap(const TSharedPtr
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
 	}
 
 	FString ShapeStr;
 	if (!Params->TryGetStringField(TEXT("shape"), ShapeStr))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: shape (box, sphere, or capsule)"));
+		return FMonolithActionResult::InvalidParam(TEXT("shape"), TEXT("Missing required param: shape (box, sphere, or capsule)")).WithErrorMessage(TEXT("Missing required param: shape (box, sphere, or capsule)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -733,7 +733,7 @@ FMonolithActionResult FMonolithMeshSpatialActions::QueryNearest(const TSharedPtr
 	FVector Location;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("location"), Location))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("location"), TEXT("Missing or invalid required param: location (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: location (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -862,11 +862,11 @@ FMonolithActionResult FMonolithMeshSpatialActions::QueryLineOfSight(const TShare
 	FVector From, To;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("from"), From))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: from (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("from"), TEXT("Missing or invalid required param: from (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: from (array of 3 numbers)"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("to"), To))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: to (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("to"), TEXT("Missing or invalid required param: to (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: to (array of 3 numbers)"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -923,7 +923,7 @@ FMonolithActionResult FMonolithMeshSpatialActions::GetActorsInVolume(const TShar
 	FString VolumeName;
 	if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: volume_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("volume_name"), TEXT("Missing required param: volume_name")).WithErrorMessage(TEXT("Missing required param: volume_name"));
 	}
 
 	UWorld* World = MonolithMeshUtils::GetEditorWorld();
@@ -945,7 +945,7 @@ FMonolithActionResult FMonolithMeshSpatialActions::GetActorsInVolume(const TShar
 
 	if (!Volume)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("BlockingVolume not found: %s"), *VolumeName));
+		return FMonolithActionResult::NotFound(TEXT("BlockingVolume"), VolumeName).WithErrorMessage(FString::Printf(TEXT("BlockingVolume not found: %s"), *VolumeName));
 	}
 
 	// Get volume bounds
@@ -1204,7 +1204,7 @@ FMonolithActionResult FMonolithMeshSpatialActions::GetSpatialRelationships(const
 	FString ActorName;
 	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing required param: actor_name"));
+		return FMonolithActionResult::InvalidParam(TEXT("actor_name"), TEXT("Missing required param: actor_name")).WithErrorMessage(TEXT("Missing required param: actor_name"));
 	}
 
 	FString Error;
@@ -1409,11 +1409,11 @@ FMonolithActionResult FMonolithMeshSpatialActions::QueryNavmesh(const TSharedPtr
 	FVector Start, End;
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("start"), Start))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("start"), TEXT("Missing or invalid required param: start (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: start (array of 3 numbers)"));
 	}
 	if (!MonolithMeshUtils::ParseVector(Params, TEXT("end"), End))
 	{
-		return FMonolithActionResult::Error(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
+		return FMonolithActionResult::InvalidParam(TEXT("end"), TEXT("Missing or invalid required param: end (array of 3 numbers)")).WithErrorMessage(TEXT("Missing or invalid required param: end (array of 3 numbers)"));
 	}
 
 	double AgentRadiusD = 42.0;

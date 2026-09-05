@@ -497,13 +497,13 @@ FMonolithActionResult FMonolithMeshArchFeatureActions::CreateBalcony(const TShar
 	// Required params
 	FString SavePath;
 	if (!Params->TryGetStringField(TEXT("save_path"), SavePath) || SavePath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param: save_path")).WithErrorMessage(TEXT("Missing required param: save_path"));
 
 	float Width = 0.0f, Depth = 0.0f;
 	if (!Params->HasField(TEXT("width")))
-		return FMonolithActionResult::Error(TEXT("Missing required param: width"));
+		return FMonolithActionResult::InvalidParam(TEXT("width"), TEXT("Missing required param: width")).WithErrorMessage(TEXT("Missing required param: width"));
 	if (!Params->HasField(TEXT("depth")))
-		return FMonolithActionResult::Error(TEXT("Missing required param: depth"));
+		return FMonolithActionResult::InvalidParam(TEXT("depth"), TEXT("Missing required param: depth")).WithErrorMessage(TEXT("Missing required param: depth"));
 
 	Width = static_cast<float>(Params->GetNumberField(TEXT("width")));
 	Depth = static_cast<float>(Params->GetNumberField(TEXT("depth")));
@@ -632,12 +632,12 @@ FMonolithActionResult FMonolithMeshArchFeatureActions::CreatePorch(const TShared
 
 	FString SavePath;
 	if (!Params->TryGetStringField(TEXT("save_path"), SavePath) || SavePath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param: save_path")).WithErrorMessage(TEXT("Missing required param: save_path"));
 
 	if (!Params->HasField(TEXT("width")))
-		return FMonolithActionResult::Error(TEXT("Missing required param: width"));
+		return FMonolithActionResult::InvalidParam(TEXT("width"), TEXT("Missing required param: width")).WithErrorMessage(TEXT("Missing required param: width"));
 	if (!Params->HasField(TEXT("depth")))
-		return FMonolithActionResult::Error(TEXT("Missing required param: depth"));
+		return FMonolithActionResult::InvalidParam(TEXT("depth"), TEXT("Missing required param: depth")).WithErrorMessage(TEXT("Missing required param: depth"));
 
 	const float Width   = static_cast<float>(Params->GetNumberField(TEXT("width")));
 	const float Depth   = static_cast<float>(Params->GetNumberField(TEXT("depth")));
@@ -853,12 +853,12 @@ FMonolithActionResult FMonolithMeshArchFeatureActions::CreateFireEscape(const TS
 
 	FString SavePath;
 	if (!Params->TryGetStringField(TEXT("save_path"), SavePath) || SavePath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param: save_path")).WithErrorMessage(TEXT("Missing required param: save_path"));
 
 	if (!Params->HasField(TEXT("floor_count")))
-		return FMonolithActionResult::Error(TEXT("Missing required param: floor_count"));
+		return FMonolithActionResult::InvalidParam(TEXT("floor_count"), TEXT("Missing required param: floor_count")).WithErrorMessage(TEXT("Missing required param: floor_count"));
 	if (!Params->HasField(TEXT("floor_height")))
-		return FMonolithActionResult::Error(TEXT("Missing required param: floor_height"));
+		return FMonolithActionResult::InvalidParam(TEXT("floor_height"), TEXT("Missing required param: floor_height")).WithErrorMessage(TEXT("Missing required param: floor_height"));
 
 	const int32 FloorCount   = GetInt(Params, TEXT("floor_count"), 2);
 	const float FloorHeight  = static_cast<float>(Params->GetNumberField(TEXT("floor_height")));
@@ -1169,10 +1169,10 @@ FMonolithActionResult FMonolithMeshArchFeatureActions::CreateRampConnector(const
 
 	FString SavePath;
 	if (!Params->TryGetStringField(TEXT("save_path"), SavePath) || SavePath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param: save_path")).WithErrorMessage(TEXT("Missing required param: save_path"));
 
 	if (!Params->HasField(TEXT("rise")))
-		return FMonolithActionResult::Error(TEXT("Missing required param: rise"));
+		return FMonolithActionResult::InvalidParam(TEXT("rise"), TEXT("Missing required param: rise")).WithErrorMessage(TEXT("Missing required param: rise"));
 
 	const float Rise = static_cast<float>(Params->GetNumberField(TEXT("rise")));
 	if (Rise <= 0.0f) return FMonolithActionResult::Error(TEXT("rise must be positive"));
@@ -1386,7 +1386,7 @@ FMonolithActionResult FMonolithMeshArchFeatureActions::CreateRailing(const TShar
 
 	FString SavePath;
 	if (!Params->TryGetStringField(TEXT("save_path"), SavePath) || SavePath.IsEmpty())
-		return FMonolithActionResult::Error(TEXT("Missing required param: save_path"));
+		return FMonolithActionResult::InvalidParam(TEXT("save_path"), TEXT("Missing required param: save_path")).WithErrorMessage(TEXT("Missing required param: save_path"));
 
 	// Parse points array
 	const TArray<TSharedPtr<FJsonValue>>* PointsArr = nullptr;

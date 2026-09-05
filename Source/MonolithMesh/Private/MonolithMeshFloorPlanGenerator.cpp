@@ -3822,7 +3822,7 @@ FMonolithActionResult FMonolithMeshFloorPlanGenerator::GetBuildingArchetype(cons
 
 	FString JsonString;
 	if (!FFileHelper::LoadFileToString(JsonString, *FilePath))
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Archetype not found: %s"), *FilePath));
+		return FMonolithActionResult::NotFound(TEXT("Archetype"), FilePath).WithErrorMessage(FString::Printf(TEXT("Archetype not found: %s"), *FilePath));
 
 	TSharedPtr<FJsonObject> Json = FMonolithJsonUtils::Parse(JsonString);
 	if (!Json.IsValid())

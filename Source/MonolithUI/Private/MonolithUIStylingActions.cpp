@@ -486,7 +486,7 @@ FMonolithActionResult FMonolithUIStylingActions::HandleSetColorScheme(const TSha
     const TSharedPtr<FJsonObject>* ColorsObj = nullptr;
     if (!Params->TryGetObjectField(TEXT("colors"), ColorsObj))
     {
-        return FMonolithActionResult::Error(TEXT("Missing required param: colors (object with slot names as keys)"));
+        return FMonolithActionResult::InvalidParam(TEXT("colors"), TEXT("Missing required param: colors (object with slot names as keys)")).WithErrorMessage(TEXT("Missing required param: colors (object with slot names as keys)"));
     }
 
     // Map slot names to EStyleColor values

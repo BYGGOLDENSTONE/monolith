@@ -281,20 +281,20 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleSetAnimClass
 	const FString CompName = Params->GetStringField(TEXT("component"));
 	const FString AnimBpPath = Params->GetStringField(TEXT("anim_bp_path"));
 
-	if (BpPath.IsEmpty())     return FMonolithActionResult::Error(TEXT("Missing required parameter: bp_path"));
-	if (CompName.IsEmpty())   return FMonolithActionResult::Error(TEXT("Missing required parameter: component"));
-	if (AnimBpPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: anim_bp_path"));
+	if (BpPath.IsEmpty())     return FMonolithActionResult::InvalidParam(TEXT("bp_path"), TEXT("Missing required parameter: bp_path")).WithErrorMessage(TEXT("Missing required parameter: bp_path"));
+	if (CompName.IsEmpty())   return FMonolithActionResult::InvalidParam(TEXT("component"), TEXT("Missing required parameter: component")).WithErrorMessage(TEXT("Missing required parameter: component"));
+	if (AnimBpPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("anim_bp_path"), TEXT("Missing required parameter: anim_bp_path")).WithErrorMessage(TEXT("Missing required parameter: anim_bp_path"));
 
 	UBlueprint* BP = FMonolithAssetUtils::LoadAssetByPath<UBlueprint>(BpPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), BpPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
 	}
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AnimBpPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AnimBpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBpPath));
 	}
 	if (!ABP->GeneratedClass)
 	{
@@ -377,13 +377,13 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleApplyMovemen
 	const FString BpPath = Params->GetStringField(TEXT("bp_path"));
 	const FString Preset = Params->GetStringField(TEXT("preset"));
 
-	if (BpPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: bp_path"));
-	if (Preset.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: preset"));
+	if (BpPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("bp_path"), TEXT("Missing required parameter: bp_path")).WithErrorMessage(TEXT("Missing required parameter: bp_path"));
+	if (Preset.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("preset"), TEXT("Missing required parameter: preset")).WithErrorMessage(TEXT("Missing required parameter: preset"));
 
 	UBlueprint* BP = FMonolithAssetUtils::LoadAssetByPath<UBlueprint>(BpPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), BpPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
 	}
 
 	// Resolve the CharacterMovementComponent BY CLASS on the CDO — the native inherited
@@ -477,9 +477,9 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleAddEngineCom
 	const FString CompType = Params->GetStringField(TEXT("component_type"));
 	const FString CompName = Params->GetStringField(TEXT("component_name"));
 
-	if (BpPath.IsEmpty())   return FMonolithActionResult::Error(TEXT("Missing required parameter: bp_path"));
-	if (CompType.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: component_type"));
-	if (CompName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: component_name"));
+	if (BpPath.IsEmpty())   return FMonolithActionResult::InvalidParam(TEXT("bp_path"), TEXT("Missing required parameter: bp_path")).WithErrorMessage(TEXT("Missing required parameter: bp_path"));
+	if (CompType.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("component_type"), TEXT("Missing required parameter: component_type")).WithErrorMessage(TEXT("Missing required parameter: component_type"));
+	if (CompName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("component_name"), TEXT("Missing required parameter: component_name")).WithErrorMessage(TEXT("Missing required parameter: component_name"));
 
 	// Resolve the class by friendly name — same NativeFirst probe the chooser fix uses.
 	// Accept bare or U-prefixed name. NOTE: CharacterTrajectory is NOT special-cased —
@@ -491,7 +491,7 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleAddEngineCom
 	}
 	if (!CompClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Component class not found: %s"), *CompType));
+		return FMonolithActionResult::NotFound(TEXT("Component class"), CompType).WithErrorMessage(FString::Printf(TEXT("Component class not found: %s"), *CompType));
 	}
 	if (!CompClass->IsChildOf(UActorComponent::StaticClass()))
 	{
@@ -574,8 +574,8 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleScaffoldLoco
 	const FString BpPath = Params->GetStringField(TEXT("bp_path"));
 	const FString ImcPath = Params->GetStringField(TEXT("imc_path"));
 
-	if (BpPath.IsEmpty())  return FMonolithActionResult::Error(TEXT("Missing required parameter: bp_path"));
-	if (ImcPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: imc_path"));
+	if (BpPath.IsEmpty())  return FMonolithActionResult::InvalidParam(TEXT("bp_path"), TEXT("Missing required parameter: bp_path")).WithErrorMessage(TEXT("Missing required parameter: bp_path"));
+	if (ImcPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("imc_path"), TEXT("Missing required parameter: imc_path")).WithErrorMessage(TEXT("Missing required parameter: imc_path"));
 
 	const TArray<TSharedPtr<FJsonValue>>* ActionsArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("actions"), ActionsArr) || !ActionsArr || ActionsArr->Num() == 0)
@@ -586,7 +586,7 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleScaffoldLoco
 	UBlueprint* BP = FMonolithAssetUtils::LoadAssetByPath<UBlueprint>(BpPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), BpPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
 	}
 
 	{
@@ -710,20 +710,20 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleValidateAnim
 	const FString AbpPath = Params->GetStringField(TEXT("abp_path"));
 	const FString BpPath = Params->GetStringField(TEXT("bp_path"));
 
-	if (AbpPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: abp_path"));
-	if (BpPath.IsEmpty())  return FMonolithActionResult::Error(TEXT("Missing required parameter: bp_path"));
+	if (AbpPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("abp_path"), TEXT("Missing required parameter: abp_path")).WithErrorMessage(TEXT("Missing required parameter: abp_path"));
+	if (BpPath.IsEmpty())  return FMonolithActionResult::InvalidParam(TEXT("bp_path"), TEXT("Missing required parameter: bp_path")).WithErrorMessage(TEXT("Missing required parameter: bp_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
 	if (!ABP || !ABP->GeneratedClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(
 			TEXT("Animation Blueprint not found or not compiled: %s"), *AbpPath));
 	}
 
 	UBlueprint* BP = FMonolithAssetUtils::LoadAssetByPath<UBlueprint>(BpPath);
 	if (!BP || !BP->GeneratedClass)
 	{
-		return FMonolithActionResult::Error(FString::Printf(
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), BpPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(
 			TEXT("Blueprint not found or not compiled: %s"), *BpPath));
 	}
 
@@ -766,8 +766,8 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleScaffoldMoti
 	const FString BpPath = Params->GetStringField(TEXT("bp_path"));
 	const FString AnimBpPath = Params->GetStringField(TEXT("anim_bp_path"));
 
-	if (BpPath.IsEmpty())     return FMonolithActionResult::Error(TEXT("Missing required parameter: bp_path"));
-	if (AnimBpPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: anim_bp_path"));
+	if (BpPath.IsEmpty())     return FMonolithActionResult::InvalidParam(TEXT("bp_path"), TEXT("Missing required parameter: bp_path")).WithErrorMessage(TEXT("Missing required parameter: bp_path"));
+	if (AnimBpPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("anim_bp_path"), TEXT("Missing required parameter: anim_bp_path")).WithErrorMessage(TEXT("Missing required parameter: anim_bp_path"));
 
 	FString ParentClass = Params->GetStringField(TEXT("parent_class"));
 	if (ParentClass.IsEmpty()) ParentClass = TEXT("Character");
@@ -931,13 +931,13 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleGetInherited
 	FString SingleProp;
 	Params->TryGetStringField(TEXT("property_name"), SingleProp);
 
-	if (BpPath.IsEmpty())   return FMonolithActionResult::Error(TEXT("Missing required parameter: bp_path"));
-	if (CompName.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: component"));
+	if (BpPath.IsEmpty())   return FMonolithActionResult::InvalidParam(TEXT("bp_path"), TEXT("Missing required parameter: bp_path")).WithErrorMessage(TEXT("Missing required parameter: bp_path"));
+	if (CompName.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("component"), TEXT("Missing required parameter: component")).WithErrorMessage(TEXT("Missing required parameter: component"));
 
 	UBlueprint* BP = FMonolithAssetUtils::LoadAssetByPath<UBlueprint>(BpPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), BpPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
 	}
 
 	// Shared resolver, read-only. It classifies the tier itself, so the hand-rolled
@@ -1086,12 +1086,12 @@ namespace
 FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleScaffoldThreadSafeUpdate(const TSharedPtr<FJsonObject>& Params)
 {
 	const FString AbpPath = Params->GetStringField(TEXT("abp_path"));
-	if (AbpPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: abp_path"));
+	if (AbpPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("abp_path"), TEXT("Missing required parameter: abp_path")).WithErrorMessage(TEXT("Missing required parameter: abp_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
 	}
 
 	bool bCreated = false;
@@ -1136,7 +1136,7 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleScaffoldThre
 FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleAddPawnOwnerAccess(const TSharedPtr<FJsonObject>& Params)
 {
 	const FString AbpPath = Params->GetStringField(TEXT("abp_path"));
-	if (AbpPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: abp_path"));
+	if (AbpPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("abp_path"), TEXT("Missing required parameter: abp_path")).WithErrorMessage(TEXT("Missing required parameter: abp_path"));
 
 	FString CastClass = Params->GetStringField(TEXT("cast_class"));
 	if (CastClass.IsEmpty()) CastClass = TEXT("Character");
@@ -1144,7 +1144,7 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleAddPawnOwner
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
 	}
 
 	// Ensure the thread-safe update exists first (compose A.1).
@@ -1234,12 +1234,12 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleAddPawnOwner
 FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleScaffoldLocomotionAnimValues(const TSharedPtr<FJsonObject>& Params)
 {
 	const FString AbpPath = Params->GetStringField(TEXT("abp_path"));
-	if (AbpPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: abp_path"));
+	if (AbpPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("abp_path"), TEXT("Missing required parameter: abp_path")).WithErrorMessage(TEXT("Missing required parameter: abp_path"));
 
 	UAnimBlueprint* ABP = FMonolithAssetUtils::LoadAssetByPath<UAnimBlueprint>(AbpPath);
 	if (!ABP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Animation Blueprint"), AbpPath, UAnimBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AbpPath));
 	}
 
 	// Name overrides (default to the §4.1 contract names).
@@ -1573,15 +1573,15 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleScaffoldLoco
 FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleApplyLocomotionSpeedBand(const TSharedPtr<FJsonObject>& Params)
 {
 	const FString BpPath = Params->GetStringField(TEXT("bp_path"));
-	if (BpPath.IsEmpty()) return FMonolithActionResult::Error(TEXT("Missing required parameter: bp_path"));
+	if (BpPath.IsEmpty()) return FMonolithActionResult::InvalidParam(TEXT("bp_path"), TEXT("Missing required parameter: bp_path")).WithErrorMessage(TEXT("Missing required parameter: bp_path"));
 
 	double WalkSpeed = 0.0, RunSpeed = 0.0, CrouchSpeed = 0.0;
 	if (!Params->TryGetNumberField(TEXT("walk_speed"), WalkSpeed))
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: walk_speed"));
+		return FMonolithActionResult::InvalidParam(TEXT("walk_speed"), TEXT("Missing required parameter: walk_speed")).WithErrorMessage(TEXT("Missing required parameter: walk_speed"));
 	if (!Params->TryGetNumberField(TEXT("run_speed"), RunSpeed))
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: run_speed"));
+		return FMonolithActionResult::InvalidParam(TEXT("run_speed"), TEXT("Missing required parameter: run_speed")).WithErrorMessage(TEXT("Missing required parameter: run_speed"));
 	if (!Params->TryGetNumberField(TEXT("crouch_speed"), CrouchSpeed))
-		return FMonolithActionResult::Error(TEXT("Missing required parameter: crouch_speed"));
+		return FMonolithActionResult::InvalidParam(TEXT("crouch_speed"), TEXT("Missing required parameter: crouch_speed")).WithErrorMessage(TEXT("Missing required parameter: crouch_speed"));
 
 	double JogSpeed = 0.0; Params->TryGetNumberField(TEXT("jog_speed"), JogSpeed);
 
@@ -1596,7 +1596,7 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleApplyLocomot
 	UBlueprint* BP = FMonolithAssetUtils::LoadAssetByPath<UBlueprint>(BpPath);
 	if (!BP)
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
+		return FMonolithAssetUtils::AssetNotFound(TEXT("Blueprint"), BpPath, UBlueprint::StaticClass()).WithErrorMessage(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
 	}
 
 	// Resolve the CMC BY CLASS on the CDO — same handshake as apply_movement_preset
