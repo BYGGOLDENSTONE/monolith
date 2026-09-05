@@ -162,7 +162,7 @@ Before finalizing any material that uses tiling textures, verify ALL of these:
 1. **Macro variation applied?** Add world-space noise overlay on BaseColor (strength 0.1-0.3) and Roughness (multiply by 0.8-1.2 range). Use FluidNinja `T_LowResBlurredNoise_sRGB` at UV scale WorldPosition * 0.0003-0.001.
 2. **UVs broken with noise offset or world-position blend?** Base UVs must not feed directly into TextureSample without transformation.
 3. **Previewed at 3x tiling?** Use `render_preview` to check appearance at high repetition count. Tiling should not be obvious at 3x3.
-4. **`MF_AntiTile_IqOffset` used for organic/terrain textures?** Apply Iq's 2-sample offset technique (cheapest proper anti-tiling, ~15 instructions). See `Docs/references/materials/anti-tiling.md` for HLSL and alternatives (hex tiling for large surfaces).
+4. **`MF_AntiTile_IqOffset` used for organic/terrain textures?** Apply Iq's 2-sample offset technique (cheapest proper anti-tiling, ~15 instructions).
 5. **FluidNinja noise textures used for macro variation?** Recommended: `/Game/FluidNinjaLive/Textures/T_LowResBlurredNoise_sRGB` (color), `/Game/FluidNinjaLive/Textures/T_MultilevelNoise1` (roughness).
 
 ## AI Introspection (editor:: actions)

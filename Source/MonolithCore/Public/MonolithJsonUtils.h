@@ -99,7 +99,7 @@ public:
  * Survivor B — universal response-shaping post-filter.
  *
  * Reads the opt-in universal params from `Params` and mutates `Response`
- * in-place. Phase 1 of plan §3.B (2026-05-27-mcp-llm-ergonomics.md):
+ * in-place, using these top-level response controls:
  *
  *  - `_fields:["a","b"]`    — keep only these TOP-LEVEL response keys
  *  - `_omit:["debug_info"]` — drop these TOP-LEVEL response keys

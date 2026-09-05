@@ -1510,7 +1510,7 @@ Bundle the most common PR-review reads into a single call against a list of chan
 
 ### `pipeline_query.release_readiness`
 
-Release-gate composer. Bundles `monolith_status()`, `decision_query("list_stale")`, `risk_query("get_release_window_hotspots")`, plus the sentinel-list audit and CHANGELOG completeness audit specced in `.claude/rules/scoped/monolith-release.md`. Read-only end-to-end. No required params.
+Release-gate composer. Bundles `monolith_status()`, `decision_query("list_stale")`, `risk_query("get_release_window_hotspots")`, plus the sentinel-list audit and CHANGELOG completeness audit described in the [Reflection Intelligence spec](specs/SPEC_MonolithReflectionIntel.md). Read-only end-to-end. No required params.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

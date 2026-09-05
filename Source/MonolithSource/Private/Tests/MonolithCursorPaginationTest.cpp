@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Survivor E (source_query("search_source") cursor pagination) automation tests
 // — plan §12 "Survivor E", plan §3.E.
-// Plan: Plugins/Monolith/Docs/plans/2026-05-27-mcp-llm-ergonomics.md
 //
 // DEVIATION NOTE: plan §6 file-table specifies `Source/MonolithSource/Tests/...`.
 // This file lives under `Source/MonolithSource/Private/Tests/...` so UBT's

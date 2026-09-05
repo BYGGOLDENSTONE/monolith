@@ -6,7 +6,7 @@
 /**
  * Survivor D — schema-tag opt-in for dispatch-time \→/ rewrite.
  *
- * Phase 1 of plan §3.D (Docs/plans/2026-05-27-mcp-llm-ergonomics.md).
+ * Path normalisation is opt-in through schema tags.
  * Default is `Other` for back-compat — every existing `.Required` / `.Optional`
  * call stays `Other` and opts OUT of any path normalisation. Only the new
  * `RequiredAssetPath` / `OptionalAssetPath` sugar tags `AssetPath`.

@@ -92,7 +92,7 @@ TSharedRef<FJsonValueArray> FMonolithJsonUtils::StringArrayToJson(const TArray<F
 // =============================================================================
 //  Survivor B — Universal Response Shaping
 //
-//  Phase 1 of plan §3.B (Docs/plans/2026-05-27-mcp-llm-ergonomics.md).
+//  Opt-in response shaping filters the result after action execution.
 //  TOP-LEVEL KEYS ONLY. JSONPath / nested traversal is out-of-scope (plan §2).
 // =============================================================================
 

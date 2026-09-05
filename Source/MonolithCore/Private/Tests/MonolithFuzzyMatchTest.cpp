@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Survivor C (Action + namespace did_you_mean fuzzy match) automation tests
 // — plan §12 "Survivor C", plan §3.C.
-// Plan: Plugins/Monolith/Docs/plans/2026-05-27-mcp-llm-ergonomics.md
 //
 // DEVIATION NOTE: plan §6 file-table specifies `Source/MonolithCore/Tests/...`.
 // This file lives under `Source/MonolithCore/Private/Tests/...` so UBT's

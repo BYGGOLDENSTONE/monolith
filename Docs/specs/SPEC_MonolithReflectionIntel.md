@@ -64,7 +64,7 @@ The cursor-pagination codec and project-relative path helper were duplicated per
 
 ### 3.1 Markdown corpus harvest scope
 
-The indexer walks `*.md` files recursively under each configured markdown root via `IFileManager::IterateDirectoryRecursively` (visitor pattern — sidesteps the `FindFilesRecursive` 6th-param `bClearFileNames=true` trap documented in `.claude/rules/scoped/cpp-code.md`).
+The indexer walks `*.md` files recursively under each configured markdown root via `IFileManager::IterateDirectoryRecursively` (visitor pattern — sidesteps the `FindFilesRecursive` 6th-param `bClearFileNames=true` trap).
 
 Default roots (used when `UMonolithReflectionIntelSettings::DecisionMarkdownRoots` is empty):
 
@@ -899,7 +899,7 @@ This is the discovery companion to `find_class_specifier`: rather than guessing 
 
 Lazy on first call — `FCppReflectQueryAdapter` checks for `reflect_uclasses` via the borrowed shared handle (`FMonolithSourceDatabase::GetRawHandle()`) and triggers `FMonolithReflectionIntelModule::RunCppReflectIndexerOnce` on absence. The write-path indexer ensures the six tables and writes rows under `FScopeLock(&SharedDb->GetLock())` on the shared handle. `FCoreUObjectDelegates::ReloadCompleteDelegate` is bound at `StartupModule` (shared with the Phase 1 + Phase 2 hot-reload refresh) so UBT-driven hot-reload re-runs the indexer automatically.
 
-Read-path queries borrow the subsystem's single open handle directly under the game-thread-only contract (`ensure(IsInGameThread())`); there is no second open to coexist with — UE 5.7's `unreal-fs` VFS would reject a second open of `EngineSource.db` with `SQLITE_IOERR`. The shared handle's `PRAGMA journal_mode=DELETE` (the WAL-silent-fail trap from `Docs/references/UE57Gotchas.md`) applies as set by the subsystem.
+Read-path queries borrow the subsystem's single open handle directly under the game-thread-only contract (`ensure(IsInGameThread())`); there is no second open to coexist with — UE 5.7's `unreal-fs` VFS would reject a second open of `EngineSource.db` with `SQLITE_IOERR`. The shared handle's `PRAGMA journal_mode=DELETE` applies as set by the subsystem.
 
 ### 5.7 Known limitations
 
@@ -1195,7 +1195,7 @@ Release-gate composer — bundles the signals a release-readiness check needs in
 | `stale_decision_days` | integer | `Other` | no | `90` | Forwarded to `decision_query("list_stale")`. |
 | `hotspot_threshold` | number | `Other` | no | `0.7` | Forwarded to `risk_query("get_release_window_hotspots")`. |
 
-**Algorithm:** composer issues `monolith_status()`, `decision_query("list_stale")`, `risk_query("get_release_window_hotspots")`, and (in-process Monolith-only signals) the sentinel-list audit + CHANGELOG completeness audit specced in `.claude/rules/scoped/monolith-release.md`. Read-only end-to-end.
+**Algorithm:** composer issues `monolith_status()`, `decision_query("list_stale")`, `risk_query("get_release_window_hotspots")`, and (in-process Monolith-only signals) the sentinel-list audit + CHANGELOG completeness audit described in the [pipeline API reference](../API_REFERENCE.md#pipeline_queryrelease_readiness). Read-only end-to-end.
 
 **Response:**
 
@@ -1233,7 +1233,7 @@ Phase 4b would add two audit families on top of the Phase 4a + Phase 3b substrat
 | `Core`, `CoreUObject`, `Engine` | `PublicDependencyModuleNames` |
 | `MonolithCore`, `MonolithSource`, `SQLiteCore`, `DeveloperSettings`, `Json`, `JsonUtilities`, `Projects`, `AssetRegistry`, `UnrealEd`, `EditorSubsystem` | `PrivateDependencyModuleNames` |
 
-`DeveloperSettings` is its own module (NOT part of `Engine`) — required for the `UDeveloperSettings`-derived `UMonolithReflectionIntelSettings`. Documented in `.claude/rules/scoped/cpp-code.md` § Module Dependencies; LNK2019 trap if omitted.
+`DeveloperSettings` is its own module (NOT part of `Engine`) — required for the `UDeveloperSettings`-derived `UMonolithReflectionIntelSettings`. Omitting this dependency causes LNK2019 linker errors.
 
 **Build.cs unchanged from Phase 1 → Phase 2.** Phase 2 adds git-log subprocess invocation (which uses `FPlatformProcess::CreateProc` from `Core`, already linked) and regex sweeps (`FRegexPattern` from `Core`). The module-dep audit's resolver reuses the existing `Core`/`CoreUObject` reflection surface. No new module deps required for Phase 2.
 
@@ -1295,8 +1295,8 @@ Editing **any** Risk-category property re-arms the risk lazy bootstrap through `
 ## 14. Cross-References
 
 - **Parent spec:** [`SPEC_CORE.md`](../SPEC_CORE.md) — see §3 Module Reference and §12 Action Count Summary
-- **MCP reference:** `Docs/references/MCP.md` — `decision_query` row + `risk_query` row + `cppreflect_query` row + `network_query` row + `pipeline_query` row + `source_query("audit_module_dep_reality")` entry + the 4 Phase 4a audit actions on existing namespaces
-- **C++ conventions:** `.claude/rules/scoped/cpp-code.md` — module dep gotchas (`DeveloperSettings`, `FindFilesRecursive` 6th-param, SQLite WAL trap)
-- **API verification log:** `Docs/references/UE57Gotchas.md`
+- **MCP reference:** [API_REFERENCE.md](../API_REFERENCE.md) — `decision_query` row + `risk_query` row + `cppreflect_query` row + `network_query` row + `pipeline_query` row + `source_query("audit_module_dep_reality")` entry + the 4 Phase 4a audit actions on existing namespaces
+- **C++ conventions:** [CONTRIBUTING.md](../../CONTRIBUTING.md#coding-conventions) — public coding conventions; module-specific dependency and database constraints are documented above
+- **UE 5.7 validation evidence:** [AUDIT_UE57.md](../AUDIT_UE57.md)
 - **Bug class motivating the module-dep audit:** the `UPROPERTY` referencing a foreign-module type without that module being in `Build.cs` — surfaces as a confusing LNK2019 against UHT-generated `Z_Construct_*_NoRegister` symbols.
-- **Release-readiness composer reference:** `.claude/rules/scoped/monolith-release.md` — the sentinel-list audit + CHANGELOG completeness audit `pipeline_query("release_readiness")` invokes.
+- **Release-readiness composer reference:** [pipeline API reference](../API_REFERENCE.md#pipeline_queryrelease_readiness) — the sentinel-list audit + CHANGELOG completeness audit `pipeline_query("release_readiness")` invokes.

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Survivor E (`source_query("search_source")` cursor pagination) — opaque
 // cursor codec implementation.
-// Plan: Plugins/Monolith/Docs/plans/2026-05-27-mcp-llm-ergonomics.md §3.E
 
 #include "MonolithCursorCodec.h"
 

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Survivor C (Action + namespace did_you_mean fuzzy match) — plan §3.C.
-// Plan: Plugins/Monolith/Docs/plans/2026-05-27-mcp-llm-ergonomics.md
 
 #include "MonolithFuzzyMatch.h"
 #include "Algo/LevenshteinDistance.h"

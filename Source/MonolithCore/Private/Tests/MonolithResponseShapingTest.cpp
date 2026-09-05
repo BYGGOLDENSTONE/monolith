@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Survivor B (Response Shaping) automation tests — plan §12 "Survivor B".
-// Plan: Plugins/Monolith/Docs/plans/2026-05-27-mcp-llm-ergonomics.md
 //
 // DEVIATION NOTE: plan §6 file-table specifies `Source/MonolithCore/Tests/...`.
 // This file lives under `Source/MonolithCore/Private/Tests/...` instead so UBT's

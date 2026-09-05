@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Survivor E (`source_query("search_source")` cursor pagination) — opaque
-// cursor codec. Plan: Plugins/Monolith/Docs/plans/2026-05-27-mcp-llm-ergonomics.md §3.E
+// cursor codec.
 //
 // The cursor is base64-encoded JSON, opaque to the client. Server-side it
 // carries:

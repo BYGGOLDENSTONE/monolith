@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Survivor C (Action + namespace did_you_mean fuzzy match) — plan §3.C.
-// Plan: Plugins/Monolith/Docs/plans/2026-05-27-mcp-llm-ergonomics.md
 //
 // PRIVATE header (lives under Private/, not Public/). The fuzzy-match scorer
 // is an internal helper of the registry; exposing it via a Private/ header is
