@@ -17,6 +17,8 @@ enum class EReloadCompleteReason;
 // Forward-declare to keep SQLiteCore out of this header (the TUniquePtr member
 // below only requires a forward decl; full definition is needed in the .cpp).
 class FSQLiteDatabase;
+class FRiskMiningSession;
+struct FRiskMiningInputs;
 
 /**
  * MonolithReflectionIntel — Phase 1 of Reflection Intelligence (v0.17.0).
@@ -44,6 +46,8 @@ class FSQLiteDatabase;
 class FMonolithReflectionIntelModule : public IModuleInterface
 {
 public:
+	FMonolithReflectionIntelModule();
+	virtual ~FMonolithReflectionIntelModule() override;
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 
@@ -55,14 +59,11 @@ public:
 	 */
 	static bool RunDecisionIndexerOnce(FString& OutStatus);
 
-	/**
-	 * Phase 2 (v0.17.0) — run the risk indexer suite (FGitCoChangeIndexer +
-	 * FHotspotScorer + FConditionalGateIndexer) once on demand. Invoked
-	 * lazily by `risk_query` action handlers when `risk_hotspot_scores` is
-	 * absent, and bound to FCoreUObjectDelegates::ReloadCompleteDelegate for
-	 * hot-reload refresh. Wipes + rewrites each Phase 2 table in one pass.
-	 */
+	/** Start one asynchronous risk pass. True means accepted, not completed. */
 	static bool RunRiskIndexersOnce(FString& OutStatus);
+	FRiskMiningSession& GetRiskMiningSession();
+	bool CaptureRiskMiningInputs(FRiskMiningInputs& OutInputs, FString& OutError);
+	FSQLiteDatabase* GetRiskQueryDB();
 
 	/**
 	 * Phase 3a (v0.17.0) — run the cppreflect indexer pair on demand.
@@ -168,20 +169,8 @@ public:
 	bool HasAttemptedRiskBootstrap() const { return bRiskBootstrapAttempted; }
 	void MarkRiskBootstrapAttempted()       { bRiskBootstrapAttempted = true; }
 
-	/**
-	 * Re-arm the risk lazy bootstrap without waiting for a module reload.
-	 * Called from UMonolithReflectionIntelSettings::PostEditChangeProperty so a
-	 * Risk-category settings edit takes effect on the NEXT risk_query.
-	 *
-	 * RiskLastFailureTime must be cleared alongside the latch: the 5-second
-	 * retry throttle would otherwise swallow the first post-edit attempt and
-	 * the edit would still look like a no-op.
-	 */
-	void ClearRiskBootstrapAttempted()
-	{
-		bRiskBootstrapAttempted = false;
-		RiskLastFailureTime = 0.0;
-	}
+	/** Cancel/unpublish risk state on settings/reload; the next mine is explicit. */
+	void ClearRiskBootstrapAttempted();
 
 	/**
 	 * Resolve the git repositories the risk indexer should mine.
@@ -302,12 +291,12 @@ private:
 	 *  bootstrap. */
 	bool bDecisionBootstrapAttempted = false;
 
-	/** Phase 2 risk-bootstrap latch. Re-armed on module reload like the
-	 *  decision latch. The risk indexer is more expensive (spawns `git log`)
-	 *  so we ALSO guard against second-call mid-session via this flag.
-	 *  Cleared on failure inside RunRiskIndexersOnce — see decision-latch
-	 *  comment above. */
+	/** Read-only disk-cache lookup latch; explicit risk.mine owns worker starts. */
 	bool bRiskBootstrapAttempted = false;
+	bool bRiskCacheInvalidated = false;
+	bool bRiskLegacyCacheAllowed = false;
+	TUniquePtr<FRiskMiningSession> RiskMiningSession;
+	void CaptureRiskMiningConfiguration(FRiskMiningInputs& OutInputs);
 
 	/** Phase 3a cppreflect-bootstrap latch. Re-armed on module reload. The
 	 *  UHT-artefact sweep can scan thousands of files; this guard prevents

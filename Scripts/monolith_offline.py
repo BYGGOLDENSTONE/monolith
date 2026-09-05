@@ -31,7 +31,8 @@ Project actions:
     get_stats
     get_asset_details <asset_path>
 
-Reflection Intelligence actions (read EngineSource.db reflect_* / risk_* / decision_* tables).
+Reflection Intelligence reads use EngineSource.db; risk prefers its sibling Risk.db snapshot.
+Risk mining and status require the live editor.
 FULL offline parity with the live RI adapters (Source/MonolithReflectionIntel/Private/
 {CppReflect,Network,Decision,Risk}/F*QueryAdapter.cpp) per Docs/plans/offline-parity-spec.md.
 
@@ -1752,19 +1753,24 @@ class ProjectActions:
 # ============================================================
 
 class ReflectionActions:
-    """All RI tables live in EngineSource.db (reflect_* / risk_* / git_* / decision_*)."""
+    """Risk reads the last committed Risk.db snapshot; other RI reads EngineSource.db."""
 
-    def __init__(self):
+    def __init__(self, namespace=None):
         import sqlite3
         self._sqlite3 = sqlite3
-        self.db = open_db(SOURCE_DB)
+        risk_db = SOURCE_DB.with_name("Risk.db")
+        self.db_path = risk_db if namespace == "risk" and risk_db.is_file() else SOURCE_DB
+        self.db = open_db(self.db_path)
 
     def _require_table(self, table: str) -> bool:
         row = self.db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", (table,)
         ).fetchone()
         if not row:
-            emit_error(f"{table} not in EngineSource.db. Build the project + rebuild_reflection_index in-editor.")
+            if table.startswith(("risk_", "git_")) or table == "reflect_conditional_gates":
+                emit_error(f"{table} not mined. Run risk.mine in-editor and wait for risk.get_mining_status state done.")
+            else:
+                emit_error(f"{table} not in EngineSource.db. Build the project + rebuild_reflection_index in-editor.")
             return False
         return True
 
@@ -2823,7 +2829,7 @@ def main():
         pa = ProjectActions()
         getattr(pa, args.action)(args)
     elif args.namespace in ("cppreflect", "network", "decision", "risk"):
-        ra = ReflectionActions()
+        ra = ReflectionActions(args.namespace)
         getattr(ra, args.action)(args)
 
 

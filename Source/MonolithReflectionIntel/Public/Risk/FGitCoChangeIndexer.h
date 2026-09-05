@@ -3,14 +3,13 @@
 //
 // FGitCoChangeIndexer — mines `git log` output from each known nested git repo,
 // produces co-change pair counts and per-file churn rows, writes them to
-// EngineSource.db. Plain C++ worker (no UObject). Idempotent on the tables:
+// the worker-owned Risk.db snapshot. Plain C++ worker (no UObject). Idempotent on the tables:
 // each Run() does EnsureSchema → wipe-and-rewrite of git_cochange_pairs +
 // git_file_churn for the supplied repo set.
 //
-// Threading: invoked from the module's lazy-bootstrap path on the game thread.
-// The git subprocess runs concurrently; the indexer blocks in a CreateProc +
-// ReadPipe poll loop with a settings-driven timeout (Phase 2 §8 gotcha — must
-// not hang the editor).
+// Threading: legacy Run is game-thread-only. RunOwnedDatabase is worker-only
+// and requires a private database and captured inputs. Its cancellable git
+// subprocess polling never borrows the live source handle.
 //
 // API verifications (per Iron Law 1, re-checked at Phase 2 execution time):
 //   - FPlatformProcess::CreateProc / CreatePipe / ReadPipe / ClosePipe /
@@ -44,6 +43,7 @@
 #include "Templates/Tuple.h"
 
 class FSQLiteDatabase;
+struct FRiskMiningWorkerContext;
 
 /** Result row buffered between in-memory parse and SQLite write. Internal. */
 struct FGitCommitFileTouches
@@ -80,8 +80,8 @@ public:
 	 *                            (release / mass-rename commits dominate
 	 *                            co-change weights otherwise — design spec Q6).
 	 * @param OutStatus           One-line human-readable summary (counts).
-	 * @return true on full success, false on schema or write failure. Per-repo
-	 *         git-log failures are logged + counted but do not abort.
+	 * @return true on full success, false on schema or write failure. Any per-repo
+	 *         git-log or write failure makes the pass fail.
 	 */
 	bool Run(
 		FSQLiteDatabase& DB,
@@ -91,19 +91,36 @@ public:
 		int32 MaxCommitFileCount,
 		FString& OutStatus);
 
+	/** Worker-only entry: DB must be exclusively owned by this worker; inputs are captured on the game thread. */
+	bool RunOwnedDatabase(
+		FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context,
+		const TArray<FString>& GitRepoRoots,
+		int32 MaxCommitWindow,
+		const TArray<FString>& NoiseFilter,
+		int32 MaxCommitFileCount,
+		FString& OutStatus);
+
 private:
+	bool RunInternal(
+		FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context,
+		const TArray<FString>& GitRepoRoots,
+		int32 MaxCommitWindow,
+		const TArray<FString>& NoiseFilter,
+		int32 MaxCommitFileCount,
+		FString& OutStatus);
+
 	bool EnsureSchema(FSQLiteDatabase& DB);
 
 	/** Spawns `git log` in `RepoRoot`, captures stdout, parses to commit rows. */
-	bool RunGitLog(
+	bool RunGitLog(const FRiskMiningWorkerContext& Context,
 		const FString& RepoRoot,
 		int32 MaxCommits,
 		int32 TimeoutSeconds,
 		TArray<FGitCommitFileTouches>& OutCommits,
 		FString& OutErr);
 
-	/** Parse `git log --name-only --pretty=format:"COMMIT %H %at" -z`-ish output. */
-	void ParseGitLog(
+	/** Parse line-delimited `git log --name-only --pretty=format:"COMMIT %H %at"` output. */
+	void ParseGitLog(const FRiskMiningWorkerContext& Context,
 		const FString& StdoutText,
 		TArray<FGitCommitFileTouches>& OutCommits);
 
@@ -132,7 +149,7 @@ private:
 		FString& OutPrefixToStrip);
 
 	/** Tally co-change pairs + per-file churn from a parsed commit list. */
-	void TallyCoChangePairs(
+	void TallyCoChangePairs(const FRiskMiningWorkerContext& Context,
 		const TArray<FGitCommitFileTouches>& Commits,
 		const TArray<FString>& NoiseFilter,
 		int32 MaxFiles,
@@ -140,7 +157,7 @@ private:
 		TMap<FString, int32>& OutChurn,
 		TMap<FString, int64>& OutLastTouched);
 
-	bool WritePairs(
+	bool WritePairs(const FRiskMiningWorkerContext& Context,
 		FSQLiteDatabase& DB,
 		const FString& RepoTag,
 		const TMap<TPair<FString, FString>, int32>& Pairs,

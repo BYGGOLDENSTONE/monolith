@@ -19,6 +19,7 @@
 #include "Internationalization/Regex.h"
 
 class FSQLiteDatabase;
+struct FRiskMiningWorkerContext;
 
 /** One detected gate row. Internal buffer between scan and write. */
 struct FConditionalGateRow
@@ -46,17 +47,22 @@ public:
 	 */
 	bool Run(FSQLiteDatabase& DB, const TArray<FString>& ScanRoots, FString& OutStatus);
 
+	/** Worker-only entry: DB must be exclusively owned by this worker; inputs are captured on the game thread. */
+	bool RunOwnedDatabase(FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context, const TArray<FString>& ScanRoots, FString& OutStatus);
+
 private:
+	bool RunInternal(FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context, const TArray<FString>& ScanRoots, FString& OutStatus);
+
 	bool EnsureSchema(FSQLiteDatabase& DB);
 
-	void ScanFile(const FString& AbsPath, const FString& ProjectRoot,
+	bool ScanFile(const FRiskMiningWorkerContext& Context, const FString& AbsPath, const FString& ProjectRoot,
 		TArray<FConditionalGateRow>& OutRows);
 
-	bool WriteRows(FSQLiteDatabase& DB, const TArray<FConditionalGateRow>& Rows);
+	bool WriteRows(const FRiskMiningWorkerContext& Context, FSQLiteDatabase& DB, const TArray<FConditionalGateRow>& Rows);
 
 	// Phase 2 code-quality item 4 — hoist FRegexPattern out of per-file loops.
 	// These are members so they exist for the lifetime of the indexer instance
-	// (Run() is the only public entry, scoped one call).
+	// (Each Run or RunOwnedDatabase call uses one scoped indexer instance).
 	FRegexPattern IfWithPattern;       // matches `#if WITH_<MACRO>` or `#ifdef WITH_<MACRO>`
 	FRegexPattern BuildCsProbePattern; // matches `bHas<Word>` Build.cs probe identifiers
 };

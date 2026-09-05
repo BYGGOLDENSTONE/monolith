@@ -20,6 +20,7 @@
 
 #include "Risk/FHotspotScorer.h"
 #include "Risk/RiskSchema.h"
+#include "Risk/FRiskMiningWorkerContext.h"
 #include "MonolithReflectionIntelModule.h"
 
 #include "HAL/PlatformFileManager.h"
@@ -41,6 +42,7 @@ namespace
 		Full.ReplaceInline(TEXT("\\"), TEXT("/"));
 		FString Root = ProjectRoot;
 		Root.ReplaceInline(TEXT("\\"), TEXT("/"));
+		if (!Root.EndsWith(TEXT("/"))) Root += TEXT("/");
 
 		if (Full.StartsWith(Root, ESearchCase::IgnoreCase))
 		{
@@ -55,7 +57,23 @@ namespace
 
 bool FHotspotScorer::Run(FSQLiteDatabase& DB, FString& OutStatus)
 {
-	ensure(IsInGameThread());
+	if (!ensure(IsInGameThread())) return false;
+	FRiskMiningWorkerContext Context;
+	Context.ProjectRoot = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+	return RunInternal(DB, Context, OutStatus);
+}
+
+bool FHotspotScorer::RunOwnedDatabase(FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context, FString& OutStatus)
+{
+	if (!ensure(!IsInGameThread())) return false;
+	if (Context.ProjectRoot.IsEmpty() || FPaths::IsRelative(Context.ProjectRoot))
+	{ OutStatus = TEXT("HotspotScorer: captured absolute project root is required"); return false; }
+	return RunInternal(DB, Context, OutStatus);
+}
+
+bool FHotspotScorer::RunInternal(FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context, FString& OutStatus)
+{
+	if (Context.IsCancelled()) { OutStatus = TEXT("Risk mining cancelled"); return false; }
 
 	if (!EnsureSchema(DB))
 	{
@@ -67,26 +85,19 @@ bool FHotspotScorer::Run(FSQLiteDatabase& DB, FString& OutStatus)
 	// Wipe — Phase 2 §3 wipe-and-rewrite policy.
 	{
 		FSQLitePreparedStatement Del;
-		Del.Create(DB, TEXT("DELETE FROM risk_hotspot_scores;"));
-		Del.Execute();
+		if (!Del.Create(DB, TEXT("DELETE FROM risk_hotspot_scores;")) || !Del.Execute())
+		{ OutStatus = TEXT("HotspotScorer: could not clear scores"); return false; }
 	}
 
 	TMap<FString, FFileSignals> Signals;
 
-	if (!LoadChurn(DB, Signals))
+	if (!LoadChurn(Context, DB, Signals) || !LoadComplexity(Context, DB, Signals))
 	{
-		// Empty churn = OK (no nested git repos found). Still emit complexity
-		// rows so users see file complexity rankings.
-		UE_LOG(LogMonolithReflectionIntel, Verbose,
-			TEXT("HotspotScorer: no churn rows present"));
-	}
-	if (!LoadComplexity(DB, Signals))
-	{
-		UE_LOG(LogMonolithReflectionIntel, Warning,
-			TEXT("HotspotScorer: complexity load failed; scores will reflect churn only"));
+		OutStatus = Context.IsCancelled() ? TEXT("HotspotScorer: cancelled") : TEXT("HotspotScorer: signal read failed");
+		return false;
 	}
 
-	if (!WriteScores(DB, Signals))
+	if (!WriteScores(Context, DB, Signals))
 	{
 		OutStatus = TEXT("FHotspotScorer: write failed");
 		return false;
@@ -111,32 +122,32 @@ bool FHotspotScorer::EnsureSchema(FSQLiteDatabase& DB)
 		return Stmt.Execute();
 	};
 	if (!Exec(MonolithRiskSchema::GetCreateHotspotScoresTableSQL())) { return false; }
-	Exec(MonolithRiskSchema::GetCreateHotspotScoresIndexScoreSQL());
-	return true;
+	return Exec(MonolithRiskSchema::GetCreateHotspotScoresIndexScoreSQL());
 }
 
-bool FHotspotScorer::LoadChurn(FSQLiteDatabase& DB, TMap<FString, FFileSignals>& InOut)
+bool FHotspotScorer::LoadChurn(const FRiskMiningWorkerContext& Context, FSQLiteDatabase& DB, TMap<FString, FFileSignals>& InOut)
 {
 	FSQLitePreparedStatement Stmt;
 	if (!Stmt.Create(DB, TEXT(
 		"SELECT file_path, SUM(commit_count) FROM git_file_churn GROUP BY file_path;")))
 	{
-		// Table doesn't exist (Phase 2 not bootstrapped yet) — non-fatal.
+		// Missing inputs or SQL failure must not publish a complete-looking snapshot.
 		return false;
 	}
-	while (Stmt.Step() == ESQLitePreparedStatementStepResult::Row)
+	ESQLitePreparedStatementStepResult Step;
+	while ((Step = Stmt.Step()) == ESQLitePreparedStatementStepResult::Row)
 	{
+		if (Context.IsCancelled()) return false;
 		FString Path;
 		int32 Sum = 0;
-		Stmt.GetColumnValueByIndex(0, Path);
-		Stmt.GetColumnValueByIndex(1, Sum);
+		if (!Stmt.GetColumnValueByIndex(0, Path) || !Stmt.GetColumnValueByIndex(1, Sum)) return false;
 		FFileSignals& S = InOut.FindOrAdd(Path);
 		S.ChurnCount = Sum;
 	}
-	return true;
+	return Step == ESQLitePreparedStatementStepResult::Done && !Context.IsCancelled();
 }
 
-bool FHotspotScorer::LoadComplexity(FSQLiteDatabase& DB, TMap<FString, FFileSignals>& InOut)
+bool FHotspotScorer::LoadComplexity(const FRiskMiningWorkerContext& Context, FSQLiteDatabase& DB, TMap<FString, FFileSignals>& InOut)
 {
 	// Only join against .cpp / .h / .hpp / .inl source files — not binary
 	// artefacts. The `files.file_type` column is the indexer's classification.
@@ -148,15 +159,15 @@ bool FHotspotScorer::LoadComplexity(FSQLiteDatabase& DB, TMap<FString, FFileSign
 		return false;
 	}
 
-	const FString ProjectRoot =
-		FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+	const FString& ProjectRoot = Context.ProjectRoot;
 
-	while (Stmt.Step() == ESQLitePreparedStatementStepResult::Row)
+	ESQLitePreparedStatementStepResult Step;
+	while ((Step = Stmt.Step()) == ESQLitePreparedStatementStepResult::Row)
 	{
+		if (Context.IsCancelled()) return false;
 		FString AbsPath;
 		int32 LineCount = 0;
-		Stmt.GetColumnValueByIndex(0, AbsPath);
-		Stmt.GetColumnValueByIndex(1, LineCount);
+		if (!Stmt.GetColumnValueByIndex(0, AbsPath) || !Stmt.GetColumnValueByIndex(1, LineCount)) return false;
 
 		const FString Rel = HotspotToProjectRelative(AbsPath, ProjectRoot);
 		// Only retain rows under the project tree — engine files have no
@@ -169,10 +180,10 @@ bool FHotspotScorer::LoadComplexity(FSQLiteDatabase& DB, TMap<FString, FFileSign
 		FFileSignals& S = InOut.FindOrAdd(Rel);
 		S.ComplexityProxy = LineCount;
 	}
-	return true;
+	return Step == ESQLitePreparedStatementStepResult::Done && !Context.IsCancelled();
 }
 
-bool FHotspotScorer::WriteScores(FSQLiteDatabase& DB, const TMap<FString, FFileSignals>& Signals)
+bool FHotspotScorer::WriteScores(const FRiskMiningWorkerContext& Context, FSQLiteDatabase& DB, const TMap<FString, FFileSignals>& Signals)
 {
 	// Normalise both signals — find max for each then divide. Composite =
 	// product of the two normalised components, range [0,1].
@@ -180,6 +191,7 @@ bool FHotspotScorer::WriteScores(FSQLiteDatabase& DB, const TMap<FString, FFileS
 	int32 MaxComplexity = 0;
 	for (const TPair<FString, FFileSignals>& E : Signals)
 	{
+		if (Context.IsCancelled()) return false;
 		MaxChurn = FMath::Max(MaxChurn, E.Value.ChurnCount);
 		MaxComplexity = FMath::Max(MaxComplexity, E.Value.ComplexityProxy);
 	}
@@ -197,30 +209,38 @@ bool FHotspotScorer::WriteScores(FSQLiteDatabase& DB, const TMap<FString, FFileS
 		return false;
 	}
 
-	DB.Execute(TEXT("BEGIN TRANSACTION;"));
+	if (!DB.Execute(TEXT("SAVEPOINT risk_hotspots;"))) return false;
 	int32 OkCount = 0;
 	for (const TPair<FString, FFileSignals>& E : Signals)
 	{
+		if (Context.IsCancelled()) break;
 		const double NormChurn = static_cast<double>(E.Value.ChurnCount) * InvMaxChurn;
 		const double NormCmplx = static_cast<double>(E.Value.ComplexityProxy) * InvMaxCmplx;
 		const double Score = NormChurn * NormCmplx;
 
 		Ins.Reset();
 		Ins.ClearBindings();
-		Ins.SetBindingValueByIndex(1, E.Key);
-		Ins.SetBindingValueByIndex(2, E.Value.ChurnCount);
-		Ins.SetBindingValueByIndex(3, E.Value.ComplexityProxy);
-		Ins.SetBindingValueByIndex(4, NormChurn);
-		Ins.SetBindingValueByIndex(5, NormCmplx);
-		Ins.SetBindingValueByIndex(6, Score);
-		if (Ins.Execute()) { ++OkCount; }
+		if (Ins.SetBindingValueByIndex(1, E.Key)
+			&& Ins.SetBindingValueByIndex(2, E.Value.ChurnCount)
+			&& Ins.SetBindingValueByIndex(3, E.Value.ComplexityProxy)
+			&& Ins.SetBindingValueByIndex(4, NormChurn)
+			&& Ins.SetBindingValueByIndex(5, NormCmplx)
+			&& Ins.SetBindingValueByIndex(6, Score)
+			&& Ins.Execute()) { ++OkCount; }
 		else
 		{
 			UE_LOG(LogMonolithReflectionIntel, Verbose,
 				TEXT("HotspotScorer: INSERT failed for %s"), *E.Key);
 		}
 	}
-	DB.Execute(TEXT("COMMIT;"));
+	Ins.Destroy();
+	if (OkCount != Signals.Num() || Context.IsCancelled())
+	{
+		DB.Execute(TEXT("ROLLBACK TO risk_hotspots;"));
+		DB.Execute(TEXT("RELEASE risk_hotspots;"));
+		return false;
+	}
+	if (!DB.Execute(TEXT("RELEASE risk_hotspots;"))) return false;
 
 	UE_LOG(LogMonolithReflectionIntel, Verbose,
 		TEXT("HotspotScorer: wrote %d / %d rows (max_churn=%d max_complexity=%d)"),

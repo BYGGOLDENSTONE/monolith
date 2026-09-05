@@ -188,11 +188,9 @@ public:
 
 #if WITH_EDITOR
 	/**
-	 * Clear the risk lazy-bootstrap latch whenever a Risk-category setting is
-	 * edited. The latch is per-module-instance and is set BEFORE the first
-	 * mining pass of a session, so without this an edit would not take effect
-	 * until the editor was restarted — the config would silently no-op, which
-	 * is the same failure class the setting exists to fix.
+	 * Cancel active risk mining and invalidate the published snapshot whenever
+	 * a Risk-category setting is edited. The next risk.mine captures the new
+	 * configuration; queries never start mining implicitly.
 	 */
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif

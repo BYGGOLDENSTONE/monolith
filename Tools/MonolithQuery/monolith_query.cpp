@@ -2557,7 +2557,10 @@ static void emit_param_error(const std::string& message) {
 static void emit_missing_table(const std::string& table) {
     ojson out;
     out["success"] = false;
-    out["error"] = table + " not in EngineSource.db. Build the project + rebuild_reflection_index in-editor.";
+    const bool risk_table = table.rfind("risk_", 0) == 0 || table.rfind("git_", 0) == 0 || table == "reflect_conditional_gates";
+    out["error"] = table + (risk_table
+        ? " not mined. Run risk.mine in-editor and wait for risk.get_mining_status state done."
+        : " not in EngineSource.db. Build the project + rebuild_reflection_index in-editor.");
     std::cout << out.dump(2) << std::endl;
 }
 
@@ -4000,9 +4003,14 @@ int main(int argc, char* argv[]) {
 
     } else if (args.ns == "cppreflect" || args.ns == "network" ||
                args.ns == "decision" || args.ns == "risk") {
-        // All Reflection Intelligence read tables live in EngineSource.db.
+        // Explicit source_db wins. Otherwise risk uses the last committed
+        // dedicated snapshot, with EngineSource.db retained for legacy indexes.
         std::string db_path = args.opt("source_db");
-        if (db_path.empty()) db_path = (fs::path(db_dir) / "EngineSource.db").string();
+        if (db_path.empty()) {
+            const fs::path risk_db = fs::path(db_dir) / "Risk.db";
+            db_path = (args.ns == "risk" && fs::is_regular_file(risk_db)
+                ? risk_db : fs::path(db_dir) / "EngineSource.db").string();
+        }
 
         ReflectionActions ra;
         ra.open(db_path);

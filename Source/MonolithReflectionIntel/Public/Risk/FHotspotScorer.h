@@ -7,8 +7,8 @@
 // the join into `risk_hotspot_scores`. Plain C++ worker. Idempotent: wipes +
 // rewrites the table on each Run().
 //
-// Threading: invoked from the game thread following GitCoChangeIndexer (same
-// lazy-bootstrap path). All SQLite ops on the supplied DB handle.
+// Threading: Run is game-thread-only. RunOwnedDatabase operates exclusively
+// on a worker-owned database using captured project inputs.
 
 #pragma once
 
@@ -16,6 +16,7 @@
 #include "Containers/Map.h"
 
 class FSQLiteDatabase;
+struct FRiskMiningWorkerContext;
 
 class MONOLITHREFLECTIONINTEL_API FHotspotScorer
 {
@@ -30,7 +31,12 @@ public:
 	 */
 	bool Run(FSQLiteDatabase& DB, FString& OutStatus);
 
+	/** Worker-only entry: DB must be exclusively owned by this worker; inputs are captured on the game thread. */
+	bool RunOwnedDatabase(FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context, FString& OutStatus);
+
 private:
+	bool RunInternal(FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context, FString& OutStatus);
+
 	bool EnsureSchema(FSQLiteDatabase& DB);
 
 	struct FFileSignals
@@ -39,7 +45,7 @@ private:
 		int32 ComplexityProxy = 0; // line_count from MonolithSource.files
 	};
 
-	bool LoadChurn(FSQLiteDatabase& DB, TMap<FString, FFileSignals>& InOut);
-	bool LoadComplexity(FSQLiteDatabase& DB, TMap<FString, FFileSignals>& InOut);
-	bool WriteScores(FSQLiteDatabase& DB, const TMap<FString, FFileSignals>& Signals);
+	bool LoadChurn(const FRiskMiningWorkerContext& Context, FSQLiteDatabase& DB, TMap<FString, FFileSignals>& InOut);
+	bool LoadComplexity(const FRiskMiningWorkerContext& Context, FSQLiteDatabase& DB, TMap<FString, FFileSignals>& InOut);
+	bool WriteScores(const FRiskMiningWorkerContext& Context, FSQLiteDatabase& DB, const TMap<FString, FFileSignals>& Signals);
 };

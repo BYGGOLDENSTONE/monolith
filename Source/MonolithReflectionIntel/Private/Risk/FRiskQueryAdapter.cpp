@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Plan: Plugins/Monolith/Docs/plans/2026-05-28-reflection-intelligence.md (Phase 2 — v0.17.0).
 //
-// FRiskQueryAdapter — implementation. Five read-only handlers over the Phase 2
-// risk tables. All run on the game thread. Cursor codec mirrored from the
+// FRiskQueryAdapter — five snapshot queries, explicit asynchronous mine, and
+// mining status. Handlers run on the game thread; mining runs on an owned worker.
+// Cursor codec mirrored from the
 // Phase 1 decision adapter; consolidating into MonolithCore is a Phase 5+
 // item and out of scope.
 
 #include "Risk/FRiskQueryAdapter.h"
+#include "Risk/FRiskMiningSession.h"
 #include "MonolithReflectionIntelModule.h"
 #include "MonolithReflectionIntelSettings.h"
 #include "MonolithRIMetaTable.h"
@@ -25,6 +27,19 @@
 
 namespace
 {
+#if WITH_DEV_AUTOMATION_TESTS
+	FRiskMiningSession* RiskTestSession = nullptr;
+	TFunction<bool(FRiskMiningInputs&, FString&)> RiskTestInputProvider;
+#endif
+	FRiskMiningSession* RiskGetSession()
+	{
+#if WITH_DEV_AUTOMATION_TESTS
+		if (RiskTestSession) return RiskTestSession;
+#endif
+		auto* Module = FModuleManager::GetModulePtr<FMonolithReflectionIntelModule>(TEXT("MonolithReflectionIntel"));
+		return Module ? &Module->GetRiskMiningSession() : nullptr;
+	}
+
 	// Cursor codec + filter-hash hoisted to Private/Shared/RICursorCodec.{h,cpp}
 	// to avoid unity-build collisions across the six query adapters. See that
 	// header for rationale. Wire format / behaviour unchanged.
@@ -109,6 +124,25 @@ namespace
 	}
 }
 
+#if WITH_DEV_AUTOMATION_TESTS
+FRiskQueryAdapter::FScopedMiningTestOverride::FScopedMiningTestOverride(
+	FRiskMiningSession& Session, TFunction<bool(FRiskMiningInputs&, FString&)> InputProvider)
+{
+	check(IsInGameThread());
+	PreviousSession = RiskTestSession;
+	PreviousProvider = MoveTemp(RiskTestInputProvider);
+	RiskTestSession = &Session;
+	RiskTestInputProvider = MoveTemp(InputProvider);
+}
+
+FRiskQueryAdapter::FScopedMiningTestOverride::~FScopedMiningTestOverride()
+{
+	check(IsInGameThread());
+	RiskTestSession = PreviousSession;
+	RiskTestInputProvider = MoveTemp(PreviousProvider);
+}
+#endif
+
 void FRiskQueryAdapter::AttachEmptyResultDiagnostics(const TSharedPtr<FJsonObject>& Out)
 {
 	TArray<FString> Scanned;
@@ -123,6 +157,11 @@ void FRiskQueryAdapter::AttachEmptyResultDiagnostics(const TSharedPtr<FJsonObjec
 
 void FRiskQueryAdapter::RegisterActions(FMonolithToolRegistry& Registry)
 {
+	Registry.RegisterAction(TEXT("risk"), TEXT("mine"),
+		TEXT("Start asynchronous risk mining from a source/configuration snapshot. Returns running immediately; poll get_mining_status. Existing queries are unavailable until completion."),
+		FMonolithActionHandler::CreateStatic(&FRiskQueryAdapter::HandleMine),
+		FParamSchemaBuilder().Build());
+
 	// ---- get_hotspot_score ----
 	Registry.RegisterAction(TEXT("risk"), TEXT("get_hotspot_score"),
 		TEXT("Look up the composite churn × complexity hotspot score for a file. "
@@ -200,16 +239,15 @@ void FRiskQueryAdapter::RegisterActions(FMonolithToolRegistry& Registry)
 	// which repositories were mined, which were rejected and why, what the
 	// mining pass reported, and how full the tables are.
 	Registry.RegisterAction(TEXT("risk"), TEXT("get_mining_status"),
-		TEXT("Report which git repositories the risk indexer mined, which candidates "
+		TEXT("Report idle/running/done/failed and progress, which git repositories the risk indexer mined, which candidates "
 		     "it skipped and why, the last mining status line, and the row counts of "
 		     "the risk tables. Read-only; start here when a risk_query returns empty."),
 		FMonolithActionHandler::CreateStatic(&FRiskQueryAdapter::HandleGetMiningStatus),
 		FParamSchemaBuilder().Build());
 
-	// Dispatcher annotation — all six handlers are pure SELECT against the
-	// risk tables. Same shape as Phase 1's decision dispatcher annotation.
+	// The dispatcher includes explicit mining, which writes the dedicated cache.
 	FMonolithDispatcherAnnotations Anno;
-	Anno.bReadOnlyHint   = true;
+	Anno.bReadOnlyHint   = false;
 	Anno.bDestructiveHint = false;
 	Anno.bIdempotentHint = true;
 	Anno.Title = TEXT("Risk + co-change query");
@@ -217,84 +255,40 @@ void FRiskQueryAdapter::RegisterActions(FMonolithToolRegistry& Registry)
 }
 
 // ============================================================================
-// DB accessor — lazy bootstrap of the risk tables on first call.
+// DB accessor — completed snapshots only; no lazy mining.
 // ============================================================================
 
 FSQLiteDatabase* FRiskQueryAdapter::GetRawDB()
 {
-	// Thread-safety contract (matches FNetworkQueryAdapter and the other RI
-	// adapters): the borrowed EngineSource.db handle is game-thread-only. The
-	// subsystem's handle close runs on the game thread (its reindex trigger is
-	// game-thread-dispatched), so game-thread-only reads serialise against that
-	// close without a per-read lock.
-	ensure(IsInGameThread());
+	check(IsInGameThread());
+#if WITH_DEV_AUTOMATION_TESTS
+	if (RiskTestSession) return RiskTestSession->GetQueryDB();
+#endif
+	auto* Module = FModuleManager::GetModulePtr<FMonolithReflectionIntelModule>(TEXT("MonolithReflectionIntel"));
+	return Module ? Module->GetRiskQueryDB() : nullptr;
+}
 
-	FMonolithReflectionIntelModule* Module =
-		FModuleManager::GetModulePtr<FMonolithReflectionIntelModule>(
-			TEXT("MonolithReflectionIntel"));
-	if (!Module) { return nullptr; }
-
-	FSQLiteDatabase* DB = Module->GetOrOpenCachedQueryDb();
-	if (!DB) { return nullptr; }
-
-	if (!Module->HasAttemptedRiskBootstrap())
+FMonolithActionResult FRiskQueryAdapter::HandleMine(const TSharedPtr<FJsonObject>& /*Params*/)
+{
+	FRiskMiningSession* Session = RiskGetSession();
+	if (!Session) return FMonolithActionResult::PreconditionFailed(TEXT("risk module unavailable"), TEXT("risk.mine"));
+	Session->Poll();
+	if (Session->IsRunning()) return FMonolithActionResult::Success(Session->GetStatus());
+	FString Error;
+#if WITH_DEV_AUTOMATION_TESTS
+	if (RiskTestSession)
 	{
-		Module->MarkRiskBootstrapAttempted();
-		FSQLitePreparedStatement TableCheck;
-		const bool bPrepared = TableCheck.Create(*DB,
-			TEXT("SELECT name FROM sqlite_master WHERE type='table' AND name='risk_hotspot_scores';"));
-		const bool bTableExists = bPrepared
-			&& TableCheck.Step() == ESQLitePreparedStatementStepResult::Row;
-		TableCheck.Destroy();
-
-		// Handover doc item #1 — stale detection.
-		bool bVersionMismatch = false;
-		if (bTableExists)
-		{
-			int32 StoredVersion = 0;
-			const bool bHasStamp = MonolithRIMeta::ReadStoredVersion(
-				*DB, TEXT("risk"), StoredVersion);
-			const int32 CurrentVersion = MonolithRIMeta::GetIndexerCodeVersion(TEXT("risk"));
-			if (!bHasStamp || StoredVersion != CurrentVersion)
-			{
-				UE_LOG(LogMonolithReflectionIntel, Log,
-					TEXT("risk: stale-detection triggered (stored=%d, current=%d) — forcing rebuild"),
-					bHasStamp ? StoredVersion : -1, CurrentVersion);
-				bVersionMismatch = true;
-			}
-
-			// CONFIGURATION staleness (issue #119) — a separate `risk.config`
-			// row, deliberately not folded into the code version so the two
-			// causes stay distinguishable in the log. Computed by the same
-			// shared function the indexer stamps with; a missing row counts as
-			// a mismatch, so a legacy DB re-mines exactly once on upgrade.
-			if (!bVersionMismatch)
-			{
-				int32 StoredConfig = 0;
-				const bool bHasConfig = MonolithRIMeta::ReadStoredVersion(
-					*DB, MonolithRIMeta::GetRiskConfigSubsystemKey(), StoredConfig);
-				const int32 CurrentConfig = MonolithRIMeta::ComputeRiskConfigFingerprint(
-					FMonolithReflectionIntelModule::ResolveGitRepoRoots(nullptr));
-				if (!bHasConfig || StoredConfig != CurrentConfig)
-				{
-					UE_LOG(LogMonolithReflectionIntel, Log,
-						TEXT("risk: config fingerprint changed (stored=%d, current=%d) — forcing re-mine"),
-						bHasConfig ? StoredConfig : 0, CurrentConfig);
-					bVersionMismatch = true;
-				}
-			}
-		}
-
-		if (!bTableExists || bVersionMismatch)
-		{
-			Module->ResetCachedQueryDb();
-			FString IndexerStatus;
-			FMonolithReflectionIntelModule::RunRiskIndexersOnce(IndexerStatus);
-			DB = Module->GetOrOpenCachedQueryDb();
-			if (!DB) { return nullptr; }
-		}
+		FRiskMiningInputs Inputs;
+		if (!RiskTestInputProvider || !RiskTestInputProvider(Inputs, Error) || !Session->Start(Inputs, Error))
+			return FMonolithActionResult::PreconditionFailed(Error, TEXT("risk.mine"));
 	}
-	return DB;
+	else
+#endif
+	if (!FMonolithReflectionIntelModule::RunRiskIndexersOnce(Error))
+	{
+		return FMonolithActionResult::PreconditionFailed(Error, TEXT("risk.mine"));
+	}
+	return FMonolithActionResult::Success(Session->GetStatus());
 }
 
 // ============================================================================
@@ -306,8 +300,7 @@ FMonolithActionResult FRiskQueryAdapter::HandleGetHotspotScore(const TSharedPtr<
 	FSQLiteDatabase* DB = GetRawDB();
 	if (!DB)
 	{
-		return FMonolithActionResult::Error(
-			TEXT("EngineSource.db not available. Run source.trigger_reindex to bootstrap."));
+		return FMonolithActionResult::PreconditionFailed(TEXT("risk index not mined"), TEXT("risk.mine"));
 	}
 
 	const FString FilePath = CanonPath(Params->GetStringField(TEXT("file_path")));
@@ -359,7 +352,7 @@ FMonolithActionResult FRiskQueryAdapter::HandleGetHotspotScore(const TSharedPtr<
 FMonolithActionResult FRiskQueryAdapter::HandleGetCoChangePairs(const TSharedPtr<FJsonObject>& Params)
 {
 	FSQLiteDatabase* DB = GetRawDB();
-	if (!DB) { return FMonolithActionResult::Error(TEXT("EngineSource.db not available.")); }
+	if (!DB) { return FMonolithActionResult::PreconditionFailed(TEXT("risk index not mined"), TEXT("risk.mine")); }
 
 	const FString FilePath = CanonPath(Params->GetStringField(TEXT("file_path")));
 	if (FilePath.IsEmpty())
@@ -473,7 +466,7 @@ FMonolithActionResult FRiskQueryAdapter::HandleGetCoChangePairs(const TSharedPtr
 FMonolithActionResult FRiskQueryAdapter::HandleGetFileChurn(const TSharedPtr<FJsonObject>& Params)
 {
 	FSQLiteDatabase* DB = GetRawDB();
-	if (!DB) { return FMonolithActionResult::Error(TEXT("EngineSource.db not available.")); }
+	if (!DB) { return FMonolithActionResult::PreconditionFailed(TEXT("risk index not mined"), TEXT("risk.mine")); }
 
 	const FString FilePath = CanonPath(Params->GetStringField(TEXT("file_path")));
 	if (FilePath.IsEmpty())
@@ -527,7 +520,7 @@ FMonolithActionResult FRiskQueryAdapter::HandleGetFileChurn(const TSharedPtr<FJs
 FMonolithActionResult FRiskQueryAdapter::HandleGetReleaseWindowHotspots(const TSharedPtr<FJsonObject>& Params)
 {
 	FSQLiteDatabase* DB = GetRawDB();
-	if (!DB) { return FMonolithActionResult::Error(TEXT("EngineSource.db not available.")); }
+	if (!DB) { return FMonolithActionResult::PreconditionFailed(TEXT("risk index not mined"), TEXT("risk.mine")); }
 
 	const int64 DefaultSince =
 		FDateTime::UtcNow().ToUnixTimestamp() - (30LL * 24LL * 60LL * 60LL);
@@ -621,7 +614,7 @@ FMonolithActionResult FRiskQueryAdapter::HandleGetReleaseWindowHotspots(const TS
 FMonolithActionResult FRiskQueryAdapter::HandleListConditionalGates(const TSharedPtr<FJsonObject>& Params)
 {
 	FSQLiteDatabase* DB = GetRawDB();
-	if (!DB) { return FMonolithActionResult::Error(TEXT("EngineSource.db not available.")); }
+	if (!DB) { return FMonolithActionResult::PreconditionFailed(TEXT("risk index not mined"), TEXT("risk.mine")); }
 
 	const FString MacroFilter = Params->HasField(TEXT("macro_filter"))
 		? Params->GetStringField(TEXT("macro_filter")) : FString();
@@ -721,87 +714,59 @@ FMonolithActionResult FRiskQueryAdapter::HandleListConditionalGates(const TShare
 
 FMonolithActionResult FRiskQueryAdapter::HandleGetMiningStatus(const TSharedPtr<FJsonObject>& /*Params*/)
 {
-	// Take the DB handle FIRST. Like every other risk action this may run the
-	// lazy bootstrap, and the whole report is then consistent: the repository
-	// lists describe the pass that just ran rather than a prediction of it. A
-	// null handle is not an error here — the settings and the live root
-	// resolution are still worth reporting when the database is unavailable,
-	// which is exactly when a caller reaches for this action.
+	// Publication/cache validation is read-only and never invokes git or an indexer.
 	FSQLiteDatabase* DB = GetRawDB();
-
-	TArray<FString> Scanned;
-	TArray<TPair<FString, FString>> Skipped;
-	RiskGatherRepoState(Scanned, Skipped);
-
-	TSharedPtr<FJsonObject> Out = RiskBuildDiagnostics(Scanned, Skipped);
-
-	const UMonolithReflectionIntelSettings* Settings = UMonolithReflectionIntelSettings::Get();
-	Out->SetBoolField(TEXT("mining_enabled"),
-		Settings ? Settings->bEnableGitCoChangeMining : false);
-
-	if (Settings)
+	FRiskMiningSession* Session = RiskGetSession();
+	TSharedPtr<FJsonObject> Out = Session ? Session->GetStatus() : MakeShared<FJsonObject>();
+	if (!Session) Out->SetStringField(TEXT("state"), TEXT("idle"));
+#if WITH_DEV_AUTOMATION_TESTS
+	const bool bFixture = RiskTestSession != nullptr;
+#else
+	const bool bFixture = false;
+#endif
+	if (!bFixture)
 	{
-		TSharedPtr<FJsonObject> Cfg = MakeShared<FJsonObject>();
-		TArray<TSharedPtr<FJsonValue>> Overrides;
-		for (const FString& Root : Settings->GitRepoRoots)
+		const UMonolithReflectionIntelSettings* Settings = UMonolithReflectionIntelSettings::Get();
+		Out->SetBoolField(TEXT("mining_enabled"), Settings && Settings->bEnableGitCoChangeMining);
+		if (Settings)
 		{
-			Overrides.Add(MakeShared<FJsonValueString>(Root));
+			auto Config = MakeShared<FJsonObject>();
+			TArray<TSharedPtr<FJsonValue>> Roots, Noise;
+			for (const FString& Root : Settings->GitRepoRoots) Roots.Add(MakeShared<FJsonValueString>(Root));
+			for (const FString& Fragment : Settings->GitMiningNoiseFilter) Noise.Add(MakeShared<FJsonValueString>(Fragment));
+			Config->SetArrayField(TEXT("git_repo_roots"), Roots);
+			Config->SetArrayField(TEXT("noise_filter"), Noise);
+			Config->SetBoolField(TEXT("auto_resolved"), Settings->GitRepoRoots.Num() == 0);
+			Config->SetBoolField(TEXT("probe_ancestors_for_git_root"), Settings->bProbeAncestorsForGitRoot);
+			Config->SetNumberField(TEXT("max_cochange_window_commits"), Settings->MaxCoChangeWindowCommits);
+			Config->SetNumberField(TEXT("max_commit_file_count"), Settings->MaxCommitFileCount);
+			Out->SetObjectField(TEXT("settings"), Config);
 		}
-		Cfg->SetArrayField(TEXT("git_repo_roots"), Overrides);
-		Cfg->SetBoolField(TEXT("auto_resolved"), Settings->GitRepoRoots.Num() == 0);
-		Cfg->SetBoolField(TEXT("probe_ancestors_for_git_root"), Settings->bProbeAncestorsForGitRoot);
-		Cfg->SetNumberField(TEXT("max_cochange_window_commits"), Settings->MaxCoChangeWindowCommits);
-		Cfg->SetNumberField(TEXT("max_commit_file_count"), Settings->MaxCommitFileCount);
-		TArray<TSharedPtr<FJsonValue>> Noise;
-		for (const FString& Fragment : Settings->GitMiningNoiseFilter)
-		{
-			Noise.Add(MakeShared<FJsonValueString>(Fragment));
-		}
-		Cfg->SetArrayField(TEXT("noise_filter"), Noise);
-		Out->SetObjectField(TEXT("settings"), Cfg);
 	}
-
-	const FMonolithReflectionIntelModule* Module =
-		FModuleManager::GetModulePtr<FMonolithReflectionIntelModule>(
-			TEXT("MonolithReflectionIntel"));
-	Out->SetBoolField(TEXT("mining_ran_this_session"), Module && Module->HasRiskMiningRun());
-	if (Module && Module->HasRiskMiningRun())
-	{
-		Out->SetStringField(TEXT("last_status"), Module->GetLastRiskMiningStatus());
-	}
-
-	// Table state + stamps, from the handle taken at entry.
 	if (DB)
 	{
-		TSharedPtr<FJsonObject> Tables = MakeShared<FJsonObject>();
+		Out->SetBoolField(TEXT("snapshot_available"), true);
+		if (Out->GetStringField(TEXT("state")) == TEXT("idle"))
+		{
+			Out->SetStringField(TEXT("state"), TEXT("done"));
+			Out->SetStringField(TEXT("last_status"), TEXT("using validated legacy risk tables in EngineSource.db"));
+			Out->SetStringField(TEXT("snapshot_semantics"), TEXT("legacy cache; source snapshot timestamp unavailable"));
+		}
+		auto Tables = MakeShared<FJsonObject>();
 		Tables->SetNumberField(TEXT("git_file_churn"), RiskCountRows(*DB, TEXT("git_file_churn")));
 		Tables->SetNumberField(TEXT("git_cochange_pairs"), RiskCountRows(*DB, TEXT("git_cochange_pairs")));
 		Tables->SetNumberField(TEXT("risk_hotspot_scores"), RiskCountRows(*DB, TEXT("risk_hotspot_scores")));
 		Tables->SetNumberField(TEXT("reflect_conditional_gates"), RiskCountRows(*DB, TEXT("reflect_conditional_gates")));
 		Out->SetObjectField(TEXT("table_rows"), Tables);
-
-		int32 StoredVersion = 0;
-		const bool bHasVersion = MonolithRIMeta::ReadStoredVersion(*DB, TEXT("risk"), StoredVersion);
-		int32 StoredConfig = 0;
-		const bool bHasConfig = MonolithRIMeta::ReadStoredVersion(
-			*DB, MonolithRIMeta::GetRiskConfigSubsystemKey(), StoredConfig);
-		const int32 CurrentConfig = MonolithRIMeta::ComputeRiskConfigFingerprint(
-			FMonolithReflectionIntelModule::ResolveGitRepoRoots(nullptr));
-
-		TSharedPtr<FJsonObject> Stamps = MakeShared<FJsonObject>();
-		Stamps->SetNumberField(TEXT("stored_code_version"), bHasVersion ? StoredVersion : 0);
-		Stamps->SetNumberField(TEXT("current_code_version"),
-			MonolithRIMeta::GetIndexerCodeVersion(TEXT("risk")));
-		Stamps->SetNumberField(TEXT("stored_config_fingerprint"), bHasConfig ? StoredConfig : 0);
-		Stamps->SetNumberField(TEXT("current_config_fingerprint"), CurrentConfig);
-		Stamps->SetBoolField(TEXT("config_matches"), bHasConfig && StoredConfig == CurrentConfig);
+		int32 Version = 0, Fingerprint = 0;
+		MonolithRIMeta::ReadStoredVersion(*DB, TEXT("risk"), Version);
+		MonolithRIMeta::ReadStoredVersion(*DB, MonolithRIMeta::GetRiskConfigSubsystemKey(), Fingerprint);
+		auto Stamps = MakeShared<FJsonObject>();
+		Stamps->SetNumberField(TEXT("stored_code_version"), Version);
+		Stamps->SetNumberField(TEXT("current_code_version"), MonolithRIMeta::GetIndexerCodeVersion(TEXT("risk")));
+		Stamps->SetNumberField(TEXT("stored_config_fingerprint"), Fingerprint);
 		Out->SetObjectField(TEXT("stamps"), Stamps);
 	}
-	else
-	{
-		Out->SetStringField(TEXT("database"),
-			TEXT("EngineSource.db not available — run source.trigger_reindex to bootstrap it."));
-	}
-
+	else Out->SetStringField(TEXT("next_action"), TEXT("risk.mine"));
 	return FMonolithActionResult::Success(Out);
 }

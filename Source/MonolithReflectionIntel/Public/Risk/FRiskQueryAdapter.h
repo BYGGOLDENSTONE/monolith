@@ -2,10 +2,11 @@
 // Plan: Plugins/Monolith/Docs/plans/2026-05-28-reflection-intelligence.md (Phase 2 — v0.17.0).
 //
 // FRiskQueryAdapter — registers the `risk_query` namespace against the central
-// FMonolithToolRegistry. Pure read-only handlers; no indexing happens here
+// FMonolithToolRegistry. Queries are read-only; explicit mine starts a worker here
 // (that's FGitCoChangeIndexer / FHotspotScorer / FConditionalGateIndexer).
 //
-// Action surface (6 actions):
+// Action surface (7 actions):
+//   risk_query("mine",                       {})
 //   risk_query("get_hotspot_score",          {file_path})
 //   risk_query("get_cochange_pairs",         {file_path, limit?, cursor?})
 //   risk_query("get_file_churn",             {file_path, repo_tag?})
@@ -29,7 +30,7 @@
 //
 // v0.17.0 ergonomics adoption (same as decision_query Phase 1):
 //   - `file_path` / `path_filter` params tagged EMonolithParamKind::DiskPath.
-//   - Dispatcher annotated readOnlyHint=true via SetDispatcherAnnotations.
+//   - Dispatcher annotated readOnlyHint=false (mine writes its cache) via SetDispatcherAnnotations.
 //   - `get_cochange_pairs` and `list_conditional_gates` adopt cursor pagination
 //     (plan §16 mandates pairs paging; pairs scale O(n^2) so the cap matters).
 
@@ -38,13 +39,31 @@
 #include "CoreMinimal.h"
 #include "MonolithToolRegistry.h"
 
+class FRiskMiningSession;
+struct FRiskMiningInputs;
+
 class MONOLITHREFLECTIONINTEL_API FRiskQueryAdapter
 {
 public:
-	/** Register all 6 risk_query actions + dispatcher annotations. */
+	/** Register all 7 risk_query actions + dispatcher annotations. */
 	static void RegisterActions(FMonolithToolRegistry& Registry);
+#if WITH_DEV_AUTOMATION_TESTS
+	/** Scoped fixture ownership; actual risk handlers and indexers remain in use. */
+	class FScopedMiningTestOverride
+	{
+	public:
+		FScopedMiningTestOverride(FRiskMiningSession& Session, TFunction<bool(FRiskMiningInputs&, FString&)> InputProvider);
+		~FScopedMiningTestOverride();
+		FScopedMiningTestOverride(const FScopedMiningTestOverride&) = delete;
+		FScopedMiningTestOverride& operator=(const FScopedMiningTestOverride&) = delete;
+	private:
+		FRiskMiningSession* PreviousSession = nullptr;
+		TFunction<bool(FRiskMiningInputs&, FString&)> PreviousProvider;
+	};
+#endif
 
 private:
+	static FMonolithActionResult HandleMine(const TSharedPtr<FJsonObject>& Params);
 	// Handlers
 	static FMonolithActionResult HandleGetHotspotScore(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult HandleGetCoChangePairs(const TSharedPtr<FJsonObject>& Params);
@@ -60,6 +79,6 @@ private:
 	 */
 	static void AttachEmptyResultDiagnostics(const TSharedPtr<FJsonObject>& Out);
 
-	/** Shared DB accessor — routes through the module's cached query DB. */
+	/** Completed risk snapshot accessor; never starts mining. */
 	static class FSQLiteDatabase* GetRawDB();
 };

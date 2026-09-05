@@ -17,7 +17,7 @@ Phases 1, 2, 3a, and 4a fold into the same v0.17.0 release. Phase 1 ships the **
 | Phase | Status | Surface | Substrate |
 |-------|--------|---------|-----------|
 | 1 — Decision Intelligence | **shipped v0.17.0** | `decision_query` (5 actions) | Markdown heuristic harvest |
-| 2 — Risk Intelligence | **shipped v0.17.0** (6 actions incl. [Unreleased] `get_mining_status`) | `risk_query` (6 actions) + `source_query("audit_module_dep_reality")` (1 audit action) | Git log subprocess + LOC sweep + regex over `#if WITH_*` / `bHas*` + Build.cs parsing against `EngineSource.db` symbol resolution. Repository roots resolved at runtime (§4.2) — [Unreleased] |
+| 2 — Risk Intelligence | **shipped v0.17.0** (7 actions incl. explicit `mine` and `get_mining_status`) | `risk_query` (7 actions) + `source_query("audit_module_dep_reality")` (1 audit action) | Git log subprocess + LOC sweep + regex over `#if WITH_*` / `bHas*` + Build.cs parsing against `EngineSource.db` symbol resolution. Repository roots resolved at runtime (§4.2) — [Unreleased] |
 | 3a — CppReflect Intelligence | **shipped v0.17.0** (6 actions incl. [Unreleased] `list_class_specifiers`) | `cppreflect_query` (6 actions) + cpp↔asset edges | UHT artefact regex sweep over `Intermediate/Build/.../UHT/*.gen.cpp` + `IAssetRegistry` asset-graph joiner — NO tree-sitter dependency |
 | 3b — Native Tag Tracking | `(WISHLIST)` | `cppreflect_query("list_native_tags")` (1 action) + 2 tag tables | tree-sitter-unreal-cpp on `.cpp` / `.h` for native `UE_DEFINE_GAMEPLAY_TAG_*` / `extern FGameplayTag` mining |
 | 4a — Network Intelligence + Audits + Pipelines | **shipped v0.17.0** | `network_query` (4 actions) + `pipeline_query` (2 actions) + `material_query("audit_orphan_materials")` + `niagara_query("audit_cross_asset_refs")` + `blueprint_query("audit_cdo_drift")` + `project_query("audit_orphan_assets")` + `reflect_replicated_properties` SQLite table | Second UHT-artefact sweep (independent of Phase 3a's reader) for per-property `MetaData` blocks carrying `ReplicatedUsing` tags; composed reads against Phases 1/2/3a tables + `IAssetRegistry` for the 4 cross-namespace audits; composer reads-only |
@@ -32,7 +32,7 @@ The phases are independent (Phase 2 does not depend on Phase 1; Phase 3a does no
 
 **Type:** `Editor`
 **Loading phase:** `Default`
-**Public namespaces owned by this module:** `decision` (5 actions, Phase 1) + `risk` (5 actions, Phase 2) + `cppreflect` (6 actions — 5 Phase 3a + 1 [Unreleased] `list_class_specifiers`) + `network` (4 actions, Phase 4a) + `pipeline` (2 actions, Phase 4a) + `reflect` (1 action, [Unreleased] — `rebuild_reflection_index`, the network-completeness maintenance verb; see §6b). Phase 2 additionally registers one audit action onto the **existing** `source` namespace owned by `MonolithSource` (`source_query("audit_module_dep_reality")`). Phase 4a additionally registers four audit actions onto **existing** host namespaces — `material_query("audit_orphan_materials")`, `niagara_query("audit_cross_asset_refs")`, `blueprint_query("audit_cdo_drift")`, `project_query("audit_orphan_assets")`. All cross-namespace audit handlers live in `MonolithReflectionIntel` but register against their host dispatchers for caller ergonomics — agents already discover `material_query` / `niagara_query` / `blueprint_query` / `project_query` / `source_query` first.
+**Public namespaces owned by this module:** `decision` (5 actions, Phase 1) + `risk` (7 actions, including mining control) + `cppreflect` (6 actions — 5 Phase 3a + 1 [Unreleased] `list_class_specifiers`) + `network` (4 actions, Phase 4a) + `pipeline` (2 actions, Phase 4a) + `reflect` (1 action, [Unreleased] — `rebuild_reflection_index`, the network-completeness maintenance verb; see §6b). Phase 2 additionally registers one audit action onto the **existing** `source` namespace owned by `MonolithSource` (`source_query("audit_module_dep_reality")`). Phase 4a additionally registers four audit actions onto **existing** host namespaces — `material_query("audit_orphan_materials")`, `niagara_query("audit_cross_asset_refs")`, `blueprint_query("audit_cdo_drift")`, `project_query("audit_orphan_assets")`. All cross-namespace audit handlers live in `MonolithReflectionIntel` but register against their host dispatchers for caller ergonomics — agents already discover `material_query` / `niagara_query` / `blueprint_query` / `project_query` / `source_query` first.
 
 `MonolithReflectionIntel` is a self-contained editor module. Phase 1 owns one indexer worker (`FDecisionRecordIndexer`), one query adapter (`FDecisionQueryAdapter`), one settings UCLASS (`UMonolithReflectionIntelSettings`), and a SQLite schema fragment (`MonolithDecisionSchema` namespace). Phase 2 adds three indexer workers (`FGitChurnIndexer`, `FGitCoChangeIndexer`, `FConditionalGateIndexer`), two query adapters (`FRiskQueryAdapter`, `FModuleDepRealityAdapter`), and a second SQLite schema fragment (`MonolithRiskSchema` namespace) sharing `EngineSource.db`. Phase 3a adds one indexer worker (`FCppReflectIndexer` — UHT-artefact regex sweep + `IAssetRegistry` asset-graph joiner), one query adapter (`FCppReflectQueryAdapter`), and a third SQLite schema fragment (`MonolithCppReflectSchema` namespace) sharing the same `EngineSource.db`. Phase 4a adds one indexer worker (`FNetworkIndexer` — second UHT-artefact sweep over per-property `MetaData` blocks), two query adapters (`FNetworkQueryAdapter`, `FPipelineQueryAdapter`), four cross-namespace audit handlers registered against `material` / `niagara` / `blueprint` / `project` host adapters, and a fourth SQLite schema fragment (`MonolithNetworkSchema` namespace) sharing the same `EngineSource.db`.
 
@@ -281,12 +281,12 @@ Run via `editor_query("run_automation_tests", "Monolith.ReflectionIntel.Decision
 
 ### 4.1 Substrate scope
 
-The risk slice is deterministic — no LLM calls, no embeddings, no scoring heuristics that aren't traceable to a single line of git log or a single LOC count. Three substrates feed four indexers and five `risk_query` actions:
+The risk slice is deterministic — no LLM calls, no embeddings, no scoring heuristics that aren't traceable to a single line of git log or a single LOC count. Three substrates feed three indexers and seven `risk_query` actions:
 
 | Substrate | Mining method | Output |
 |-----------|---------------|--------|
 | Git log (per-repo) | `FPlatformProcess::CreateProc` invoking `git log --name-only --pretty=format:%H|%at|%an` against each tracked repo's `.git/` | Per-file churn (commit count, line delta) + co-change pairs (files appearing in the same commit window) |
-| Source-file LOC | `IFileManager::IterateDirectoryRecursively` walk of `.cpp` / `.h` under each repo's source root + line counting via `FFileHelper::LoadFileToStringArray` | LOC count per file as a coarse complexity proxy. **No** AST parsing, **no** McCabe-style cyclomatic measure — those land in Phase 3. |
+| Source-file LOC | Project source-index `files(path,line_count,file_type)` rows captured at `risk.mine` start | LOC count per file as a coarse complexity proxy. **No** AST parsing, **no** McCabe-style cyclomatic measure — those land in Phase 3. |
 | Build.cs + `.cpp` / `.h` conditional gates | Regex sweep for `#if WITH_*` blocks, `bHas*` 3-location probe blocks in `.Build.cs`, `MONOLITH_RELEASE_BUILD` bypasses | Conditional-gate inventory keyed by module |
 
 The mining is read-only against the working tree and the `.git/` directory — no `git checkout`, no `git reset`, no index touches.
@@ -326,18 +326,13 @@ If the host project uses a non-git VCS it has no `.git` anywhere, the resolver r
 | ANCESTOR of the project | strip the project's offset within the repository; rows lacking it are outside the project subtree and are dropped |
 | unrelated absolute root | none — stored as the repository reports them, there being no project-relative form |
 
-This is a row-shape change, so `MonolithRIMeta::GetIndexerCodeVersion("risk")` went `1 → 2`: rows written by version 1 are unusable against the version-2 join and are rebuilt on first query after upgrade.
+This is a row-shape change, so `MonolithRIMeta::GetIndexerCodeVersion("risk")` went `1 → 2`: rows written by version 1 are unusable against the version-2 join and require an explicit `risk.mine` after upgrade.
 
 **Config fingerprint.** Stale detection previously watched only the indexer *code* version, so editing a Risk setting changed nothing until the tables happened to be rebuilt for some other reason. A second row is now stamped in the existing `monolith_ri_meta` table under subsystem key **`risk.config`** — `subsystem` is a TEXT primary key, so this needs no DDL change and no migration. It hashes the **resolved absolute roots** (not the raw setting strings, whose spelling can vary without the resolved scope changing) plus `MaxCoChangeWindowCommits`, `MaxCommitFileCount` and `GitMiningNoiseFilter`, via chained `FCrc::StrCrc32<TCHAR>`.
 
-Two implementation constraints are load-bearing and are enforced by construction:
+The game thread computes the fingerprint with `MonolithRIMeta::ComputeRiskConfigFingerprint` and captures it with the worker inputs. The worker stamps the same value only after all stages succeed. Missing or mismatched code/config stamps reject a cached snapshot; queries suggest `risk.mine` without automatically rebuilding. Dedicated snapshots also carry project identity and capture time in `risk_snapshot`.
 
-- **One function, both sides.** `MonolithRIMeta::ComputeRiskConfigFingerprint` is called by the writer (`FGitCoChangeIndexer::Run`) and by the reader (`FRiskQueryAdapter::GetRawDB`). Two independent copies is exactly how the setting would silently no-op again.
-- **One cast, inside that function.** `FCrc::StrCrc32<TCHAR>` returns `uint32` while `monolith_ri_meta.code_version` binds through `int32`. The `static_cast<int32>` lives in the shared function only, so writer and reader cannot disagree about the stored width. If one side cast and the other did not, every fingerprint ≥ 2³¹ would mismatch forever — a full re-mine on *every* risk query.
-
-The fingerprint is deliberately **not** folded into the code-version integer: a combined value makes the stale-detection log line unreadable and makes a genuine code bump indistinguishable from a config edit. A missing `risk.config` row counts as a mismatch, so every already-stamped legacy database re-mines exactly once on upgrade.
-
-**Latch clearing.** `HasAttemptedRiskBootstrap()` is a per-module-instance flag set *before* the indexer runs, so after the first risk query of a session the stale check would not re-fire until an editor restart. `UMonolithReflectionIntelSettings::PostEditChangeProperty` calls `FMonolithReflectionIntelModule::ClearRiskBootstrapAttempted()` on any Risk-category property edit. That method clears `RiskLastFailureTime` as well as the latch — otherwise the 5-second retry throttle would swallow the first post-edit attempt and the edit would still look like a no-op.
+Risk-category settings edits and reload invalidate the live read handle and request cancellation of active mining. A new pass is always explicit. There is no retry throttle or query-triggered bootstrap.
 
 ### 4.3 Co-change pair detection algorithm
 
@@ -373,202 +368,63 @@ The formula is fixed in code. Configurable weighting is a deferred enhancement, 
 
 ### 4.5 Conditional gate sweep
 
-The conditional-gate inventory is built by regex sweep against three patterns:
+The worker scans source files for `#if`/`#ifdef WITH_*` sites and Build.cs files for `bHas*` identifiers. Rows contain the project-relative source path, one-based line, macro identifier, gate kind (`cpp_if` or `build_cs_probe`), and matched context. This is regex inventory, without preprocessor evaluation or probe-arity classification. The pipeline release audit can consume the resulting `reflect_conditional_gates` table.
 
-| Pattern | Where | What it captures |
-|---------|-------|------------------|
-| `#if\s+WITH_(\w+)` | `.cpp` / `.h` under each module's source root | Compile-time feature gates the module honours (e.g. `#if WITH_GBA`, `#if WITH_COMBOGRAPH`) |
-| `bool\s+bHas(\w+)\s*=` | `.Build.cs` | 3-location detection probe variables (e.g. `bHasGameplayAbilities`, `bHasCommonUI`) |
-| `MONOLITH_RELEASE_BUILD` | `.Build.cs` | Release-build bypass branches |
+### 4.6 SQLite snapshot
 
-For each match the indexer records the module, the gate name, the file path, the source line, and (for `bHas*` probes) the surrounding probe block's classification (3-location, 4-location, or release-bypass). The output table `reflect_conditional_gates` is the substrate for `risk_query("list_conditional_gates")` and is also consumed by the Phase 4a pipeline composer's release-readiness audit.
+`Risk.db` lives beside the configured source database. The worker owns the only live in-process handle to that file while mining. Its outer `BEGIN IMMEDIATE` transaction covers schema setup, all row replacements, code/config stamps and `risk_snapshot(project_root,snapshot_at,complexity_rows)` metadata. Indexer write savepoints nest inside it; failure or cancellation rolls back the pass. The worker closes the database before the game thread publishes a read handle. Existing committed bytes survive a failed refresh; a failed first pass removes its incomplete new database.
 
-Regex-based detection is intentionally cheap. Phase 3 may swap to tree-sitter for higher fidelity (catching commented-out `#if WITH_*` blocks, multi-line conditions, etc.); v0.17.0 accepts the false-positive rate for the indexer-runtime budget.
+The current tables (defined in `Private/Risk/RiskSchema.cpp`) are:
 
-### 4.6 SQLite schema
+| Table | Columns / key |
+|---|---|
+| `git_file_churn` | `repo_tag, file_path, commit_count, last_touched`; primary key `(repo_tag,file_path)` |
+| `git_cochange_pairs` | `repo_tag, file_a, file_b, count`; primary key `(repo_tag,file_a,file_b)` |
+| `risk_hotspot_scores` | `file_path` primary key; `churn, complexity_proxy, normalised_churn, normalised_complexity, score` |
+| `reflect_conditional_gates` | `id` integer primary key; `source_path, source_line, macro_name, gate_kind, context_snippet` |
+| `files` | Captured project subset: `path, line_count, file_type` |
+| `monolith_ri_meta` | Existing version/config stamp format |
+| `risk_snapshot` | Captured project identity, timestamp, and complexity row count |
 
-Four new tables live in the shared `EngineSource.db` file under the `git_*`, `risk_*`, and `reflect_*` prefixes so they coexist with the source-indexer's tables and the Phase 1 `decision_*` tables.
-
-```sql
-CREATE TABLE IF NOT EXISTS git_file_churn (
-    file_path       TEXT NOT NULL,
-    repo_path       TEXT NOT NULL,
-    commit_count    INTEGER NOT NULL DEFAULT 0,
-    lines_added     INTEGER NOT NULL DEFAULT 0,
-    lines_deleted   INTEGER NOT NULL DEFAULT 0,
-    first_commit_ts INTEGER NOT NULL DEFAULT 0,
-    last_commit_ts  INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (repo_path, file_path)
-);
-
-CREATE TABLE IF NOT EXISTS git_cochange_pairs (
-    file_a       TEXT NOT NULL,
-    file_b       TEXT NOT NULL,
-    repo_path    TEXT NOT NULL,
-    commit_count INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (repo_path, file_a, file_b),
-    CHECK (file_a < file_b)
-);
-
-CREATE TABLE IF NOT EXISTS risk_hotspot_scores (
-    file_path       TEXT NOT NULL,
-    repo_path       TEXT NOT NULL,
-    score           REAL NOT NULL DEFAULT 0.0,
-    normalised_churn REAL NOT NULL DEFAULT 0.0,
-    normalised_loc   REAL NOT NULL DEFAULT 0.0,
-    loc              INTEGER NOT NULL DEFAULT 0,
-    indexed_at_ts    INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (repo_path, file_path)
-);
-
-CREATE TABLE IF NOT EXISTS reflect_conditional_gates (
-    module_name   TEXT NOT NULL,
-    gate_name     TEXT NOT NULL,
-    gate_kind     TEXT NOT NULL,      -- 'with_macro' | 'bhas_probe' | 'release_bypass'
-    source_path   TEXT NOT NULL,
-    source_line   INTEGER NOT NULL DEFAULT 0,
-    probe_arity   INTEGER NOT NULL DEFAULT 0,  -- 3 or 4 for bHas* probes; 0 otherwise
-    PRIMARY KEY (module_name, gate_name, source_path, source_line)
-);
-
-CREATE INDEX IF NOT EXISTS idx_git_file_churn_count
-    ON git_file_churn(commit_count DESC);
-CREATE INDEX IF NOT EXISTS idx_git_cochange_count
-    ON git_cochange_pairs(commit_count DESC);
-CREATE INDEX IF NOT EXISTS idx_risk_hotspot_score
-    ON risk_hotspot_scores(score DESC);
-CREATE INDEX IF NOT EXISTS idx_reflect_gates_module
-    ON reflect_conditional_gates(module_name);
-```
-
-All four tables follow the wipe-and-rewrite semantics from Phase 1 — `Run()` truncates and rewrites in a single `BEGIN TRANSACTION ... COMMIT` block per indexer.
+The source index and other Reflection Intelligence tables remain in `EngineSource.db`. A validated legacy risk cache there remains readable only when the dedicated database is absent. Python/native offline risk reads select the dedicated file when present; native `--source_db` remains an explicit file override. They do not mine or validate against live settings.
 
 ### 4.7 Action surface
 
-Six actions register under `risk` from `FRiskQueryAdapter::RegisterActions`. All six carry `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true` on the dispatcher annotations. All six participate in v0.17.0 universal response shaping (`_fields` / `_omit` / `_compact_json`) for free.
+**7 actions:** five reads, explicit `mine`, and read-only `get_mining_status`. Queries never bootstrap mining. If a valid completed snapshot is unavailable, reads return `-32003`, `class:"precondition_failed"`, `executed:false`, and `next_action:"risk.mine"`. Call `mine`, poll until `state:"done"`, then query.
 
-**Empty-result `diagnostics` (v0.22.0).** The four git-substrate actions — `get_hotspot_score`, `get_cochange_pairs`, `get_file_churn`, `get_release_window_hotspots` — attach a `diagnostics` object when and only when they return **nothing**:
+Git history, source-index line counts, and conditional-gate scans produce a durable `Risk.db` beside the configured `EngineSource.db`. A mining pass commits all tables and completion metadata in one transaction; failures roll back. The editor validates code version, configuration fingerprint and project identity when reopening this cache. A valid legacy mined `EngineSource.db` can be read when `Risk.db` is absent. Settings edits and reload invalidate the live snapshot and cancel active mining; refresh remains explicit.
 
-```json
-"diagnostics": {
-  "repos_scanned": ["<ProjectDir>/Plugins/Monolith"],
-  "repos_skipped": [ { "path": "…", "reason": "no `.git` entry — …" } ],
-  "hint": "…"                       // only when repos_scanned is empty AND repos_skipped is not
-}
-```
+Hotspot score is `normalised_churn * normalised_complexity`, with each factor normalised across the scored set. Line count is a complexity proxy, not measured defect probability. Inputs are a snapshot: source complexity/settings are captured at start; git history and gate files are read during the pass. New source-index work does not silently refresh risk results.
 
-`list_conditional_gates` does **not** carry it: its substrate is the source sweep, not git, so an empty result says nothing about repository discovery and a repository hint there would be misleading advice.
+#### `risk_query.mine`
 
-#### `risk_query("get_hotspot_score", params)`
+No parameters. Starts one background mining pass; repeated calls while it runs return the current status without starting another worker. Git subprocesses, gate file scans, and SQLite writes run off the game thread. The game thread captures settings and project source-index complexity rows before starting, then opens the completed snapshot after the worker closes it. Capture cost depends on the project index size; this is not a constant-time promise for `mine`.
 
-Fetch the hotspot score for a single file path.
+#### `risk_query.get_mining_status`
 
-| Param | Type | EMonolithParamKind | Required | Default | Notes |
-|-------|------|---------------------|----------|---------|-------|
-| `file_path` | string | `DiskPath` | yes | — | Project-relative or repo-relative path. `\` → `/` rewritten by dispatcher with surfaced warning. |
-| `repo_path` | string | `DiskPath` | no | `""` | When omitted, searches across all indexed repos and returns the first match. |
+No parameters. Reports `state: idle|running|done|failed`, `last_status`, `snapshot_available`, `snapshot_at`, `snapshot_capture_ms`, `complexity_rows`, `config_fingerprint`, and `progress: {stage, repos_completed, repos_total, files_scanned}`. Also includes repository diagnostics and live settings; completed snapshots include `table_rows` and version stamps. It never starts mining. A failed or cancelled refresh preserves the previous committed disk snapshot; the live session requires another explicit `mine` before serving queries again.
 
-**Response:** `{ "score": <number-or-null>, "normalised_churn": <number>, "normalised_loc": <number>, "loc": <int>, "repo_path": <string> }` — `score` is `null` when the file is not in the index.
+#### `risk_query.get_hotspot_score`
 
-#### `risk_query("get_cochange_pairs", params)`
+Required `file_path` (string): project-relative source path. Returns `{hotspot: {file_path, churn, complexity_proxy, normalised_churn, normalised_complexity, score}}`, or `hotspot:null` when absent from a completed index.
 
-List files that frequently change in the same commits as the given file. Cursor-paginated.
+#### `risk_query.get_cochange_pairs`
 
-| Param | Type | EMonolithParamKind | Required | Default | Notes |
-|-------|------|---------------------|----------|---------|-------|
-| `file_path` | string | `DiskPath` | yes | — | Anchor file. |
-| `repo_path` | string | `DiskPath` | no | `""` | Optional repo scope. |
-| `min_commits` | integer | `Other` | no | `2` | Lower bound on `commit_count` per pair. Pairs with `commit_count == 1` are filtered to suppress one-off co-touches. |
-| `limit` | integer | `Other` | no | `50` | Hard cap `200`. |
-| `cursor` | string | `Other` | no | `""` | Opaque base64+JSON cursor. |
+Required `file_path` (string). Optional `limit` (integer, default 50, clamped 1–200), `cursor` (string). Returns `{file_path, partners:[{repo_tag, partner, count}]}`, with `total_estimate` on the first page and `next_cursor` when more rows exist. Counts rank descending.
 
-**Response:**
+#### `risk_query.get_file_churn`
 
-```json
-{
-  "anchor": "path/to/file.cpp",
-  "pairs": [
-    { "partner": "path/to/other.cpp", "commit_count": 12 }
-  ],
-  "total_estimate": 47,
-  "next_cursor": "<opaque>"
-}
-```
+Required `file_path` (string). Optional `repo_tag` (string), the repository folder name. Returns `{file_path, churn_by_repo:[{repo_tag, commit_count, last_touched_unix}]}`.
 
-#### `risk_query("get_file_churn", params)`
+#### `risk_query.get_release_window_hotspots`
 
-Per-file churn record — commit count and line-delta totals.
+Optional `since_unix` (integer, default 30 days ago), `limit` (integer, default 50, clamped 1–200), and `cursor` (string). Returns `{since_unix, hotspots:[{file_path, score, churn, complexity_proxy, last_touched_unix}]}` plus `next_cursor` when more rows exist. Filters by last-touch time and orders by score; there is no threshold or repository filter.
 
-| Param | Type | EMonolithParamKind | Required |
-|-------|------|---------------------|----------|
-| `file_path` | string | `DiskPath` | yes |
-| `repo_path` | string | `DiskPath` | no |
+#### `risk_query.list_conditional_gates`
 
-**Response:** `{ "churn": <row-or-null> }` — row includes `commit_count`, `lines_added`, `lines_deleted`, `first_commit_ts`, `last_commit_ts`.
+Optional `macro_filter` and `path_filter` (substring filters), `limit` (integer, default 50, clamped 1–200), and `cursor` (string). Returns `{gates:[{id, source_path, source_line, macro_name, gate_kind, context_snippet}]}` plus `next_cursor` when more rows exist. Current scanners emit `cpp_if` and `build_cs_probe` kinds.
 
-#### `risk_query("get_release_window_hotspots", params)`
-
-List files whose hotspot score exceeds a threshold, ordered descending. Designed for release-readiness queries — "which files are most likely to bite us before tagging?" Cursor-paginated.
-
-| Param | Type | EMonolithParamKind | Required | Default | Notes |
-|-------|------|---------------------|----------|---------|-------|
-| `threshold` | number | `Other` | no | `0.7` | Floor in `[0, 1]`. |
-| `repo_path` | string | `DiskPath` | no | `""` | Optional repo scope. |
-| `limit` | integer | `Other` | no | `50` | Hard cap `200`. |
-| `cursor` | string | `Other` | no | `""` | Opaque cursor. |
-
-**Response:** `{ "hotspots": [ { "file_path": ..., "score": ..., "normalised_churn": ..., "normalised_loc": ..., "loc": ..., "repo_path": ... } ], "total_estimate": 12, "next_cursor": "<opaque>" }`.
-
-#### `risk_query("list_conditional_gates", params)`
-
-List `#if WITH_*` macros, `bHas*` 3-location probe variables, and `MONOLITH_RELEASE_BUILD` bypass branches across the project. Cursor-paginated.
-
-| Param | Type | EMonolithParamKind | Required | Default | Notes |
-|-------|------|---------------------|----------|---------|-------|
-| `module_filter` | string | `Other` | no | `""` | Substring match against module name. |
-| `gate_kind` | string | `Other` | no | `""` | Exact match — `with_macro`, `bhas_probe`, `release_bypass`. |
-| `limit` | integer | `Other` | no | `100` | Hard cap `500`. |
-| `cursor` | string | `Other` | no | `""` | Opaque cursor. |
-
-**Response:** `{ "gates": [ { "module_name": ..., "gate_name": ..., "gate_kind": ..., "source_path": ..., "source_line": ..., "probe_arity": ... } ], "total_estimate": 87, "next_cursor": "<opaque>" }`.
-
-#### `risk_query("get_mining_status")` — v0.22.0
-
-Read-only diagnostic surface. **Start here when a risk query returns empty.** No parameters.
-
-Like every other `risk` action it takes the shared DB handle first, which may run the lazy bootstrap, so the whole report describes one consistent state rather than a prediction. A missing database is not an error here: the settings and a live root resolution are still reported, which is exactly the case a caller reaches for this action in.
-
-**Response:**
-
-```json
-{
-  "repos_scanned": ["<ProjectDir>"],
-  "repos_skipped": [ { "path": "…", "reason": "directory does not exist" } ],
-  "hint": "…",                                 // same rule as the diagnostics block
-  "mining_enabled": true,                      // bEnableGitCoChangeMining
-  "settings": {
-    "git_repo_roots": [],                      // the raw override, empty = auto
-    "auto_resolved": true,
-    "probe_ancestors_for_git_root": false,
-    "max_cochange_window_commits": 200,
-    "max_commit_file_count": 20,
-    "noise_filter": ["CHANGELOG.md", ".uplugin", "Docs/plans/", "Docs/testing/"]
-  },
-  "mining_ran_this_session": true,
-  "last_status": "RunRiskIndexersOnce: git=… | hotspot=… | gates=…",
-  "table_rows": {                              // -1 when the table is unqueryable
-    "git_file_churn": 1204, "git_cochange_pairs": 8817,
-    "risk_hotspot_scores": 1204, "reflect_conditional_gates": 312
-  },
-  "stamps": {
-    "stored_code_version": 2, "current_code_version": 2,
-    "stored_config_fingerprint": -1830…, "current_config_fingerprint": -1830…,
-    "config_matches": true
-  }
-}
-```
-
-When the database is down, `table_rows` / `stamps` are replaced by a `database` string naming `source.trigger_reindex` as the bootstrap step. `repos_scanned` / `repos_skipped` reflect the last mining pass when one has run this session, and a fresh resolution otherwise.
+The four git-based reads attach repository `diagnostics` on empty results. Paths use forward slashes. These five reads are also available offline; `mine` and `get_mining_status` require the editor.
 
 ### 4.8 Test coverage
 
@@ -576,6 +432,7 @@ Automation tests under `Monolith.ReflectionIntel.Risk.*` and `Monolith.Reflectio
 
 | Test | Asserts |
 |------|---------|
+| `Monolith.ReflectionIntel.Risk.AsyncMining` | Actual two-commit git repository; five fast unmined preconditions; off-thread mining and duplicate suppression; frozen complexity readback; git and late SQLite failure rollback; cache identity/config/code rejection and restart readback; cancellation and owned cleanup. |
 | `RiskSchemaBootstrap` | Empty-corpus `Run()` succeeds; all 4 Phase 2 tables exist after the call. |
 | `ChurnAggregation` | Fixture mini-repo with 5 known commits produces correct per-file `commit_count` rows. |
 | `CoChangePairSymmetry` | Pair `(A, B)` is stored with `A < B`; reverse lookup returns the same row. |
@@ -723,7 +580,7 @@ Epic engine built-ins stay excluded by default — engine-side surface area dwar
 
 ### 5.3 SQLite schema
 
-Six new tables live inside the shared `EngineSource.db` file under the `reflect_` / `cpp_asset_` prefixes so they coexist with the Phase 1 `decision_*` and Phase 2 `git_*` / `risk_*` / `reflect_conditional_gates` tables.
+Six tables live inside the shared `EngineSource.db` under the `reflect_` / `cpp_asset_` prefixes alongside `decision_*`. New risk snapshots use a separate `Risk.db`.
 
 ```sql
 CREATE TABLE IF NOT EXISTS reflect_uclasses (
@@ -1243,7 +1100,7 @@ Phase 4b would add two audit families on top of the Phase 4a + Phase 3b substrat
 
 **Depends on `MonolithSource` (+ `UnrealEd` + `EditorSubsystem`)** — all adapters borrow `UMonolithSourceSubsystem`'s already-open `EngineSource.db` handle via `FMonolithSourceDatabase::GetRawHandle()` / `GetLock()` rather than opening their own. They MUST: UE 5.7's SQLite (`SQLITE_OS_OTHER=1` + `unreal-fs` VFS) permits only one open of a file per process, so a second open returns `SQLITE_IOERR`. The dependency is one-way (RI → MonolithSource; MonolithSource never references RI) and therefore non-circular. The Phase 2 module-dep audit and Phase 3a / Phase 4a indexers read the source-indexer's existing symbol tables through the same borrowed handle. The accessor is `GetRawHandle()`, NOT `GetRawDatabase()` (that name belongs to the unrelated `FMonolithIndexDatabase`).
 
-No conditional-gate `WITH_*` macros — the module loads unconditionally and contributes 28 actions (5 `decision` + 5 `risk` + 1 `source` audit + 6 `cppreflect` — incl. the [Unreleased] `list_class_specifiers` — + 4 `network` + 2 `pipeline` + 1 `reflect` ([Unreleased] `rebuild_reflection_index`) + 4 audit actions across `material` / `niagara` / `blueprint` / `project`) to every install.
+No conditional-gate `WITH_*` macros — the module loads unconditionally and contributes actions (5 `decision` + 7 `risk` + 1 `source` audit + 6 `cppreflect` — incl. the [Unreleased] `list_class_specifiers` — + 4 `network` + 2 `pipeline` + 1 `reflect` ([Unreleased] `rebuild_reflection_index`) + 4 audit actions across `material` / `niagara` / `blueprint` / `project`) to every install.
 
 ---
 
@@ -1275,7 +1132,7 @@ No conditional-gate `WITH_*` macros — the module loads unconditionally and con
 
 `UDeveloperSettings::GetCategoryName()` returns `"Plugins"` so the panel groups with other Monolith settings.
 
-Editing **any** Risk-category property re-arms the risk lazy bootstrap through `PostEditChangeProperty` (§4.2b), so the change takes effect on the next `risk_query` rather than at the next editor restart.
+Editing **any** Risk-category property invalidates the live risk snapshot through `PostEditChangeProperty` (§4.2b). Call `risk.mine` to apply the new configuration.
 
 ---
 

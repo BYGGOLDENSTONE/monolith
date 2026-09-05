@@ -38,7 +38,7 @@ The per-namespace numbers in the Table of Contents and body sections below are k
 | [bulk_fill](#bulk_fill) | 2 | Reflection-walker bulk property fill across 12 per-namespace adapters (`apply`, `list_namespaces`) |
 | [describe](#describe) | 3 | Read-only schema introspection for the same 12 adapters (`schema`, `list_targets`, `action_schema`) |
 | [decision](#decision) | 5 | **New v0.17.0.** Reflection Intelligence — architectural decision records mined from markdown corpora |
-| [risk](#risk) | 5 | **New v0.17.0.** Reflection Intelligence — git-churn / co-change / hotspot signals + conditional-gate inventory |
+| [risk](#risk) | 7 | **New v0.17.0.** Reflection Intelligence — git-churn / co-change / hotspot signals + conditional-gate inventory |
 | [cppreflect](#cppreflect) | 6 | **New v0.17.0.** Reflection Intelligence — UE 5.7 UHT reflection-edge queries (UCLASS / UPROPERTY / UFUNCTION / UINTERFACE + cpp↔asset edges + specifier discovery) |
 | [network](#network) | 4 | **New v0.17.0.** Reflection Intelligence — UE 5.7 replication inspection (replicated classes, RPCs, OnRep handlers, unbalanced-OnRep audit) |
 | [pipeline](#pipeline) | 2 | **New v0.17.0.** Reflection Intelligence — read-only composer actions (`pr_review`, `release_readiness`) |
@@ -1304,69 +1304,41 @@ Inverse of `find_supersession_chain` — list decisions that explicitly supersed
 
 ## risk
 
-**New v0.17.0 (Reflection Intelligence, Phase 2).** Repo-level risk signals mined from git history + LOC sweeps + conditional-gate regex scans across up to six nested git repos. Deterministic — no LLM, no embeddings, no network. Writes into `git_file_churn`, `git_cochange_pairs`, `risk_hotspot_scores`, and `reflect_conditional_gates` on `EngineSource.db`. Hotspot score is a traceable blend: `0.6 * normalised_churn + 0.4 * normalised_loc`, normalised per-repo. All 5 actions are read-only + idempotent. **5 actions.** (The Module-Dep Reality Audit also shipped in Phase 2 — it's registered under `source` as `source_query("audit_module_dep_reality")`, documented in the [source](#source) section.)
+**7 actions:** five reads, explicit `mine`, and read-only `get_mining_status`. Queries never bootstrap mining. If a valid completed snapshot is unavailable, reads return `-32003`, `class:"precondition_failed"`, `executed:false`, and `next_action:"risk.mine"`. Call `mine`, poll until `state:"done"`, then query.
+
+Git history, source-index line counts, and conditional-gate scans produce a durable `Risk.db` beside the configured `EngineSource.db`. A mining pass commits all tables and completion metadata in one transaction; failures roll back. The editor validates code version, configuration fingerprint and project identity when reopening this cache. A valid legacy mined `EngineSource.db` can be read when `Risk.db` is absent. Settings edits and reload invalidate the live snapshot and cancel active mining; refresh remains explicit.
+
+Hotspot score is `normalised_churn * normalised_complexity`, with each factor normalised across the scored set. Line count is a complexity proxy, not measured defect probability. Inputs are a snapshot: source complexity/settings are captured at start; git history and gate files are read during the pass. New source-index work does not silently refresh risk results.
+
+### `risk_query.mine`
+
+No parameters. Starts one background mining pass; repeated calls while it runs return the current status without starting another worker. Git subprocesses, gate file scans, and SQLite writes run off the game thread. The game thread captures settings and project source-index complexity rows before starting, then opens the completed snapshot after the worker closes it. Capture cost depends on the project index size; this is not a constant-time promise for `mine`.
+
+### `risk_query.get_mining_status`
+
+No parameters. Reports `state: idle|running|done|failed`, `last_status`, `snapshot_available`, `snapshot_at`, `snapshot_capture_ms`, `complexity_rows`, `config_fingerprint`, and `progress: {stage, repos_completed, repos_total, files_scanned}`. Also includes repository diagnostics and live settings; completed snapshots include `table_rows` and version stamps. It never starts mining. A failed or cancelled refresh preserves the previous committed disk snapshot; the live session requires another explicit `mine` before serving queries again.
 
 ### `risk_query.get_hotspot_score`
 
-Fetch the hotspot score for a single file path.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `file_path` | string | **required** | Project-relative or repo-relative path. `\` → `/` rewritten with a surfaced warning |
-| `repo_path` | string | optional | When omitted, searches all indexed repos and returns the first match. Default: `""` |
-
-**Returns:** `{ "score": <number-or-null>, "normalised_churn", "normalised_loc", "loc", "repo_path" }` — `score` is `null` when the file isn't in the index.
+Required `file_path` (string): project-relative source path. Returns `{hotspot: {file_path, churn, complexity_proxy, normalised_churn, normalised_complexity, score}}`, or `hotspot:null` when absent from a completed index.
 
 ### `risk_query.get_cochange_pairs`
 
-List files that frequently change in the same commits as the given file. Cursor-paginated.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `file_path` | string | **required** | Anchor file |
-| `repo_path` | string | optional | Optional repo scope. Default: `""` |
-| `min_commits` | integer | optional | Lower bound on `commit_count` per pair (filters one-off co-touches). Default: `2` |
-| `limit` | integer | optional | Hard cap `200`. Default: `50` |
-| `cursor` | string | optional | Opaque cursor |
-
-**Returns:** `{ "anchor": "<path>", "pairs": [ { "partner", "commit_count" } ], "total_estimate": N, "next_cursor": "<opaque>" }`.
+Required `file_path` (string). Optional `limit` (integer, default 50, clamped 1–200), `cursor` (string). Returns `{file_path, partners:[{repo_tag, partner, count}]}`, with `total_estimate` on the first page and `next_cursor` when more rows exist. Counts rank descending.
 
 ### `risk_query.get_file_churn`
 
-Per-file churn record — commit count and line-delta totals.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `file_path` | string | **required** | Target file |
-| `repo_path` | string | optional | Optional repo scope |
-
-**Returns:** `{ "churn": <row-or-null> }` — row includes `commit_count`, `lines_added`, `lines_deleted`, `first_commit_ts`, `last_commit_ts`.
+Required `file_path` (string). Optional `repo_tag` (string), the repository folder name. Returns `{file_path, churn_by_repo:[{repo_tag, commit_count, last_touched_unix}]}`.
 
 ### `risk_query.get_release_window_hotspots`
 
-List files whose hotspot score exceeds a threshold, descending. Designed for release-readiness queries. Cursor-paginated.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `threshold` | number | optional | Floor in `[0, 1]`. Default: `0.7` |
-| `repo_path` | string | optional | Optional repo scope. Default: `""` |
-| `limit` | integer | optional | Hard cap `200`. Default: `50` |
-| `cursor` | string | optional | Opaque cursor |
-
-**Returns:** `{ "hotspots": [ { "file_path", "score", "normalised_churn", "normalised_loc", "loc", "repo_path" } ], "total_estimate": N, "next_cursor": "<opaque>" }`.
+Optional `since_unix` (integer, default 30 days ago), `limit` (integer, default 50, clamped 1–200), and `cursor` (string). Returns `{since_unix, hotspots:[{file_path, score, churn, complexity_proxy, last_touched_unix}]}` plus `next_cursor` when more rows exist. Filters by last-touch time and orders by score; there is no threshold or repository filter.
 
 ### `risk_query.list_conditional_gates`
 
-List `#if WITH_*` macros, `bHas*` 3-location probe variables, and `MONOLITH_RELEASE_BUILD` bypass branches across the project. Cursor-paginated.
+Optional `macro_filter` and `path_filter` (substring filters), `limit` (integer, default 50, clamped 1–200), and `cursor` (string). Returns `{gates:[{id, source_path, source_line, macro_name, gate_kind, context_snippet}]}` plus `next_cursor` when more rows exist. Current scanners emit `cpp_if` and `build_cs_probe` kinds.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `module_filter` | string | optional | Substring match against module name. Default: `""` |
-| `gate_kind` | string | optional | Exact match — `with_macro`, `bhas_probe`, `release_bypass`. Default: `""` |
-| `limit` | integer | optional | Hard cap `500`. Default: `100` |
-| `cursor` | string | optional | Opaque cursor |
-
-**Returns:** `{ "gates": [ { "module_name", "gate_name", "gate_kind", "source_path", "source_line", "probe_arity" } ], "total_estimate": N, "next_cursor": "<opaque>" }`.
+The four git-based reads attach repository `diagnostics` on empty results. Paths use forward slashes. These five reads are also available offline; `mine` and `get_mining_status` require the editor.
 
 ---
 
@@ -1731,6 +1703,8 @@ When the editor is closed but you still need to query Monolith:
 - **`python Plugins/Monolith/Scripts/monolith_offline.py`** — stdlib-only dev fallback, kept byte-for-byte in lockstep with the exe.
 
 Both invoke the same SQLite indexes the live MCP uses.
+
+**Offline risk cache.** Both offline readers prefer `Risk.db` beside their selected `EngineSource.db`; they fall back to legacy source tables only when the dedicated file is absent. Native `--source_db=<file>` explicitly overrides this selection, and `--db=<directory>` selects the cache directory. The Python script resolves its existing Saved/co-located database paths. Offline readers serve the last committed snapshot without evaluating current editor settings; copy the completed `Risk.db` when exporting caches. `risk.mine` and `risk.get_mining_status` are live-only.
 
 **Reflection Intelligence offline parity.** All four RI namespaces are now fully servable offline — `cppreflect` (6 actions), `network` (4), `decision` (5), `risk` (5) — and emit JSON **byte-identical to the live MCP server** (same field names, types, ordering, row data, `%.17g` float formatting, and base64 cursor tokens). Earlier builds covered only 4 of the 20 with divergent shapes; the phantom `risk.list_hotspots` action has been removed. Two intentional, documented differences from the live payload remain (not bugs): the offline CLI adds a top-level `success` flag (its in-band status channel — the live MCP carries success/error out-of-band, so live has no `success` key; the nested DATA payload is byte-identical), and wall-clock fields (`cutoff_unix` / `since_unix` and the `risk.get_release_window_hotspots` cursor whose filter-hash includes them) differ by the run-time gap across process invocations on both live and offline.
 

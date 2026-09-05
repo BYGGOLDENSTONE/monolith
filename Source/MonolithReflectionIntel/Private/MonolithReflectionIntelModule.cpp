@@ -17,9 +17,9 @@
 #include "MonolithReflectionIntelModule.h"
 #include "Decision/FDecisionRecordIndexer.h"
 #include "Decision/FDecisionQueryAdapter.h"
-#include "Risk/FGitCoChangeIndexer.h"
-#include "Risk/FHotspotScorer.h"
-#include "Risk/FConditionalGateIndexer.h"
+#include "Risk/FRiskMiningSession.h"
+#include "MonolithRIMetaTable.h"
+#include "MonolithSettings.h"
 #include "Risk/FRiskQueryAdapter.h"
 #include "SourceAudit/FModuleDepRealityAdapter.h"
 #include "CppReflect/FUHTArtefactReader.h"
@@ -41,6 +41,7 @@
 #include "HAL/PlatformTime.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
+#include "Misc/DateTime.h"
 #include "Modules/ModuleManager.h"
 #include "MonolithToolRegistry.h"
 #include "SQLiteDatabase.h"
@@ -145,6 +146,9 @@ namespace
 	}
 }
 
+FMonolithReflectionIntelModule::FMonolithReflectionIntelModule() = default;
+FMonolithReflectionIntelModule::~FMonolithReflectionIntelModule() = default;
+
 void FMonolithReflectionIntelModule::StartupModule()
 {
 	// Explicit re-arm of the lazy-bootstrap latches on every module load. A
@@ -152,6 +156,8 @@ void FMonolithReflectionIntelModule::StartupModule()
 	// that Live Coding reloads re-attempt bootstrap if a prior attempt failed.
 	bDecisionBootstrapAttempted = false;
 	bRiskBootstrapAttempted = false;
+	bRiskCacheInvalidated = false;
+	bRiskLegacyCacheAllowed = false;
 	bCppReflectBootstrapAttempted = false;
 	bNetworkBootstrapAttempted = false;
 
@@ -187,11 +193,11 @@ void FMonolithReflectionIntelModule::StartupModule()
 
 	// NO eager bootstrap on StartupModule — the source subsystem may not have
 	// finished opening its EngineSource.db handle at module-load time. All
-	// indexer bootstrap is LAZY and writes through the subsystem's shared handle:
+	// Other RI bootstrap is lazy and writes through the subsystem's shared handle:
 	//   - Decision:    driven on first decision_query call.
-	//   - Risk:        driven on first risk_query call.
+	//   - Risk:        explicit risk.mine, isolated worker-owned Risk.db.
 	//   - CppReflect:  driven on first cppreflect_query call.
-	//   - All:         driven on hot-reload via OnReloadComplete.
+	//   - Other RI:    driven on hot-reload via OnReloadComplete.
 
 	UE_LOG(LogMonolithReflectionIntel, Log,
 		TEXT("Monolith — ReflectionIntel module loaded (decision_query: 5 actions, "
@@ -203,6 +209,7 @@ void FMonolithReflectionIntelModule::StartupModule()
 
 void FMonolithReflectionIntelModule::ShutdownModule()
 {
+	if (RiskMiningSession) { RiskMiningSession->Shutdown(); RiskMiningSession.Reset(); }
 	if (ReloadCompleteHandle.IsValid())
 	{
 		FCoreUObjectDelegates::ReloadCompleteDelegate.Remove(ReloadCompleteHandle);
@@ -309,12 +316,8 @@ void FMonolithReflectionIntelModule::OnReloadComplete(EReloadCompleteReason /*Re
 	FString DecisionStatus;
 	RunDecisionIndexerOnce(DecisionStatus);
 
-	// Phase 2 — also re-run risk indexers on hot-reload. The risk indexer is
-	// more expensive (spawns `git log`), but a Live Coding rebuild typically
-	// reflects code changes that warrant re-scoring complexity AND co-change
-	// activity tends to spike around the commits the reload reflects.
-	FString RiskStatus;
-	RunRiskIndexersOnce(RiskStatus);
+	// Risk mining is explicit; reload only cancels and invalidates its snapshot.
+	ClearRiskBootstrapAttempted();
 
 	// Phase 3a — UHT artefacts are exactly what a Live Coding rebuild
 	// regenerates, so this is the single signal that means "reflection
@@ -442,134 +445,178 @@ bool FMonolithReflectionIntelModule::RunDecisionIndexerOnce(FString& OutStatus)
 	return bOk;
 }
 
-bool FMonolithReflectionIntelModule::RunRiskIndexersOnce(FString& OutStatus)
+FRiskMiningSession& FMonolithReflectionIntelModule::GetRiskMiningSession()
 {
-	// See RunDecisionIndexerOnce for latch-policy rationale. Same shape applied
-	// across all four Phase-N runners.
-	FMonolithReflectionIntelModule* Self = GetReflectionIntelModulePtr();
+	check(IsInGameThread());
+	if (!RiskMiningSession) RiskMiningSession = MakeUnique<FRiskMiningSession>();
+	return *RiskMiningSession;
+}
 
-	if (Self && Self->RiskLastFailureTime > 0.0)
+void FMonolithReflectionIntelModule::CaptureRiskMiningConfiguration(FRiskMiningInputs& OutInputs)
+{
+	check(IsInGameThread());
+	OutInputs.ProjectRoot = RIGitNormalizeRootPath(FPaths::ProjectDir());
+	OutInputs.GitRoots = ResolveGitRepoRoots(&OutInputs.SkippedRoots);
+	OutInputs.GateRoots = {OutInputs.ProjectRoot / TEXT("Source"), OutInputs.ProjectRoot / TEXT("Plugins")};
+	const UMonolithReflectionIntelSettings* Settings = UMonolithReflectionIntelSettings::Get();
+	if (Settings)
 	{
-		const double Now = FPlatformTime::Seconds();
-		const double Elapsed = Now - Self->RiskLastFailureTime;
-		if (Elapsed < RetryCooldownSeconds)
-		{
-			OutStatus = FString::Printf(
-				TEXT("RunRiskIndexersOnce: throttled (last failure %.1fs ago, cooldown %.1fs)"),
-				Elapsed, RetryCooldownSeconds);
-			// Clear latch during throttle — see decision-runner comment for why.
-			Self->bRiskBootstrapAttempted = false;
-			return false;
-		}
-		Self->RiskLastFailureTime = 0.0;
+		OutInputs.MaxCommitWindow = Settings->MaxCoChangeWindowCommits > 0 ? Settings->MaxCoChangeWindowCommits : 200;
+		OutInputs.MaxCommitFileCount = Settings->MaxCommitFileCount > 0 ? Settings->MaxCommitFileCount : 20;
+		OutInputs.NoiseFilter = Settings->GitMiningNoiseFilter;
 	}
+	OutInputs.ConfigFingerprint = MonolithRIMeta::ComputeRiskConfigFingerprint(OutInputs.GitRoots);
+	OutInputs.CodeVersion = MonolithRIMeta::GetIndexerCodeVersion(TEXT("risk"));
+	// Match the source subsystem's override and plugin Saved location, including
+	// a currently open database whose location differs from newly edited settings.
+	if (FMonolithSourceDatabase* SharedDB = GetSharedSourceDatabase())
+	{
+		FScopeLock SourceLock(&SharedDB->GetLock());
+		if (FSQLiteDatabase* SourceDB = SharedDB->GetRawHandle())
+		{
+			OutInputs.DatabaseDirectory = FPaths::GetPath(SourceDB->GetFilename());
+		}
+	}
+	if (OutInputs.DatabaseDirectory.IsEmpty() && !GetDefault<UMonolithSettings>()->EngineSourceDBPathOverride.Path.IsEmpty())
+	{
+		OutInputs.DatabaseDirectory = GetDefault<UMonolithSettings>()->EngineSourceDBPathOverride.Path;
+	}
+	else if (OutInputs.DatabaseDirectory.IsEmpty())
+	{
+		const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("Monolith"));
+		OutInputs.DatabaseDirectory = (Plugin ? Plugin->GetBaseDir() : FPaths::ProjectPluginsDir() / TEXT("Monolith")) / TEXT("Saved");
+	}
+	OutInputs.DatabaseDirectory = FPaths::ConvertRelativePathToFull(OutInputs.DatabaseDirectory);
+}
 
+bool FMonolithReflectionIntelModule::CaptureRiskMiningInputs(FRiskMiningInputs& OutInputs, FString& OutError)
+{
+	check(IsInGameThread());
 	const UMonolithReflectionIntelSettings* Settings = UMonolithReflectionIntelSettings::Get();
 	if (!Settings || !Settings->bEnableGitCoChangeMining)
 	{
-		OutStatus = TEXT("RunRiskIndexersOnce: skipped (bEnableGitCoChangeMining=false)");
-		// Settings-disable: not transient, leave latch set, no LastFailureTime.
+		OutError = TEXT("risk mining is disabled by bEnableGitCoChangeMining");
 		return false;
 	}
-
-	// Borrow the subsystem's open ReadWrite handle (see RunDecisionIndexerOnce
-	// for the single-open VFS rationale). No second open, no journal re-flip.
-	FMonolithSourceDatabase* SharedDb = GetSharedSourceDatabase();
-	if (!SharedDb || !SharedDb->GetRawHandle())
+	FMonolithSourceDatabase* SharedDB = GetSharedSourceDatabase();
+	if (!SharedDB)
 	{
-		OutStatus = TEXT("RunRiskIndexersOnce: source DB not open (editor down, never indexed, or reindex in progress) — bootstrap with source.trigger_reindex");
-		UE_LOG(LogMonolithReflectionIntel, Verbose, TEXT("%s"), *OutStatus);
-		if (Self)
-		{
-			Self->bRiskBootstrapAttempted = false;
-			Self->RiskLastFailureTime = FPlatformTime::Seconds();
-		}
+		OutError = TEXT("source database is not open; finish source.trigger_reindex before risk.mine");
 		return false;
 	}
-
-	// Discover the repositories to mine at RUNTIME (see ResolveGitRepoRoots).
-	// This replaced a hardcoded list of nested-plugin paths that mined nothing
-	// on any tree but the one it was written against — the project root was
-	// never probed and no setting could add it (issue #119).
-	TArray<TPair<FString, FString>> SkippedRoots;
-	const TArray<FString> GitRoots = ResolveGitRepoRoots(&SkippedRoots);
-
-	const int32 MaxWindow = Settings->MaxCoChangeWindowCommits > 0
-		? Settings->MaxCoChangeWindowCommits : 200;
-	const int32 MaxFiles = Settings->MaxCommitFileCount > 0
-		? Settings->MaxCommitFileCount : 20;
-
-	// Conditional gates — scan project Source/ + Plugins/<plugin>/Source/.
-	// We do NOT scan the Plugins/Monolith folder root — only its Source/ —
-	// because `.uplugin` / `.uproject` files are not C++.
-	TArray<FString> GateRoots;
-	GateRoots.Add(TEXT("Source"));
-	GateRoots.Add(TEXT("Plugins"));
-
-	// Serialise all three sub-indexers' writes against concurrent borrowed reads
-	// and the subsystem's own locked methods by holding the shared DB lock for the
-	// whole suite. FGitCoChangeIndexer spawns `git log` (slow) under the lock —
-	// acceptable because RI reads are game-thread and the subsystem only touches
-	// its handle on the game thread, so nothing else contends during the borrow.
-	FString GitStatus, HotspotStatus, GateStatus;
-	bool bGitOk = false, bHotspotOk = false, bGateOk = false;
+	OutInputs = FRiskMiningInputs();
+	CaptureRiskMiningConfiguration(OutInputs);
+	OutInputs.SnapshotAt = FDateTime::UtcNow().ToIso8601();
+	const double CaptureStarted = FPlatformTime::Seconds();
+	// The UE VFS rejects a second open of EngineSource.db. Borrow only while
+	// copying immutable rows under the source owner's lock; the worker receives
+	// neither this handle nor a UObject reference.
+	FScopeLock SourceLock(&SharedDB->GetLock());
+	FSQLiteDatabase* SourceDB = SharedDB->GetRawHandle();
+	if (!SourceDB)
 	{
-		FScopeLock Lock(&SharedDb->GetLock());
-		FSQLiteDatabase* RawDb = SharedDb->GetRawHandle();
-		if (!RawDb)
+		OutError = TEXT("source database closed before risk snapshot capture; finish source.trigger_reindex");
+		return false;
+	}
+	FString Prefix = OutInputs.ProjectRoot + TEXT("/");
+	Prefix.ReplaceInline(TEXT("!"), TEXT("!!"));
+	Prefix.ReplaceInline(TEXT("%"), TEXT("!%"));
+	Prefix.ReplaceInline(TEXT("_"), TEXT("!_"));
+	Prefix += TEXT("%");
+	FSQLitePreparedStatement Snapshot;
+	if (!Snapshot.Create(*SourceDB, TEXT("SELECT path,line_count,file_type FROM files WHERE path LIKE ? ESCAPE '!' AND file_type IN ('cpp','hpp','h','inl','c','hh','cxx','cc');"))
+		|| !Snapshot.SetBindingValueByIndex(1, Prefix))
+	{
+		OutError = TEXT("source complexity snapshot could not be read; run source.trigger_reindex: ") + SourceDB->GetLastError();
+		return false;
+	}
+	ESQLitePreparedStatementStepResult Step;
+	while ((Step = Snapshot.Step()) == ESQLitePreparedStatementStepResult::Row)
+	{
+		FRiskComplexityRow Row;
+		if (!Snapshot.GetColumnValueByIndex(0, Row.Path)
+			|| !Snapshot.GetColumnValueByIndex(1, Row.LineCount)
+			|| !Snapshot.GetColumnValueByIndex(2, Row.FileType))
 		{
-			OutStatus = TEXT("RunRiskIndexersOnce: source DB closed mid-bootstrap — will retry");
-			if (Self)
-			{
-				Self->bRiskBootstrapAttempted = false;
-				Self->RiskLastFailureTime = FPlatformTime::Seconds();
-			}
+			OutError = TEXT("source complexity snapshot row could not be read: ") + SourceDB->GetLastError();
 			return false;
 		}
-		FGitCoChangeIndexer GitIndexer;
-		bGitOk = GitIndexer.Run(*RawDb, GitRoots, MaxWindow,
-			Settings->GitMiningNoiseFilter, MaxFiles, GitStatus);
-
-		FHotspotScorer HotspotScorer;
-		bHotspotOk = HotspotScorer.Run(*RawDb, HotspotStatus);
-
-		FConditionalGateIndexer GateIndexer;
-		bGateOk = GateIndexer.Run(*RawDb, GateRoots, GateStatus);
+		OutInputs.ComplexityRows.Add(MoveTemp(Row));
 	}
-
-	OutStatus = FString::Printf(
-		TEXT("RunRiskIndexersOnce: git=%s | hotspot=%s | gates=%s"),
-		*GitStatus, *HotspotStatus, *GateStatus);
-	UE_LOG(LogMonolithReflectionIntel, Log, TEXT("%s"), *OutStatus);
-
-	// Record what this pass actually saw so risk_query("get_mining_status") and
-	// the empty-result diagnostics can answer "why is there no data" without
-	// re-running the resolver or making the caller read the log.
-	if (Self)
+	if (Step != ESQLitePreparedStatementStepResult::Done)
 	{
-		Self->bRiskMiningRun = true;
-		Self->LastRiskScannedRoots = GitRoots;
-		Self->LastRiskSkippedRoots = SkippedRoots;
-		Self->LastRiskMiningStatus = OutStatus;
+		OutError = TEXT("source complexity snapshot read failed: ") + SourceDB->GetLastError();
+		return false;
 	}
+	OutInputs.SnapshotCaptureMs = (FPlatformTime::Seconds() - CaptureStarted) * 1000.0;
+	return true;
+}
 
-	const bool bAllOk = bGitOk && bHotspotOk && bGateOk;
-	if (Self)
+FSQLiteDatabase* FMonolithReflectionIntelModule::GetRiskQueryDB()
+{
+	check(IsInGameThread());
+	FRiskMiningSession& Session = GetRiskMiningSession();
+	if (FSQLiteDatabase* DB = Session.GetQueryDB()) return DB;
+	if (Session.IsRunning() || bRiskCacheInvalidated) return nullptr;
+	if (!bRiskBootstrapAttempted)
 	{
-		if (bAllOk)
+		bRiskBootstrapAttempted = true;
+		FRiskMiningInputs Configuration;
+		CaptureRiskMiningConfiguration(Configuration);
+		FString Error;
+		if (IFileManager::Get().FileExists(*(Configuration.DatabaseDirectory / TEXT("Risk.db"))))
 		{
-			Self->bRiskBootstrapAttempted = true;
-			Self->RiskLastFailureTime = 0.0;
+			Session.LoadCache(Configuration, Error);
+			return Session.GetQueryDB();
 		}
-		else
+		bRiskLegacyCacheAllowed = true;
+	}
+	// The source owner can close and reopen its handle during reindex. A cached
+	// validity bit (or even pointer identity) does not validate the new contents.
+	if (bRiskLegacyCacheAllowed)
+	{
+		FRiskMiningInputs Configuration;
+		CaptureRiskMiningConfiguration(Configuration);
+		if (IFileManager::Get().FileExists(*(Configuration.DatabaseDirectory / TEXT("Risk.db")))) return nullptr;
+		if (FMonolithSourceDatabase* SharedDB = GetSharedSourceDatabase())
 		{
-			UE_LOG(LogMonolithReflectionIntel, Warning,
-				TEXT("RunRiskIndexersOnce: at least one sub-indexer failed; will retry after cooldown"));
-			Self->bRiskBootstrapAttempted = false;
-			Self->RiskLastFailureTime = FPlatformTime::Seconds();
+			FScopeLock SourceLock(&SharedDB->GetLock());
+			FSQLiteDatabase* LegacyDB = SharedDB->GetRawHandle();
+			if (LegacyDB && FRiskMiningSession::IsCacheValid(*LegacyDB, Configuration)) return LegacyDB;
 		}
 	}
-	return bAllOk;
+	return nullptr;
+}
+
+void FMonolithReflectionIntelModule::ClearRiskBootstrapAttempted()
+{
+	check(IsInGameThread());
+	bRiskBootstrapAttempted = true;
+	bRiskCacheInvalidated = true;
+	bRiskLegacyCacheAllowed = false;
+	if (RiskMiningSession) RiskMiningSession->Invalidate();
+	RiskLastFailureTime = 0.0;
+}
+
+bool FMonolithReflectionIntelModule::RunRiskIndexersOnce(FString& OutStatus)
+{
+	check(IsInGameThread());
+	FMonolithReflectionIntelModule* Self = GetReflectionIntelModulePtr();
+	if (!Self) { OutStatus = TEXT("risk module unavailable"); return false; }
+	FRiskMiningSession& Session = Self->GetRiskMiningSession();
+	Session.Poll();
+	if (Session.IsRunning()) { OutStatus = TEXT("risk mining is already running"); return true; }
+	FRiskMiningInputs Inputs;
+	if (!Self->CaptureRiskMiningInputs(Inputs, OutStatus)) return false;
+	if (!Session.Start(Inputs, OutStatus)) return false;
+	Self->bRiskBootstrapAttempted = true;
+	Self->bRiskLegacyCacheAllowed = false;
+	Self->bRiskMiningRun = true;
+	Self->LastRiskScannedRoots = Inputs.GitRoots;
+	Self->LastRiskSkippedRoots = Inputs.SkippedRoots;
+	Self->LastRiskMiningStatus = TEXT("risk mining started asynchronously");
+	OutStatus = Self->LastRiskMiningStatus;
+	return true;
 }
 
 FString FMonolithReflectionIntelModule::GetRiskNoReposHint()

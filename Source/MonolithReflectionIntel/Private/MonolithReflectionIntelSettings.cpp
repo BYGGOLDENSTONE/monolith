@@ -37,8 +37,9 @@ void UMonolithReflectionIntelSettings::PostEditChangeProperty(FPropertyChangedEv
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
 	// Every Risk-category property either feeds the config fingerprint or
-	// changes which repositories get mined, so all of them must re-arm the
-	// bootstrap. GetMemberPropertyName is the array-safe accessor: editing an
+	// changes which repositories get mined, so all of them invalidate the
+	// snapshot. Mining resumes only through explicit risk.mine.
+	// GetMemberPropertyName is the array-safe accessor: editing an
 	// element of GitRepoRoots / GitMiningNoiseFilter reports the ELEMENT under
 	// GetPropertyName and the owning array only under GetMemberPropertyName.
 	static const TArray<FName> RiskProperties = {

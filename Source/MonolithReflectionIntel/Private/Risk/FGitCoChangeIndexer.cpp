@@ -2,30 +2,17 @@
 // Plan: Plugins/Monolith/Docs/plans/2026-05-28-reflection-intelligence.md (Phase 2 — v0.17.0).
 //
 // FGitCoChangeIndexer — implementation. Co-change mining via `git log` subprocess
-// per nested-git repo. Pattern lifted directly from
+// per nested-git repo. Process API usage follows
 // `Engine/Source/Editor/UnrealEd/Private/Commandlets/DiffAssetRegistriesCommandlet.cpp:1459-1496`
 // (UDiffAssetRegistriesCommandlet::LaunchP4) — pipe + CreateProc + IsProcRunning
-// + ReadPipe loop + ClosePipe + ParseIntoArrayLines. We mirror it exactly.
-//
-// Memory feedback cited (Phase 2 review enforcement):
-//   - `.claude/rules/scoped/cpp-code.md` § Module Dependencies — no new module
-//     deps; `Core` already covers FPlatformProcess + FRegex.
-//   - `.claude/rules/scoped/cpp-code.md` § Known Pitfalls — caller MUST have
-//     enforced `PRAGMA journal_mode=DELETE` on `DB` before invocation. The
-//     module-level RunRiskIndexersOnce wrapper handles this.
-//
-// Phase 2 code-quality items enforced:
-//   1. No static raw pointers / new+delete — DB handle is passed in by ref.
-//   2. No function-static latches — module owns `bRiskBootstrapAttempted`.
-//   3. PRAGMA journal_mode=DELETE — caller's job; documented above.
-//   4. (No FRegex hoisting required here — only one regex use, the commit
-//      header pattern, and we use string-prefix matching instead per the
-//      `COMMIT <sha> <ts>` line shape.)
-//   5. `ensure(IsInGameThread())` at top of Run() — see entry.
-//   6. BEGIN TRANSACTION / COMMIT for batch inserts.
+// + ReadPipe loop), with cancellation and owned-handle cleanup.
+// FRiskMiningSession owns the worker database and its outer transaction;
+// savepoints for batch inserts compose with that transaction. The retained
+// legacy Run entry is game-thread-only; live queries use RunOwnedDatabase.
 
 #include "Risk/FGitCoChangeIndexer.h"
 #include "Risk/RiskSchema.h"
+#include "Risk/FRiskMiningWorkerContext.h"
 #include "MonolithReflectionIntelModule.h"
 #include "MonolithRIMetaTable.h"
 
@@ -43,11 +30,18 @@ namespace
 		void* ReadPipe,
 		int32 TimeoutSeconds,
 		FString& OutStdout,
-		FString& OutErr)
+		FString& OutErr,
+		const FRiskMiningWorkerContext& Context)
 	{
 		const double StartSeconds = FPlatformTime::Seconds();
 		while (FPlatformProcess::IsProcRunning(Proc))
 		{
+			if (Context.IsCancelled())
+			{
+				FPlatformProcess::TerminateProc(Proc, /*KillTree=*/false);
+				OutErr = TEXT("git log cancelled (terminated)");
+				return false;
+			}
 			OutStdout += FPlatformProcess::ReadPipe(ReadPipe);
 
 			const double Elapsed = FPlatformTime::Seconds() - StartSeconds;
@@ -60,15 +54,68 @@ namespace
 					TEXT("git log timeout after %ds (terminated)"), TimeoutSeconds);
 				return false;
 			}
-			// Match the LaunchP4 pattern — no Sleep; if a tight pipe-poll
-			// proves costly on Live Coding rebuilds we can re-enable a tiny
-			// FPlatformProcess::Sleep(0.001f). Default is to spin to completion
-			// because git log on the Monolith plugin completes in well under
-			// 1s in normal use.
+			FPlatformProcess::Sleep(0.005f);
 		}
 
 		// Final tail drain after process exit.
 		OutStdout += FPlatformProcess::ReadPipe(ReadPipe);
+		if (Context.IsCancelled()) { OutErr = TEXT("git command cancelled"); return false; }
+		return true;
+	}
+
+
+	bool RunRiskGitCommand(const FString& CommandLine, int32 TimeoutSeconds,
+		const FRiskMiningWorkerContext& Context, FString& Stdout, int32& ExitCode, FString& OutErr)
+	{
+		if (Context.IsCancelled()) { OutErr = TEXT("git command cancelled"); return false; }
+		void* PipeRead = nullptr;
+		void* PipeWrite = nullptr;
+		if (!FPlatformProcess::CreatePipe(PipeRead, PipeWrite))
+		{
+			OutErr = TEXT("FPlatformProcess::CreatePipe failed");
+			return false;
+		}
+
+		// bLaunchDetached=false, bLaunchHidden=true, bLaunchReallyHidden=true —
+		// Phase 2 §8 gotcha: Windows CreateProc pops a console window otherwise.
+		// Follows `DiffAssetRegistriesCommandlet.cpp:1469` launch flags.
+		FProcHandle Proc = FPlatformProcess::CreateProc(
+			TEXT("git"),
+			*CommandLine,
+			/*bLaunchDetached=*/false,
+			/*bLaunchHidden=*/true,
+			/*bLaunchReallyHidden=*/true,
+			/*OutProcessID=*/nullptr,
+			/*PriorityModifier=*/0,
+			/*OptionalWorkingDirectory=*/nullptr,
+			PipeWrite,
+			/*PipeReadChild=*/nullptr);
+
+		if (!Proc.IsValid())
+		{
+			FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
+			OutErr = TEXT("FPlatformProcess::CreateProc returned invalid handle "
+				"(git not on PATH?)");
+			return false;
+		}
+
+		FString PipeErr;
+		const bool bDrained = DrainPipeUntilExit(Proc, PipeRead, TimeoutSeconds, Stdout, PipeErr, Context);
+		// Termination is asynchronous on Windows. Keep the owned handle until
+		// git exits, so shutdown cannot finish while it still accesses the repo.
+		if (!bDrained) FPlatformProcess::WaitForProc(Proc);
+
+		const bool bHasExitCode = FPlatformProcess::GetProcReturnCode(Proc, &ExitCode);
+
+		FPlatformProcess::CloseProc(Proc);
+		FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
+
+		if (!bDrained)
+		{
+			OutErr = PipeErr;
+			return false;
+		}
+		if (!bHasExitCode) { OutErr = TEXT("Could not obtain git process exit code"); return false; }
 		return true;
 	}
 
@@ -120,10 +167,48 @@ bool FGitCoChangeIndexer::Run(
 	int32 MaxCommitFileCount,
 	FString& OutStatus)
 {
-	// Code-quality non-negotiable item 5 — game-thread enforcement. The lazy
-	// bootstrap path invokes this from the action handler, which runs on the
-	// game thread. If somehow called off-thread, fail loud.
-	ensure(IsInGameThread());
+	if (!ensure(IsInGameThread())) return false;
+	FRiskMiningWorkerContext Context;
+	Context.ProjectRoot = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+	const bool bSucceeded = RunInternal(DB, Context, GitRepoRoots, MaxCommitWindow, NoiseFilter, MaxCommitFileCount, OutStatus);
+	if (bSucceeded)
+	{
+		// Compatibility for legacy GT callers. The asynchronous session stamps
+		// only after every worker stage has succeeded.
+		if (!MonolithRIMeta::WriteStoredVersion(DB, TEXT("risk"), MonolithRIMeta::GetIndexerCodeVersion(TEXT("risk")))
+			|| !MonolithRIMeta::WriteStoredVersion(DB, MonolithRIMeta::GetRiskConfigSubsystemKey(),
+				MonolithRIMeta::ComputeRiskConfigFingerprint(GitRepoRoots)))
+		{
+			OutStatus = TEXT("GitCoChangeIndexer: completion stamps could not be written");
+			return false;
+		}
+	}
+	return bSucceeded;
+}
+
+bool FGitCoChangeIndexer::RunOwnedDatabase(
+	FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context,
+	const TArray<FString>& GitRepoRoots,
+	int32 MaxCommitWindow,
+	const TArray<FString>& NoiseFilter,
+	int32 MaxCommitFileCount,
+	FString& OutStatus)
+{
+	if (!ensure(!IsInGameThread())) return false;
+	if (Context.ProjectRoot.IsEmpty() || FPaths::IsRelative(Context.ProjectRoot))
+	{ OutStatus = TEXT("GitCoChangeIndexer: captured absolute project root is required"); return false; }
+	return RunInternal(DB, Context, GitRepoRoots, MaxCommitWindow, NoiseFilter, MaxCommitFileCount, OutStatus);
+}
+
+bool FGitCoChangeIndexer::RunInternal(
+	FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context,
+	const TArray<FString>& GitRepoRoots,
+	int32 MaxCommitWindow,
+	const TArray<FString>& NoiseFilter,
+	int32 MaxCommitFileCount,
+	FString& OutStatus)
+{
+	if (Context.IsCancelled()) { OutStatus = TEXT("GitCoChangeIndexer: cancelled"); return false; }
 
 	if (!EnsureSchema(DB))
 	{
@@ -132,28 +217,20 @@ bool FGitCoChangeIndexer::Run(
 		return false;
 	}
 
-	// Handover doc item #1 — ensure the stale-detection meta table exists.
-	// GitCoChange is one of three risk sub-indexers; we stamp the unified "risk"
-	// subsystem version after THIS indexer's writes succeed (the runner only
-	// returns true when all three subindexers report OK, but stamping here is
-	// sufficient because the version check is just "did the parsing code shift"
-	// and the runner re-fires all three on rebuild).
-	MonolithRIMeta::EnsureMetaTable(DB);
-
 	// Wipe-and-rewrite — keep semantics simple. Per-repo data dominates so the
 	// repo_tag column is the natural delete key. Wipe everything; the loop
 	// below re-populates per repo.
 	{
 		FSQLitePreparedStatement Del1;
-		Del1.Create(DB, TEXT("DELETE FROM git_cochange_pairs;"));
-		Del1.Execute();
+		if (!Del1.Create(DB, TEXT("DELETE FROM git_cochange_pairs;")) || !Del1.Execute())
+		{ OutStatus = TEXT("GitCoChangeIndexer: could not clear co-change rows"); return false; }
 		FSQLitePreparedStatement Del2;
-		Del2.Create(DB, TEXT("DELETE FROM git_file_churn;"));
-		Del2.Execute();
+		if (!Del2.Create(DB, TEXT("DELETE FROM git_file_churn;")) || !Del2.Execute())
+		{ OutStatus = TEXT("GitCoChangeIndexer: could not clear churn rows"); return false; }
 	}
 
 	const FString ProjectRoot =
-		ToForwardSlashes(FPaths::ConvertRelativePathToFull(FPaths::ProjectDir()));
+		ToForwardSlashes(Context.ProjectRoot);
 
 	int32 ReposScanned = 0;
 	int32 ReposSkipped = 0;
@@ -168,6 +245,7 @@ bool FGitCoChangeIndexer::Run(
 
 	for (const FString& RawRoot : GitRepoRoots)
 	{
+		if (Context.IsCancelled()) { OutStatus = TEXT("GitCoChangeIndexer: cancelled"); return false; }
 		FString Root = RawRoot;
 		if (FPaths::IsRelative(Root))
 		{
@@ -198,13 +276,13 @@ bool FGitCoChangeIndexer::Run(
 
 		TArray<FGitCommitFileTouches> Commits;
 		FString Err;
-		if (!RunGitLog(Root, MaxCommitWindow, GitLogTimeoutSeconds, Commits, Err))
+		if (!RunGitLog(Context, Root, MaxCommitWindow, GitLogTimeoutSeconds, Commits, Err))
 		{
 			UE_LOG(LogMonolithReflectionIntel, Warning,
 				TEXT("GitCoChangeIndexer: git log failed in '%s' — %s"),
 				*Root, *Err);
-			++ErrorRepoCount;
-			continue;
+			OutStatus = FString::Printf(TEXT("GitCoChangeIndexer: %s: %s"), *Root, *Err);
+			return false;
 		}
 
 		// Rebase this repository's repo-relative paths into the project-relative
@@ -220,10 +298,12 @@ bool FGitCoChangeIndexer::Run(
 			int32 DroppedOutsideProject = 0;
 			for (FGitCommitFileTouches& Commit : Commits)
 			{
+				if (Context.IsCancelled()) { OutStatus = TEXT("GitCoChangeIndexer: cancelled"); return false; }
 				TArray<FString> Rebased;
 				Rebased.Reserve(Commit.Files.Num());
 				for (const FString& File : Commit.Files)
 				{
+					if (Context.IsCancelled()) { OutStatus = TEXT("GitCoChangeIndexer: cancelled"); return false; }
 					FString Mapped = File;
 					if (!PrefixToStrip.IsEmpty())
 					{
@@ -256,21 +336,24 @@ bool FGitCoChangeIndexer::Run(
 		TMap<TPair<FString, FString>, int32> Pairs;
 		TMap<FString, int32> Churn;
 		TMap<FString, int64> LastTouched;
-		TallyCoChangePairs(Commits, NoiseFilter, MaxCommitFileCount,
+		TallyCoChangePairs(Context, Commits, NoiseFilter, MaxCommitFileCount,
 			Pairs, Churn, LastTouched);
 
+		if (Context.IsCancelled()) { OutStatus = TEXT("GitCoChangeIndexer: cancelled"); return false; }
 		const FString Tag = RepoTagFor(Root);
-		if (!WritePairs(DB, Tag, Pairs, Churn, LastTouched))
+		if (!WritePairs(Context, DB, Tag, Pairs, Churn, LastTouched))
 		{
 			UE_LOG(LogMonolithReflectionIntel, Warning,
 				TEXT("GitCoChangeIndexer: write failed for repo '%s'"), *Tag);
-			++ErrorRepoCount;
-			continue;
+			OutStatus = Context.IsCancelled() ? TEXT("GitCoChangeIndexer: cancelled")
+				: FString::Printf(TEXT("GitCoChangeIndexer: write failed for %s"), *Tag);
+			return false;
 		}
 
 		TotalPairs += Pairs.Num();
 		TotalChurnRows += Churn.Num();
 		++ReposScanned;
+		if (Context.CompletedRepos) ++(*Context.CompletedRepos);
 	}
 
 	OutStatus = FString::Printf(
@@ -295,17 +378,7 @@ bool FGitCoChangeIndexer::Run(
 		UE_LOG(LogMonolithReflectionIntel, Log, TEXT("%s"), *OutStatus);
 	}
 
-	// Handover doc item #1 — stamp the risk code-version on success.
-	MonolithRIMeta::WriteStoredVersion(DB, TEXT("risk"),
-		MonolithRIMeta::GetIndexerCodeVersion(TEXT("risk")));
-
-	// Stamp the CONFIGURATION fingerprint beside it (issue #119). Computed from
-	// the INPUT array, unmodified — FRiskQueryAdapter::GetRawDB computes the
-	// same value from ResolveGitRepoRoots' output, so writer and reader are
-	// hashing byte-identical inputs through one shared function.
-	MonolithRIMeta::WriteStoredVersion(DB, MonolithRIMeta::GetRiskConfigSubsystemKey(),
-		MonolithRIMeta::ComputeRiskConfigFingerprint(GitRepoRoots));
-	return true;
+	return ErrorRepoCount == 0 && !Context.IsCancelled();
 }
 
 void FGitCoChangeIndexer::ComputeChurnPathRebase(
@@ -384,18 +457,16 @@ bool FGitCoChangeIndexer::EnsureSchema(FSQLiteDatabase& DB)
 
 	if (!Exec(MonolithRiskSchema::GetCreateCoChangePairsTableSQL())) { return false; }
 	if (!Exec(MonolithRiskSchema::GetCreateFileChurnTableSQL())) { return false; }
-	// Indices are nice-to-have; failure non-fatal.
-	Exec(MonolithRiskSchema::GetCreateCoChangePairsIndexFileASQL());
-	Exec(MonolithRiskSchema::GetCreateCoChangePairsIndexFileBSQL());
-	Exec(MonolithRiskSchema::GetCreateFileChurnIndexPathSQL());
-	return true;
+	return Exec(MonolithRiskSchema::GetCreateCoChangePairsIndexFileASQL())
+		&& Exec(MonolithRiskSchema::GetCreateCoChangePairsIndexFileBSQL())
+		&& Exec(MonolithRiskSchema::GetCreateFileChurnIndexPathSQL());
 }
 
 // ============================================================================
 // Spawn git log
 // ============================================================================
 
-bool FGitCoChangeIndexer::RunGitLog(
+bool FGitCoChangeIndexer::RunGitLog(const FRiskMiningWorkerContext& Context,
 	const FString& RepoRoot,
 	int32 MaxCommits,
 	int32 TimeoutSeconds,
@@ -412,59 +483,25 @@ bool FGitCoChangeIndexer::RunGitLog(
 		TEXT("-C \"%s\" log --name-only --pretty=format:\"COMMIT %%H %%at\" --max-count=%d"),
 		*RepoRoot, FMath::Max(MaxCommits, 1));
 
-	void* PipeRead = nullptr;
-	void* PipeWrite = nullptr;
-	if (!FPlatformProcess::CreatePipe(PipeRead, PipeWrite))
-	{
-		OutErr = TEXT("FPlatformProcess::CreatePipe failed");
-		return false;
-	}
-
-	// bLaunchDetached=false, bLaunchHidden=true, bLaunchReallyHidden=true —
-	// Phase 2 §8 gotcha: Windows CreateProc pops a console window otherwise.
-	// Mirrors `DiffAssetRegistriesCommandlet.cpp:1469` exactly.
-	FProcHandle Proc = FPlatformProcess::CreateProc(
-		TEXT("git"),
-		*CommandLine,
-		/*bLaunchDetached=*/false,
-		/*bLaunchHidden=*/true,
-		/*bLaunchReallyHidden=*/true,
-		/*OutProcessID=*/nullptr,
-		/*PriorityModifier=*/0,
-		/*OptionalWorkingDirectory=*/nullptr,
-		PipeWrite,
-		/*PipeReadChild=*/nullptr);
-
-	if (!Proc.IsValid())
-	{
-		FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
-		OutErr = TEXT("FPlatformProcess::CreateProc returned invalid handle "
-			"(git not on PATH?)");
-		return false;
-	}
-
 	FString Stdout;
-	FString PipeErr;
-	const bool bDrained = DrainPipeUntilExit(Proc, PipeRead, TimeoutSeconds, Stdout, PipeErr);
-
 	int32 ExitCode = -1;
-	FPlatformProcess::GetProcReturnCode(Proc, &ExitCode);
-
-	FPlatformProcess::CloseProc(Proc);
-	FPlatformProcess::ClosePipe(PipeRead, PipeWrite);
-
-	if (!bDrained)
-	{
-		OutErr = PipeErr;
-		return false;
-	}
+	if (!RunRiskGitCommand(CommandLine, TimeoutSeconds, Context, Stdout, ExitCode, OutErr)) return false;
 	if (ExitCode != 0)
 	{
-		OutErr = FString::Printf(TEXT("git log exited %d"), ExitCode);
+		// An unborn repository has no commits, but ordinary git failures must
+		// not become a successful empty index. Independently prove no refs.
+		FString ProbeOutput, ProbeError;
+		int32 ProbeExit = -1;
+		const FString Probe = FString::Printf(TEXT("-C \"%s\" rev-list --all --count"), *RepoRoot);
+		if (RunRiskGitCommand(Probe, TimeoutSeconds, Context, ProbeOutput, ProbeExit, ProbeError)
+			&& ProbeExit == 0 && ProbeOutput.TrimStartAndEnd() == TEXT("0")) return true;
+		OutErr = Context.IsCancelled() ? TEXT("git log cancelled")
+			: FString::Printf(TEXT("git log exited %d"), ExitCode);
 		return false;
 	}
 
-	ParseGitLog(Stdout, OutCommits);
+	ParseGitLog(Context, Stdout, OutCommits);
+	if (Context.IsCancelled()) { OutErr = TEXT("git log parsing cancelled"); return false; }
 	return true;
 }
 
@@ -472,7 +509,7 @@ bool FGitCoChangeIndexer::RunGitLog(
 // Parser
 // ============================================================================
 
-void FGitCoChangeIndexer::ParseGitLog(
+void FGitCoChangeIndexer::ParseGitLog(const FRiskMiningWorkerContext& Context,
 	const FString& StdoutText,
 	TArray<FGitCommitFileTouches>& OutCommits)
 {
@@ -494,6 +531,7 @@ void FGitCoChangeIndexer::ParseGitLog(
 
 	for (const FString& RawLine : Lines)
 	{
+		if (Context.IsCancelled()) return;
 		const FString Line = RawLine.TrimEnd();
 		if (Line.IsEmpty())
 		{
@@ -531,7 +569,7 @@ void FGitCoChangeIndexer::ParseGitLog(
 // Tally
 // ============================================================================
 
-void FGitCoChangeIndexer::TallyCoChangePairs(
+void FGitCoChangeIndexer::TallyCoChangePairs(const FRiskMiningWorkerContext& Context,
 	const TArray<FGitCommitFileTouches>& Commits,
 	const TArray<FString>& NoiseFilter,
 	int32 MaxFiles,
@@ -541,6 +579,7 @@ void FGitCoChangeIndexer::TallyCoChangePairs(
 {
 	for (const FGitCommitFileTouches& Commit : Commits)
 	{
+		if (Context.IsCancelled()) return;
 		// Skip mass commits (release, rename, bulk format) — they otherwise
 		// poison co-change weights. Design spec Q6 + plan §3.
 		if (MaxFiles > 0 && Commit.Files.Num() > MaxFiles)
@@ -553,6 +592,7 @@ void FGitCoChangeIndexer::TallyCoChangePairs(
 		CleanFiles.Reserve(Commit.Files.Num());
 		for (const FString& F : Commit.Files)
 		{
+			if (Context.IsCancelled()) return;
 			if (!IsNoise(F, NoiseFilter))
 			{
 				CleanFiles.Add(F);
@@ -562,6 +602,7 @@ void FGitCoChangeIndexer::TallyCoChangePairs(
 		// Bump churn + last_touched.
 		for (const FString& F : CleanFiles)
 		{
+			if (Context.IsCancelled()) return;
 			int32& C = OutChurn.FindOrAdd(F, 0);
 			++C;
 			int64& T = OutLastTouched.FindOrAdd(F, 0);
@@ -575,6 +616,7 @@ void FGitCoChangeIndexer::TallyCoChangePairs(
 		{
 			for (int32 j = i + 1; j < CleanFiles.Num(); ++j)
 			{
+				if (Context.IsCancelled()) return;
 				const FString* A = &CleanFiles[i];
 				const FString* B = &CleanFiles[j];
 				if (*B < *A) { Swap(A, B); }
@@ -589,7 +631,7 @@ void FGitCoChangeIndexer::TallyCoChangePairs(
 // Writes
 // ============================================================================
 
-bool FGitCoChangeIndexer::WritePairs(
+bool FGitCoChangeIndexer::WritePairs(const FRiskMiningWorkerContext& Context,
 	FSQLiteDatabase& DB,
 	const FString& RepoTag,
 	const TMap<TPair<FString, FString>, int32>& Pairs,
@@ -599,7 +641,7 @@ bool FGitCoChangeIndexer::WritePairs(
 	// Batch inserts inside a transaction — code-quality item 6. Pair counts
 	// can hit ~10K on the Monolith repo per plan §3, where transaction-less
 	// commits would be 1000x slower.
-	DB.Execute(TEXT("BEGIN TRANSACTION;"));
+	if (!DB.Execute(TEXT("SAVEPOINT risk_git_pairs;"))) return false;
 
 	int32 PairOkCount = 0;
 	int32 ChurnOkCount = 0;
@@ -611,20 +653,22 @@ bool FGitCoChangeIndexer::WritePairs(
 			"INSERT OR REPLACE INTO git_cochange_pairs "
 			"(repo_tag, file_a, file_b, count) VALUES (?, ?, ?, ?);")))
 		{
-			DB.Execute(TEXT("ROLLBACK;"));
+			DB.Execute(TEXT("ROLLBACK TO risk_git_pairs;"));
+			DB.Execute(TEXT("RELEASE risk_git_pairs;"));
 			UE_LOG(LogMonolithReflectionIntel, Error,
 				TEXT("GitCoChangeIndexer: pairs INSERT prepare failed"));
 			return false;
 		}
 		for (const TPair<TPair<FString, FString>, int32>& E : Pairs)
 		{
+			if (Context.IsCancelled()) { bAllOk = false; break; }
 			Ins.Reset();
 			Ins.ClearBindings();
-			Ins.SetBindingValueByIndex(1, RepoTag);
-			Ins.SetBindingValueByIndex(2, E.Key.Key);
-			Ins.SetBindingValueByIndex(3, E.Key.Value);
-			Ins.SetBindingValueByIndex(4, E.Value);
-			if (Ins.Execute()) { ++PairOkCount; }
+			if (Ins.SetBindingValueByIndex(1, RepoTag)
+				&& Ins.SetBindingValueByIndex(2, E.Key.Key)
+				&& Ins.SetBindingValueByIndex(3, E.Key.Value)
+				&& Ins.SetBindingValueByIndex(4, E.Value)
+				&& Ins.Execute()) { ++PairOkCount; }
 			else
 			{
 				bAllOk = false;
@@ -642,21 +686,23 @@ bool FGitCoChangeIndexer::WritePairs(
 			"(repo_tag, file_path, commit_count, last_touched) "
 			"VALUES (?, ?, ?, ?);")))
 		{
-			DB.Execute(TEXT("ROLLBACK;"));
+			DB.Execute(TEXT("ROLLBACK TO risk_git_pairs;"));
+			DB.Execute(TEXT("RELEASE risk_git_pairs;"));
 			UE_LOG(LogMonolithReflectionIntel, Error,
 				TEXT("GitCoChangeIndexer: churn INSERT prepare failed"));
 			return false;
 		}
 		for (const TPair<FString, int32>& E : Churn)
 		{
+			if (Context.IsCancelled()) { bAllOk = false; break; }
 			Ins.Reset();
 			Ins.ClearBindings();
-			Ins.SetBindingValueByIndex(1, RepoTag);
-			Ins.SetBindingValueByIndex(2, E.Key);
-			Ins.SetBindingValueByIndex(3, E.Value);
 			const int64* TouchedPtr = LastTouched.Find(E.Key);
-			Ins.SetBindingValueByIndex(4, TouchedPtr ? *TouchedPtr : int64(0));
-			if (Ins.Execute()) { ++ChurnOkCount; }
+			if (Ins.SetBindingValueByIndex(1, RepoTag)
+				&& Ins.SetBindingValueByIndex(2, E.Key)
+				&& Ins.SetBindingValueByIndex(3, E.Value)
+				&& Ins.SetBindingValueByIndex(4, TouchedPtr ? *TouchedPtr : int64(0))
+				&& Ins.Execute()) { ++ChurnOkCount; }
 			else
 			{
 				bAllOk = false;
@@ -666,7 +712,13 @@ bool FGitCoChangeIndexer::WritePairs(
 		}
 	}
 
-	DB.Execute(TEXT("COMMIT;"));
+	if (!bAllOk || Context.IsCancelled())
+	{
+		DB.Execute(TEXT("ROLLBACK TO risk_git_pairs;"));
+		DB.Execute(TEXT("RELEASE risk_git_pairs;"));
+		return false;
+	}
+	if (!DB.Execute(TEXT("RELEASE risk_git_pairs;"))) return false;
 
 	UE_LOG(LogMonolithReflectionIntel, Verbose,
 		TEXT("GitCoChangeIndexer: repo=%s pairs=%d/%d churn=%d/%d"),

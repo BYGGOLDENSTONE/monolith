@@ -97,13 +97,13 @@ namespace MonolithRIMeta
 		{
 			return false;
 		}
-		Stmt.SetBindingValueByIndex(1, Subsystem);
-		if (Stmt.Step() != ESQLitePreparedStatementStepResult::Row)
+		if (!Stmt.SetBindingValueByIndex(1, Subsystem)
+			|| Stmt.Step() != ESQLitePreparedStatementStepResult::Row)
 		{
 			return false;
 		}
 		int32 Version = 0;
-		Stmt.GetColumnValueByIndex(0, Version);
+		if (!Stmt.GetColumnValueByIndex(0, Version)) return false;
 		OutVersion = Version;
 		return true;
 	}
@@ -131,9 +131,9 @@ namespace MonolithRIMeta
 				TEXT("MonolithRIMeta: UPSERT prepare failed for subsystem '%s'"), *Subsystem);
 			return false;
 		}
-		Stmt.SetBindingValueByIndex(1, Subsystem);
-		Stmt.SetBindingValueByIndex(2, Version);
-		Stmt.SetBindingValueByIndex(3, Now);
-		return Stmt.Execute();
+		return Stmt.SetBindingValueByIndex(1, Subsystem)
+			&& Stmt.SetBindingValueByIndex(2, Version)
+			&& Stmt.SetBindingValueByIndex(3, Now)
+			&& Stmt.Execute();
 	}
 }

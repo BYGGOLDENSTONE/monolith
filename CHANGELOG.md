@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Phase 1 risk mining
+
+- Risk queries require a completed snapshot and suggest `risk.mine` immediately when unmined. Explicit mining runs git, gate scans and SQLite writes in one owned background task; `get_mining_status` reports progress and completion. Failed refreshes preserve the previous committed disk snapshot.
+- Risk snapshots persist in `Risk.db` beside the configured source database; both offline readers support the dedicated cache and legacy fallback. Risk settings edits and reload require explicit refresh.
+
 ### Phase 1 save contract
 
 - **Breaking:** `material.set_material_property` and `material.batch_set_material_property` now default to `save:false`; pass `save:true` to persist property edits.

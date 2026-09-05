@@ -5,6 +5,7 @@
 
 #include "Risk/FConditionalGateIndexer.h"
 #include "Risk/RiskSchema.h"
+#include "Risk/FRiskMiningWorkerContext.h"
 #include "MonolithReflectionIntelModule.h"
 #include "Shared/RIPathUtils.h"
 
@@ -35,15 +36,17 @@ namespace
 		return Path.EndsWith(TEXT(".Build.cs"), ESearchCase::IgnoreCase);
 	}
 
-	void WalkRecursive(const FString& Root, TArray<FString>& OutFiles)
+	bool WalkRecursive(const FString& Root, TArray<FString>& OutFiles, const FRiskMiningWorkerContext& Context)
 	{
 		class FVisitor : public IPlatformFile::FDirectoryVisitor
 		{
 		public:
 			TArray<FString>& Out;
-			explicit FVisitor(TArray<FString>& InOut) : Out(InOut) {}
+			const FRiskMiningWorkerContext& Context;
+			FVisitor(TArray<FString>& InOut, const FRiskMiningWorkerContext& InContext) : Out(InOut), Context(InContext) {}
 			virtual bool Visit(const TCHAR* FilenameOrDirectory, bool bIsDirectory) override
 			{
+				if (Context.IsCancelled()) return false;
 				if (!bIsDirectory)
 				{
 					const FString Path(FilenameOrDirectory);
@@ -55,8 +58,8 @@ namespace
 				return true;
 			}
 		};
-		FVisitor Visitor(OutFiles);
-		IFileManager::Get().IterateDirectoryRecursively(*Root, Visitor);
+		FVisitor Visitor(OutFiles, Context);
+		return IFileManager::Get().IterateDirectoryRecursively(*Root, Visitor);
 	}
 }
 
@@ -75,7 +78,25 @@ FConditionalGateIndexer::FConditionalGateIndexer()
 bool FConditionalGateIndexer::Run(
 	FSQLiteDatabase& DB, const TArray<FString>& ScanRoots, FString& OutStatus)
 {
-	ensure(IsInGameThread());
+	if (!ensure(IsInGameThread())) return false;
+	FRiskMiningWorkerContext Context;
+	Context.ProjectRoot = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+	return RunInternal(DB, Context, ScanRoots, OutStatus);
+}
+
+bool FConditionalGateIndexer::RunOwnedDatabase(
+	FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context, const TArray<FString>& ScanRoots, FString& OutStatus)
+{
+	if (!ensure(!IsInGameThread())) return false;
+	if (Context.ProjectRoot.IsEmpty() || FPaths::IsRelative(Context.ProjectRoot))
+	{ OutStatus = TEXT("ConditionalGateIndexer: captured absolute project root is required"); return false; }
+	return RunInternal(DB, Context, ScanRoots, OutStatus);
+}
+
+bool FConditionalGateIndexer::RunInternal(
+	FSQLiteDatabase& DB, const FRiskMiningWorkerContext& Context, const TArray<FString>& ScanRoots, FString& OutStatus)
+{
+	if (Context.IsCancelled()) { OutStatus = TEXT("Risk mining cancelled"); return false; }
 
 	if (!EnsureSchema(DB))
 	{
@@ -87,18 +108,18 @@ bool FConditionalGateIndexer::Run(
 	// Wipe-and-rewrite. AUTOINCREMENT id resets — fine, no foreign refs.
 	{
 		FSQLitePreparedStatement Del;
-		Del.Create(DB, TEXT("DELETE FROM reflect_conditional_gates;"));
-		Del.Execute();
+		if (!Del.Create(DB, TEXT("DELETE FROM reflect_conditional_gates;")) || !Del.Execute())
+		{ OutStatus = TEXT("ConditionalGateIndexer: could not clear gates"); return false; }
 	}
 
-	const FString ProjectRoot =
-		FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+	const FString& ProjectRoot = Context.ProjectRoot;
 
 	TArray<FConditionalGateRow> AllRows;
 	int32 FilesScanned = 0;
 
 	for (const FString& RawRoot : ScanRoots)
 	{
+		if (Context.IsCancelled()) { OutStatus = TEXT("ConditionalGateIndexer: cancelled"); return false; }
 		FString Root = RawRoot;
 		if (FPaths::IsRelative(Root))
 		{
@@ -115,16 +136,27 @@ bool FConditionalGateIndexer::Run(
 		}
 
 		TArray<FString> Files;
-		WalkRecursive(Root, Files);
+		if (!WalkRecursive(Root, Files, Context) || Context.IsCancelled())
+		{
+			OutStatus = Context.IsCancelled() ? TEXT("ConditionalGateIndexer: cancelled")
+				: FString::Printf(TEXT("ConditionalGateIndexer: could not enumerate %s"), *Root);
+			return false;
+		}
 
 		for (const FString& File : Files)
 		{
+			if (!ScanFile(Context, File, ProjectRoot, AllRows))
+			{
+				OutStatus = Context.IsCancelled() ? TEXT("ConditionalGateIndexer: cancelled")
+					: FString::Printf(TEXT("ConditionalGateIndexer: could not read %s"), *File);
+				return false;
+			}
 			++FilesScanned;
-			ScanFile(File, ProjectRoot, AllRows);
+			if (Context.CompletedFiles) ++(*Context.CompletedFiles);
 		}
 	}
 
-	if (!WriteRows(DB, AllRows))
+	if (!WriteRows(Context, DB, AllRows))
 	{
 		OutStatus = FString::Printf(
 			TEXT("FConditionalGateIndexer: write failed after %d files"),
@@ -153,16 +185,15 @@ bool FConditionalGateIndexer::EnsureSchema(FSQLiteDatabase& DB)
 		return Stmt.Execute();
 	};
 	if (!Exec(MonolithRiskSchema::GetCreateConditionalGatesTableSQL())) { return false; }
-	Exec(MonolithRiskSchema::GetCreateConditionalGatesIndexMacroSQL());
-	return true;
+	return Exec(MonolithRiskSchema::GetCreateConditionalGatesIndexMacroSQL());
 }
 
-void FConditionalGateIndexer::ScanFile(
+bool FConditionalGateIndexer::ScanFile(const FRiskMiningWorkerContext& Context,
 	const FString& AbsPath, const FString& ProjectRoot,
 	TArray<FConditionalGateRow>& OutRows)
 {
 	FString FileText;
-	if (!FFileHelper::LoadFileToString(FileText, *AbsPath)) { return; }
+	if (Context.IsCancelled() || !FFileHelper::LoadFileToString(FileText, *AbsPath)) { return false; }
 
 	TArray<FString> Lines;
 	FileText.ParseIntoArrayLines(Lines, /*InCullEmpty=*/false);
@@ -172,6 +203,7 @@ void FConditionalGateIndexer::ScanFile(
 
 	for (int32 i = 0; i < Lines.Num(); ++i)
 	{
+		if (Context.IsCancelled()) return false;
 		const FString& Line = Lines[i];
 
 		// `#if WITH_*` pattern — C++ source.
@@ -212,9 +244,10 @@ void FConditionalGateIndexer::ScanFile(
 			}
 		}
 	}
+	return !Context.IsCancelled();
 }
 
-bool FConditionalGateIndexer::WriteRows(
+bool FConditionalGateIndexer::WriteRows(const FRiskMiningWorkerContext& Context,
 	FSQLiteDatabase& DB, const TArray<FConditionalGateRow>& Rows)
 {
 	FSQLitePreparedStatement Ins;
@@ -228,18 +261,19 @@ bool FConditionalGateIndexer::WriteRows(
 		return false;
 	}
 
-	DB.Execute(TEXT("BEGIN TRANSACTION;"));
+	if (!DB.Execute(TEXT("SAVEPOINT risk_gates;"))) return false;
 	int32 OkCount = 0;
 	for (const FConditionalGateRow& R : Rows)
 	{
+		if (Context.IsCancelled()) break;
 		Ins.Reset();
 		Ins.ClearBindings();
-		Ins.SetBindingValueByIndex(1, R.SourcePath);
-		Ins.SetBindingValueByIndex(2, R.SourceLine);
-		Ins.SetBindingValueByIndex(3, R.MacroName);
-		Ins.SetBindingValueByIndex(4, R.GateKind);
-		Ins.SetBindingValueByIndex(5, R.ContextSnippet);
-		if (Ins.Execute()) { ++OkCount; }
+		if (Ins.SetBindingValueByIndex(1, R.SourcePath)
+			&& Ins.SetBindingValueByIndex(2, R.SourceLine)
+			&& Ins.SetBindingValueByIndex(3, R.MacroName)
+			&& Ins.SetBindingValueByIndex(4, R.GateKind)
+			&& Ins.SetBindingValueByIndex(5, R.ContextSnippet)
+			&& Ins.Execute()) { ++OkCount; }
 		else
 		{
 			UE_LOG(LogMonolithReflectionIntel, Verbose,
@@ -247,7 +281,14 @@ bool FConditionalGateIndexer::WriteRows(
 				*R.SourcePath, R.SourceLine, *R.MacroName);
 		}
 	}
-	DB.Execute(TEXT("COMMIT;"));
+	Ins.Destroy();
+	if (OkCount != Rows.Num() || Context.IsCancelled())
+	{
+		DB.Execute(TEXT("ROLLBACK TO risk_gates;"));
+		DB.Execute(TEXT("RELEASE risk_gates;"));
+		return false;
+	}
+	if (!DB.Execute(TEXT("RELEASE risk_gates;"))) return false;
 
 	UE_LOG(LogMonolithReflectionIntel, Verbose,
 		TEXT("ConditionalGateIndexer: wrote %d / %d rows"), OkCount, Rows.Num());
