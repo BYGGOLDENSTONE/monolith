@@ -18,6 +18,7 @@ Requirements: Python 3.8+ (stdlib only, no pip install needed)
 from __future__ import annotations
 
 import hashlib
+import errno
 import json
 import os
 import sys
@@ -259,6 +260,10 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _direct_opener():
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+
+
 def _post_monolith(body: str, timeout: float = TIMEOUT) -> str | None:
     """POST JSON-RPC to Monolith. Returns response body or None on failure."""
     try:
@@ -268,7 +273,7 @@ def _post_monolith(body: str, timeout: float = TIMEOUT) -> str | None:
             headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-03-26"},
             method="POST",
         )
-        with urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect()).open(req, timeout=timeout) as resp:
+        with _direct_opener().open(req, timeout=timeout) as resp:
             response = resp.read().decode("utf-8")
             parsed = json.loads(response)
             request = json.loads(body)
@@ -522,14 +527,17 @@ def _fallback_tools_list(msg: dict) -> str:
     return _result(msg.get("id"), {"tools": _seed_tools()})
 
 
-def _check_monolith_up() -> bool:
-    """Lightweight health check via GET /health endpoint."""
+def _check_monolith_up() -> bool | None:
+    """Return up/refused, or None when busy or otherwise indeterminate."""
     try:
         req = urllib.request.Request(MONOLITH_HEALTH, method="GET")
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
+        with _direct_opener().open(req, timeout=3) as resp:
+            return True if resp.status == 200 else None
+    except (urllib.error.URLError, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, ConnectionRefusedError) or getattr(reason, "errno", None) == errno.ECONNREFUSED:
+            return False
+        return None
 
 
 def _send_list_changed(stdout) -> bool:
@@ -548,6 +556,8 @@ def check_monolith_state_change(stdout) -> None:
     """Check for state transition and notify if changed."""
     global _monolith_was_up
     is_up = _check_monolith_up()
+    if is_up is None:
+        return
 
     if _monolith_was_up is not None and is_up != _monolith_was_up:
         direction = "online" if is_up else "offline"

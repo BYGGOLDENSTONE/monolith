@@ -550,6 +550,39 @@ class PythonCacheReadTests(unittest.TestCase):
         cls.module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.module)
 
+    def test_health_ignores_environment_proxy(self):
+        editor = EditorFixture()
+        self.addCleanup(editor.close)
+        with mock.patch.dict(os.environ, {"HTTP_PROXY": "http://127.0.0.1:1",
+                                          "HTTPS_PROXY": "http://127.0.0.1:1",
+                                          "NO_PROXY": "", "no_proxy": ""}), \
+                mock.patch.object(self.module, "MONOLITH_HEALTH", editor.url.replace("/mcp", "/health")):
+            self.assertTrue(self.module._check_monolith_up())
+
+    def test_health_timeout_preserves_state_and_refusal_marks_down(self):
+        import io
+        import urllib.error
+        for error, expected in ((TimeoutError(), None),
+                                (urllib.error.URLError(TimeoutError()), None),
+                                (urllib.error.URLError(ConnectionRefusedError()), False)):
+            opener = mock.Mock()
+            opener.open.side_effect = error
+            with mock.patch.object(self.module, "_direct_opener", return_value=opener):
+                self.assertIs(self.module._check_monolith_up(), expected)
+        output = io.StringIO()
+        with mock.patch.object(self.module, "_monolith_was_up", True), \
+                mock.patch.object(self.module, "_check_monolith_up", return_value=None):
+            self.module.check_monolith_state_change(output)
+            self.assertTrue(self.module._monolith_was_up)
+            self.assertEqual(output.getvalue(), "")
+
+    def test_health_redirect_is_not_followed(self):
+        import urllib.request
+        handler = self.module._NoRedirect()
+        self.assertIsNone(handler.redirect_request(
+            urllib.request.Request("http://localhost/health"), None, 302, "redirect", {},
+            "http://elsewhere/health"))
+
     def cache_read(self, outcomes):
         path = mock.Mock()
         path.exists.return_value = True
