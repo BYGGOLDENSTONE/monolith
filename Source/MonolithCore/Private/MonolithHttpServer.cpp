@@ -230,7 +230,7 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 			if (Values.Num() != 1 || (Values[0] != TEXT("2024-11-05") && Values[0] != TEXT("2025-03-26")
 				&& Values[0] != TEXT("2025-06-18") && Values[0] != TEXT("2025-11-25")))
 			{
-				auto Response = MakeJsonResponse(TEXT("{\"error\":\"Unsupported MCP-Protocol-Version\"}"), EHttpServerResponseCodes::BadRequest);
+				auto Response = MakeRejectedResponse(TEXT("Unsupported MCP-Protocol-Version"), EHttpServerResponseCodes::BadRequest);
 				AddCorsHeaders(*Response, Request);
 				OnComplete(MoveTemp(Response));
 				return true;
@@ -241,7 +241,7 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 	const int32 BodyLimit = FMath::Clamp(Settings ? Settings->MaxRequestBodyMB : 32, 1, 256) * 1024 * 1024;
 	if (Request.Body.Num() > BodyLimit)
 	{
-		auto Response = MakeJsonResponse(TEXT("{\"error\":\"MCP request body exceeds configured limit\"}"),
+		auto Response = MakeRejectedResponse(TEXT("MCP request body exceeds configured limit"),
 			static_cast<EHttpServerResponseCodes>(413));
 		AddCorsHeaders(*Response, Request);
 		OnComplete(MoveTemp(Response));
@@ -971,6 +971,16 @@ TUniquePtr<FHttpServerResponse> FMonolithHttpServer::MakeSseResponse(const TArra
 	return Response;
 }
 
+TUniquePtr<FHttpServerResponse> FMonolithHttpServer::MakeRejectedResponse(const FString& Message, EHttpServerResponseCodes Code)
+{
+	auto Data = MakeShared<FJsonObject>();
+	Data->SetBoolField(TEXT("executed"), false);
+	// The body has not been parsed, so the request ID is deliberately unknown.
+	auto Error = FMonolithJsonUtils::ErrorResponse(nullptr, FMonolithJsonUtils::ErrInvalidRequest,
+		Message, MakeShared<FJsonValueObject>(Data));
+	return MakeJsonResponse(FMonolithJsonUtils::Serialize(Error), Code);
+}
+
 namespace
 {
 	// Allowlisted origins for browser CORS. Loopback only — the MCP server
@@ -1033,7 +1043,7 @@ bool FMonolithHttpServer::RejectOrigin(const FHttpServerRequest& Request, const 
 		}
 	}
 	if (!bInvalid && OriginCount <= 1) return false;
-	auto Response = MakeJsonResponse(TEXT("{\"error\":\"Origin not allowed\"}"), static_cast<EHttpServerResponseCodes>(403));
+	auto Response = MakeRejectedResponse(TEXT("Origin not allowed"), static_cast<EHttpServerResponseCodes>(403));
 	OnComplete(MoveTemp(Response));
 	return true;
 }

@@ -59,6 +59,7 @@ private:
 
 	// --- Helpers ---
 	TUniquePtr<FHttpServerResponse> MakeJsonResponse(const FString& JsonBody, EHttpServerResponseCodes Code = EHttpServerResponseCodes::Ok);
+	TUniquePtr<FHttpServerResponse> MakeRejectedResponse(const FString& Message, EHttpServerResponseCodes Code);
 	TUniquePtr<FHttpServerResponse> MakeSseResponse(const TArray<TSharedPtr<FJsonObject>>& Messages);
 	// Echo Origin only when it matches the localhost allowlist. Browsers block
 	// cross-origin reads when ACAO is missing, so omitting the header for

@@ -115,6 +115,26 @@ class EditorFixture:
                     self.reply({"offline": True}, 503)
                     return
                 mode = msg.get("params", {}).get("arguments", {}).get("fixture_mode")
+                if mode and mode.startswith("rejection_"):
+                    error = {"code": -32600, "message": "Request rejected before execution",
+                             "data": {"executed": False}}
+                    payload = {"jsonrpc": "2.0", "id": None, "error": error}
+                    if mode == "rejection_wrong_id":
+                        payload["id"] = "unrelated-id"
+                    elif mode == "rejection_missing_id":
+                        payload.pop("id")
+                    elif mode == "rejection_wrong_code":
+                        error["code"] = -32603
+                    elif mode == "rejection_executed_true":
+                        error["data"]["executed"] = True
+                    elif mode == "rejection_executed_zero":
+                        error["data"]["executed"] = 0
+                    elif mode == "rejection_missing_evidence":
+                        error.pop("data")
+                    status = int(mode.rsplit("_", 1)[-1]) if mode in (
+                        "rejection_400", "rejection_403", "rejection_413") else 400
+                    self.reply(payload, status)
+                    return
                 if mode == "redirect" and "replayed" not in self.path:
                     self.send_response(307)
                     self.send_header("Location", owner.url + "?replayed=1")
@@ -395,6 +415,25 @@ class TransportContract:
         proxy.send(request("still-alive", "ping"))
         self.assertEqual(proxy.receive()["id"], "still-alive")
         self.assertEqual(len(self.editor.received), 1)
+
+    def test_http_rejections_preserve_never_executed_evidence(self):
+        proxy = self.proxy()
+        for status in (400, 403, 413):
+            identifier = "rejected-%d" % status
+            proxy.send(request(identifier, fixture_mode="rejection_%d" % status))
+            self.assertEqual(proxy.receive(), {"jsonrpc": "2.0", "id": identifier,
+                "error": {"code": -32600, "message": "Request rejected before execution",
+                          "data": {"executed": False}}})
+        self.assertEqual(len(self.editor.received), 3)
+
+    def test_rejection_id_exception_requires_exact_never_executed_contract(self):
+        proxy = self.proxy()
+        modes = ("wrong_id", "missing_id", "wrong_code", "executed_true",
+                 "executed_zero", "missing_evidence")
+        for mode in modes:
+            proxy.send(request(mode, fixture_mode="rejection_" + mode))
+            self.assert_tool_unknown(proxy.receive(), mode)
+        self.assertEqual(len(self.editor.received), len(modes))
 
     def test_post_redirect_is_not_followed_or_replayed(self):
         proxy = self.proxy()

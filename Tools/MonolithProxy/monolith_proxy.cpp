@@ -626,15 +626,26 @@ static std::string post_monolith(const std::string& body, double timeout_sec = T
     WinHttpCloseHandle(hSession);
 
     try {
-        const auto parsed = json::parse(response);
+        auto parsed = json::parse(response);
         const auto request = json::parse(body);
         if (!parsed.is_object() || parsed.value("jsonrpc", "") != "2.0" ||
-            parsed.value("id", json()) != request.value("id", json()) ||
+            !parsed.contains("id") || parsed["id"].is_boolean() ||
             parsed.contains("result") == parsed.contains("error")) return {};
         if (parsed.contains("error")) {
             const auto& error = parsed["error"];
             if (!error.is_object() || !error.contains("code") || !error["code"].is_number_integer() ||
                 !error.contains("message") || !error["message"].is_string()) return {};
+        }
+        if (parsed["id"] != request.value("id", json())) {
+            // Rejections before parsing have no request ID. Rebind only the
+            // explicit invalid-request / never-executed contract.
+            if (!parsed["id"].is_null() || !parsed.contains("error")) return {};
+            const auto& error = parsed["error"];
+            if (error["code"] != -32600 || !error.contains("data") || !error["data"].is_object()) return {};
+            const auto& data = error["data"];
+            if (!data.contains("executed") || !data["executed"].is_boolean() || data["executed"].get<bool>()) return {};
+            parsed["id"] = request.value("id", json());
+            response = parsed.dump();
         }
     } catch (...) { return {}; }
     return response;

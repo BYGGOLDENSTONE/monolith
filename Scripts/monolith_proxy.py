@@ -273,20 +273,36 @@ def _post_monolith(body: str, timeout: float = TIMEOUT) -> str | None:
             headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-03-26"},
             method="POST",
         )
-        with _direct_opener().open(req, timeout=timeout) as resp:
+        try:
+            upstream = _direct_opener().open(req, timeout=timeout)
+        except urllib.error.HTTPError as rejection:
+            # HTTP rejection bodies still carry JSON-RPC errors. Validate them
+            # exactly like successful HTTP responses rather than losing evidence.
+            upstream = rejection
+        with upstream as resp:
             response = resp.read().decode("utf-8")
             parsed = json.loads(response)
             request = json.loads(body)
             if (not isinstance(parsed, dict) or parsed.get("jsonrpc") != "2.0"
                     or isinstance(parsed.get("id"), bool)
-                    or parsed.get("id") != request.get("id")
+                    or "id" not in parsed
                     or ("result" in parsed) == ("error" in parsed)):
-                raise ValueError("Invalid upstream JSON-RPC response or mismatched id")
+                raise ValueError("Invalid upstream JSON-RPC response")
             error = parsed.get("error")
             if "error" in parsed and (not isinstance(error, dict)
                     or isinstance(error.get("code"), bool) or not isinstance(error.get("code"), int)
                     or not isinstance(error.get("message"), str)):
                 raise ValueError("Malformed upstream error")
+            if parsed["id"] != request.get("id"):
+                # Pre-parse rejections cannot recover the request ID. Only the
+                # explicit invalid-request / never-executed contract can rebind it.
+                data = error.get("data") if isinstance(error, dict) else None
+                if (parsed["id"] is not None or not isinstance(error, dict)
+                        or error.get("code") != -32600 or not isinstance(data, dict)
+                        or data.get("executed") is not False):
+                    raise ValueError("Mismatched upstream response id")
+                parsed["id"] = request.get("id")
+                return json.dumps(parsed)
             return response
     except (urllib.error.URLError, OSError, TimeoutError, ValueError) as e:
         _log(f"Monolith unreachable: {e}")

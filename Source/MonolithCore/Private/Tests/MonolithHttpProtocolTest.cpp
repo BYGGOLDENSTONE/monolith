@@ -2,6 +2,7 @@
 #include "MonolithHttpServer.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithJsonUtils.h"
+#include "MonolithSettings.h"
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 
@@ -73,9 +74,46 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
     };
     const FString Write = TEXT("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"http_fixture_query\",\"arguments\":{\"action\":\"write\"}}}");
 
+    auto CheckRejection = [this, &Body](const TCHAR* Context)
+    {
+        const auto Reply = FMonolithJsonUtils::Parse(Body);
+        if (!TestTrue(Context, Reply.IsValid())) return;
+        TestEqual(TEXT("Rejection is JSON-RPC"), Reply->GetStringField(TEXT("jsonrpc")), FString(TEXT("2.0")));
+        TestTrue(TEXT("Pre-parse rejection has null id"), Reply->HasTypedField<EJson::Null>(TEXT("id")));
+        const TSharedPtr<FJsonObject>* Error = nullptr;
+        if (!TestTrue(TEXT("Rejection error object"), Reply->TryGetObjectField(TEXT("error"), Error))) return;
+        TestEqual(TEXT("Rejection is invalid request"), (*Error)->GetIntegerField(TEXT("code")), FMonolithJsonUtils::ErrInvalidRequest);
+        const TSharedPtr<FJsonObject>* Data = nullptr;
+        if (!TestTrue(TEXT("Rejection includes data"), (*Error)->TryGetObjectField(TEXT("data"), Data))) return;
+        TestTrue(TEXT("Execution evidence is boolean"), (*Data)->HasTypedField<EJson::Boolean>(TEXT("executed")));
+        TestFalse(TEXT("Rejected request never executed"), (*Data)->GetBoolField(TEXT("executed")));
+    };
+
     Post(Write, TEXT("https://untrusted.example"), true);
     TestEqual(TEXT("Foreign origin rejected before execution"), Status, 403);
     TestEqual(TEXT("Foreign origin cannot mutate editor"), Executed, 0);
+    CheckRejection(TEXT("Origin rejection parses"));
+
+    FHttpServerRequest UnsupportedVersion;
+    FTCHARToUTF8 VersionBody(*Write);
+    UnsupportedVersion.Body.Append(reinterpret_cast<const uint8*>(VersionBody.Get()), VersionBody.Length());
+    UnsupportedVersion.Headers.Add(TEXT("MCP-Protocol-Version"), {TEXT("unsupported")});
+    Server.HandlePostMcp(UnsupportedVersion, Complete);
+    TestEqual(TEXT("Unsupported version rejected"), Status, 400);
+    CheckRejection(TEXT("Version rejection parses"));
+    TestEqual(TEXT("Unsupported version never executes"), Executed, 0);
+
+    // Keep the fixture small regardless of the user's configured body limit.
+    UMonolithSettings* MutableSettings = GetMutableDefault<UMonolithSettings>();
+    const int32 OriginalBodyLimit = MutableSettings->MaxRequestBodyMB;
+    MutableSettings->MaxRequestBodyMB = 1;
+    FHttpServerRequest Oversized;
+    Oversized.Body.Init(' ', 1024 * 1024 + 1);
+    Server.HandlePostMcp(Oversized, Complete);
+    MutableSettings->MaxRequestBodyMB = OriginalBodyLimit;
+    TestEqual(TEXT("Oversized body rejected"), Status, 413);
+    CheckRejection(TEXT("Size rejection parses"));
+    TestEqual(TEXT("Oversized body never executes"), Executed, 0);
     Post(Write, TEXT(""), true);
     TestEqual(TEXT("Empty explicit Origin rejected"), Status, 403);
     Post(Write, TEXT("http://localhost.evil.example"), true);
