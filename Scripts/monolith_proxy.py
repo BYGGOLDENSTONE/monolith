@@ -601,11 +601,71 @@ def _health_poll_thread(stdout) -> None:
         _stop_poll.wait(POLL_INTERVAL)
 
 
-def handle_initialize(msg: dict) -> str:
-    """Handle initialize locally. Proxy is always available."""
+DEFAULT_INSTRUCTIONS = (
+    "Monolith MCP server for Unreal Engine. "
+    "Before calling a domain action, check its schema instead of guessing: "
+    "monolith_discover() lists namespaces, monolith_discover('<namespace>') lists a "
+    "namespace's action names + descriptions (terse by default — pass detail=true to "
+    "inline param schemas), and describe_query('action_schema', ...) returns one action's "
+    "exact parameter schema. monolith_guide(section='recipes') gives cross-namespace "
+    "workflows, decision matrices, and gotchas. For multi-agent edits acquire monolith_coordination "
+    "and pass _lease_token on domain calls; renew before expiry. Transport timeouts have unknown execution outcome."
+)
+
+
+def _read_instructions_cache() -> str | None:
+    try:
+        path = Path(str(_tools_cache_path()) + ".instructions")
+        for attempt in range(3):
+            try:
+                contents = path.read_text(encoding="utf-8")
+                break
+            except PermissionError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.01)
+        value = json.loads(contents)
+        return value if isinstance(value, str) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _write_instructions_cache(value: str) -> None:
+    try:
+        path = Path(str(_tools_cache_path()) + ".instructions")
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=path.name, delete=False) as temp:
+            temp.write(json.dumps(value))
+        try:
+            os.replace(temp.name, path)
+        finally:
+            Path(temp.name).unlink(missing_ok=True)
+    except OSError as exc:
+        _log(f"Failed to write instructions cache: {exc}")
+
+
+def handle_initialize(msg: dict, fetch_instructions: bool = True) -> str:
+    """Negotiate locally, importing only server instructions on the metadata worker."""
     client_version = msg.get("params", {}).get("protocolVersion", "2025-11-25")
     supported = {"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"}
     version = client_version if isinstance(client_version, str) and client_version in supported else "2025-11-25"
+
+    instructions = _read_instructions_cache()
+    if fetch_instructions:
+        upstream = dict(msg, params={
+            "protocolVersion": version, "capabilities": {},
+            "clientInfo": {"name": PROXY_NAME, "version": PROXY_VERSION},
+        })
+        response = _post_monolith(json.dumps(upstream), timeout=1.0)
+        try:
+            result = json.loads(response or "null")
+            result = result.get("result") if isinstance(result, dict) else None
+            value = result.get("instructions") if isinstance(result, dict) else None
+            if isinstance(value, str):
+                instructions = value
+                _write_instructions_cache(value)
+        except (ValueError, TypeError):
+            pass  # Keep the previous complete snapshot on malformed upstream metadata.
 
     return _result(msg.get("id"), {
         "protocolVersion": version,
@@ -613,16 +673,7 @@ def handle_initialize(msg: dict) -> str:
             "tools": {"listChanged": True},
         },
         "serverInfo": {"name": PROXY_NAME, "version": PROXY_VERSION},
-        "instructions": (
-            "Monolith MCP proxy for Unreal Engine. Tools are forwarded to the Unreal Editor. "
-            "Before calling a domain action, check its schema instead of guessing: "
-            "monolith_discover() lists namespaces, monolith_discover('<namespace>') lists a "
-            "namespace's actions, and describe_query('action_schema', ...) returns an action's "
-            "exact parameter schema. monolith_guide(section='recipes') gives cross-namespace "
-            "workflows, decision matrices, and gotchas. "
-            "For multi-agent edits, acquire monolith_coordination and pass its _lease_token on domain calls. "
-            "A transport timeout has unknown execution outcome: inspect state before retrying a mutation."
-        ),
+        "instructions": instructions if instructions is not None else DEFAULT_INSTRUCTIONS,
     })
 
 
@@ -681,16 +732,19 @@ def main() -> None:
     # Bound queued + running work. Never block stdin on an HTTP call: ping and
     # initialize stay responsive even when all editor workers are occupied.
     slots = threading.BoundedSemaphore(MAX_IN_FLIGHT + MAX_QUEUED)
+    metadata_slots = threading.BoundedSemaphore(1)
     active = set()
     active_lock = threading.Lock()
 
-    def dispatch(msg):
+    def dispatch(msg, metadata=False):
         try:
             method = msg["method"]
             if method == "tools/list":
                 response = handle_tools_list(msg)
             elif method == "tools/call":
                 response = handle_tools_call(msg)
+            elif method == "initialize":
+                response = handle_initialize(msg)
             else:
                 response = _jsonrpc_error(msg["id"], -32601, f"Method not found: {method}")
             _write(stdout, response)
@@ -700,10 +754,11 @@ def main() -> None:
         finally:
             with active_lock:
                 active.discard(_canonical_json(msg["id"]))
-            slots.release()
+            (metadata_slots if metadata else slots).release()
 
     try:
-        with ThreadPoolExecutor(max_workers=MAX_IN_FLIGHT, thread_name_prefix="monolith") as pool:
+        with ThreadPoolExecutor(max_workers=MAX_IN_FLIGHT, thread_name_prefix="monolith") as pool, \
+                ThreadPoolExecutor(max_workers=1, thread_name_prefix="monolith-metadata") as metadata_pool:
             for line in stdin:
                 if not line.strip():
                     continue
@@ -726,9 +781,6 @@ def main() -> None:
                     _write(stdout, _jsonrpc_error(msg["id"], -32602, "params must be an object"))
                     continue
                 method = msg["method"]
-                if method == "initialize":
-                    _write(stdout, handle_initialize(msg))
-                    continue
                 if method == "ping":
                     _write(stdout, handle_ping(msg))
                     continue
@@ -738,18 +790,23 @@ def main() -> None:
                             or not isinstance(params.get("arguments", {}), dict)):
                         _write(stdout, _jsonrpc_error(msg["id"], -32602, "name must be a string; arguments must be an object"))
                         continue
+                metadata = method == "initialize"
+                request_slots = metadata_slots if metadata else slots
                 key = _canonical_json(msg["id"])
                 with active_lock:
                     duplicate = key in active
-                    accepted = not duplicate and slots.acquire(blocking=False)
+                    accepted = not duplicate and request_slots.acquire(blocking=False)
                     if accepted:
                         active.add(key)
                 if not accepted:
+                    if metadata and not duplicate:
+                        _write(stdout, handle_initialize(msg, fetch_instructions=False))
+                        continue
                     code = -32600 if duplicate else -32001
                     message = "Request id already in flight" if duplicate else "Proxy queue full; request not executed. Retry with backoff."
                     _write(stdout, _jsonrpc_error(msg["id"], code, message))
                     continue
-                pool.submit(dispatch, msg)
+                (metadata_pool if metadata else pool).submit(dispatch, msg, metadata)
     finally:
         _stop_poll.set()
         poller.join(timeout=4)

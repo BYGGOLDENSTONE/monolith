@@ -926,25 +926,15 @@ static json make_seed_tools()
     return tools;
 }
 
-static void write_tools_cache(const std::string& response)
+static void write_cache(const std::string& path, const json& value)
 {
     std::lock_guard<std::mutex> guard(g_cache_lock);
     try
     {
-        json payload = json::parse(response);
-        auto result_it = payload.find("result");
-        if (result_it == payload.end() || !result_it->is_object())
-            return;
-
-        auto tools_it = result_it->find("tools");
-        if (tools_it == result_it->end() || !tools_it->is_array() || tools_it->empty())
-            return;
-
-        const auto path = tools_cache_path();
         const auto temp = path + "." + std::to_string(GetCurrentProcessId()) + ".tmp";
         bool written = false;
         { std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-          if (out) { out << tools_it->dump(); out.flush(); written = bool(out); } }
+          if (out) { out << value.dump(); out.flush(); written = bool(out); } }
         if (!written) { DeleteFileA(temp.c_str()); return; }
         // Older cache readers / antivirus may omit FILE_SHARE_DELETE. Retry only
         // this local rename, never the editor request. The old complete cache
@@ -959,15 +949,15 @@ static void write_tools_cache(const std::string& response)
             if (attempt < 9) std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         DeleteFileA(temp.c_str());
-        log_msg("Failed to replace tools/list cache (Windows error " + std::to_string(error) + ")");
+        log_msg("Failed to replace proxy cache (Windows error " + std::to_string(error) + ")");
     }
     catch (const std::exception& e)
     {
-        log_msg(std::string("Failed to write tools/list cache: ") + e.what());
+        log_msg(std::string("Failed to write proxy cache: ") + e.what());
     }
 }
 
-static std::optional<json> read_tools_cache()
+static std::optional<json> read_cache(const std::string& path)
 {
     std::lock_guard<std::mutex> guard(g_cache_lock);
     try
@@ -981,7 +971,7 @@ static std::optional<json> read_tools_cache()
         {
             HANDLE value;
             ~CacheReadHandle() { if (value != INVALID_HANDLE_VALUE) CloseHandle(value); }
-        } in{CreateFileA(tools_cache_path().c_str(), GENERIC_READ,
+        } in{CreateFileA(path.c_str(), GENERIC_READ,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)};
         if (in.value == INVALID_HANDLE_VALUE) return std::nullopt;
@@ -994,17 +984,33 @@ static std::optional<json> read_tools_cache()
             if (bytes == 0) break;
             contents.append(buffer, bytes);
         }
-        json tools = json::parse(contents);
-        if (!tools.is_array() || tools.empty())
-            return std::nullopt;
-
-        return tools;
+        return json::parse(contents);
     }
     catch (const std::exception& e)
     {
-        log_msg(std::string("Failed to read tools/list cache: ") + e.what());
+        log_msg(std::string("Failed to read proxy cache: ") + e.what());
         return std::nullopt;
     }
+}
+
+static void write_tools_cache(const std::string& response)
+{
+    try {
+        const auto payload = json::parse(response);
+        const auto result = payload.find("result");
+        if (result == payload.end() || !result->is_object()) return;
+        const auto tools = result->find("tools");
+        if (tools != result->end() && tools->is_array() && !tools->empty())
+            write_cache(tools_cache_path(), *tools);
+    } catch (const std::exception& e) {
+        log_msg(std::string("Failed to parse tools/list cache: ") + e.what());
+    }
+}
+
+static std::optional<json> read_tools_cache()
+{
+    auto tools = read_cache(tools_cache_path());
+    return tools && tools->is_array() && !tools->empty() ? tools : std::nullopt;
 }
 
 static std::string rewrite_tools_list(std::string resp)
@@ -1132,7 +1138,17 @@ static void health_poll_thread()
 // Handlers
 // ============================================================================
 
-static std::string handle_initialize(const json& msg)
+static const char* DEFAULT_INSTRUCTIONS =
+    "Monolith MCP server for Unreal Engine. "
+    "Before calling a domain action, check its schema instead of guessing: "
+    "monolith_discover() lists namespaces, monolith_discover('<namespace>') lists a "
+    "namespace's action names + descriptions (terse by default — pass detail=true to "
+    "inline param schemas), and describe_query('action_schema', ...) returns one action's "
+    "exact parameter schema. monolith_guide(section='recipes') gives cross-namespace "
+    "workflows, decision matrices, and gotchas. For multi-agent edits acquire monolith_coordination "
+    "and pass _lease_token on domain calls; renew before expiry. Transport timeouts have unknown execution outcome.";
+
+static std::string handle_initialize(const json& msg, bool fetch_instructions = true)
 {
     std::string client_version = "2025-11-25";
     auto params_it = msg.find("params");
@@ -1150,10 +1166,29 @@ static std::string handle_initialize(const json& msg)
     result["protocolVersion"] = version;
     result["capabilities"] = {{"tools", {{"listChanged", true}}}};
     result["serverInfo"] = {{"name", PROXY_NAME}, {"version", PROXY_VERSION}};
-    result["instructions"] =
-        "Monolith MCP proxy. Tools are forwarded to the Unreal Editor. "
-        "Discover action schemas before editing. For multi-agent edits acquire monolith_coordination "
-        "and pass its _lease_token on domain calls. A timeout has unknown execution outcome; inspect state before retrying mutations.";
+    const auto path = tools_cache_path() + ".instructions";
+    auto instructions = read_cache(path);
+    if (fetch_instructions)
+    {
+        // Only metadata is imported. Negotiation and proxy capabilities stay local.
+        json upstream = msg;
+        upstream["params"] = {{"protocolVersion", version}, {"capabilities", json::object()},
+                              {"clientInfo", {{"name", PROXY_NAME}, {"version", PROXY_VERSION}}}};
+        const auto response = post_monolith(upstream.dump(), 1.0);
+        try {
+            const auto payload = json::parse(response);
+            const auto upstream_result = payload.find("result");
+            if (upstream_result != payload.end() && upstream_result->is_object()) {
+                const auto value = upstream_result->find("instructions");
+                if (value != upstream_result->end() && value->is_string()) {
+                    instructions = *value;
+                    write_cache(path, *value);
+                }
+            }
+        } catch (const std::exception&) { /* Keep the last complete local snapshot. */ }
+    }
+    result["instructions"] = instructions && instructions->is_string()
+        ? *instructions : json(DEFAULT_INSTRUCTIONS);
 
     return make_result(msg.value("id", json()), result);
 }
@@ -1338,6 +1373,7 @@ public:
                     const auto method = msg.value("method", "");
                     if (method == "tools/call") response = handle_tools_call(msg);
                     else if (method == "tools/list") response = handle_tools_list(msg);
+                    else if (method == "initialize") response = handle_initialize(msg);
                     else response = make_jsonrpc_error(msg["id"], -32601, "Method not found: " + method);
                 } catch (const std::exception& e) {
                     log_msg(std::string("Request error: ") + e.what());
@@ -1348,6 +1384,10 @@ public:
                 active.erase(msg["id"].dump());
             }
         });
+    }
+    bool contains_id(const json& id) {
+        std::lock_guard<std::mutex> lock(mutex);
+        return active.count(id.dump()) != 0;
     }
     int submit(const json& msg) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -1389,6 +1429,7 @@ int main()
     {
         RequestPool pool(env_int("MONOLITH_MAX_IN_FLIGHT", 8, 1, 32),
                          env_int("MONOLITH_MAX_QUEUED", 64, 0, 1024));
+        RequestPool metadata_pool(1, 0); // One metadata request, independent of editor workers.
         std::string line;
         while (std::getline(std::cin, line)) {
             if (line.find_first_not_of(" \t\r\n") == std::string::npos) continue;
@@ -1405,7 +1446,13 @@ int main()
                 write_stdout(make_jsonrpc_error(msg["id"], -32602, "params must be an object")); continue;
             }
             const auto method = msg.value("method", "");
-            if (method == "initialize") { write_stdout(handle_initialize(msg)); continue; }
+            if (method == "initialize") {
+                // Stdin is the only submitter; workers can only remove active IDs.
+                const int code = pool.contains_id(msg["id"]) ? -32600 : metadata_pool.submit(msg);
+                if (code == -32600) write_stdout(make_jsonrpc_error(msg["id"], code, "Request id already in flight"));
+                else if (code) write_stdout(handle_initialize(msg, false));
+                continue;
+            }
             if (method == "ping") { write_stdout(handle_ping(msg)); continue; }
             if (method == "tools/call") {
                 const auto params = msg.value("params", json::object());
@@ -1414,7 +1461,7 @@ int main()
                     write_stdout(make_jsonrpc_error(msg["id"], -32602, "name must be a string; arguments must be an object")); continue;
                 }
             }
-            const int code = pool.submit(msg);
+            const int code = metadata_pool.contains_id(msg["id"]) ? -32600 : pool.submit(msg);
             if (code) write_stdout(make_jsonrpc_error(msg["id"], code, code == -32001
                 ? "Proxy queue full; request not executed. Retry with backoff." : "Request id already in flight"));
         }

@@ -10,6 +10,7 @@ import importlib.util
 import os
 from pathlib import Path
 import queue
+import re
 import socket
 import subprocess
 import sys
@@ -63,6 +64,14 @@ TOOLS = [{"name": "fixture_query", "description": "transport fixture",
           "inputSchema": {"type": "object"}}]
 
 
+def server_instructions():
+    source = (ROOT / "Source/MonolithCore/Private/MonolithHttpServer.cpp").read_text(encoding="utf-8")
+    block = re.search(r'Result->SetStringField\(TEXT\("instructions"\),(.*?)\);\s*\n',
+                      source, re.DOTALL).group(1)
+    return "".join(json.loads('"' + part + '"')
+                   for part in re.findall(r'TEXT\("((?:\\.|[^"\\])*)"\)', block))
+
+
 def request(identifier, method="tools/call", **arguments):
     msg = {"jsonrpc": "2.0", "id": identifier, "method": method}
     if method == "tools/call":
@@ -77,6 +86,7 @@ class EditorFixture:
         self.gates = {}
         self.offline = False
         self.tools = TOOLS
+        self.instructions = "Fixture instructions: discover schemas before edits."
         self.health_entered = threading.Event()
         self.health_gate = threading.Event()
         self.health_gate.set()
@@ -152,9 +162,13 @@ class EditorFixture:
                 if mode == "invalid":
                     self.reply(["not a JSON-RPC response"])
                     return
-                payload = {"jsonrpc": "2.0", "id": identifier,
-                           "result": {"tools": owner.tools} if msg["method"] == "tools/list"
-                           else {"content": [{"type": "text", "text": str(identifier)}]}}
+                result = {"content": [{"type": "text", "text": str(identifier)}]}
+                if msg["method"] == "tools/list":
+                    result = {"tools": owner.tools}
+                elif msg["method"] == "initialize":
+                    result = {"instructions": owner.instructions,
+                              "serverInfo": {"name": "upstream-fixture"}, "capabilities": {}}
+                payload = {"jsonrpc": "2.0", "id": identifier, "result": result}
                 if mode == "both_result_error":
                     payload["error"] = {"code": -32603, "message": "contradictory"}
                 if mode in ("invalid_error", "valid_error"):
@@ -358,6 +372,104 @@ class TransportContract:
         proxy.send(request("alive", "ping"))
         self.assertEqual(proxy.receive()["id"], "alive")
         self.assertEqual(self.editor.received, [])
+
+    def test_initialize_imports_only_server_instructions(self):
+        proxy = self.proxy()
+        msg = request("init", "initialize")
+        msg["params"] = {"protocolVersion": "2025-06-18"}
+        proxy.send(msg)
+        result = proxy.receive()["result"]
+        self.assertEqual(result["instructions"], self.editor.instructions)
+        self.assertEqual(result["protocolVersion"], "2025-06-18")
+        self.assertEqual(result["capabilities"], {"tools": {"listChanged": True}})
+        self.assertNotEqual(result["serverInfo"]["name"], "upstream-fixture")
+        proxy.send(request("tools", "tools/list"))
+        self.assertEqual(proxy.receive()["result"]["tools"], TOOLS)
+        self.assertEqual(len(list(Path(self.directory.name).rglob("*.json"))), 1)
+        paths = list(Path(self.directory.name).rglob("*.instructions"))
+        self.assertEqual(len(paths), 1)
+        self.assertEqual(json.loads(read_cache_snapshot(paths[0])), self.editor.instructions)
+
+    def test_initialize_preserves_cached_instructions_on_invalid_metadata_and_offline(self):
+        proxy = self.proxy()
+        expected = self.editor.instructions
+        proxy.send(request("initial", "initialize"))
+        self.assertEqual(proxy.receive()["result"]["instructions"], expected)
+        for identifier, value in enumerate((None, [], {"bad": "metadata"})):
+            self.editor.instructions = value
+            proxy.send(request(identifier, "initialize"))
+            self.assertEqual(proxy.receive()["result"]["instructions"], expected)
+        self.editor.offline = True
+        restarted = self.proxy()
+        restarted.send(request("offline", "initialize"))
+        self.assertEqual(restarted.receive()["result"]["instructions"], expected)
+
+    def test_offline_initialize_fallback_matches_server_verbatim(self):
+        self.editor.offline = True
+        proxy = self.proxy()
+        proxy.send(request("fallback", "initialize"))
+        self.assertEqual(proxy.receive()["result"]["instructions"], server_instructions())
+
+    def test_initialize_does_not_wait_for_saturated_domain_workers(self):
+        proxy = self.proxy(MONOLITH_MAX_IN_FLIGHT=2, MONOLITH_MAX_QUEUED=0)
+        for identifier in ("slow-one", "slow-two"):
+            self.editor.block(identifier)
+            proxy.send(request(identifier))
+        self.editor.wait_received(["slow-one", "slow-two"])
+        proxy.send(request("init", "initialize"))
+        response = proxy.receive()
+        self.assertEqual(response["id"], "init")
+        self.assertEqual(response["result"]["instructions"], self.editor.instructions)
+        self.editor.release()
+        self.assertEqual({proxy.receive()["id"], proxy.receive()["id"]}, {"slow-one", "slow-two"})
+
+    def test_duplicate_ids_are_rejected_across_metadata_and_domain_pools(self):
+        proxy = self.proxy()
+        for first_method, second_method in (("initialize", "tools/call"), ("tools/call", "initialize")):
+            identifier = "active-" + first_method
+            with self.subTest(first_method=first_method):
+                gate = self.editor.block(identifier)
+                proxy.send(request(identifier, first_method))
+                self.editor.wait_received([identifier])
+                proxy.send(request(identifier, second_method))
+                response = proxy.receive()
+                self.assertEqual(response["id"], identifier)
+                self.assertEqual(response["error"]["code"], -32600)
+                gate.set()
+                self.assertIn("result", proxy.receive())
+                matches = [m for m in self.editor.received if m["id"] == identifier]
+                self.assertEqual(len(matches), 1)
+                self.assertEqual(matches[0]["method"], first_method)
+
+    def test_blocked_initialize_keeps_ping_responsive_and_metadata_bounded(self):
+        proxy = self.proxy()
+        self.editor.block("blocked-init")
+        proxy.send(request("blocked-init", "initialize"))
+        self.editor.wait_received(["blocked-init"])
+        proxy.send(request("ping", "ping"))
+        self.assertEqual(proxy.receive()["id"], "ping")
+        proxy.send(request("extra-init", "initialize"))
+        response = proxy.receive()
+        self.assertEqual(response["id"], "extra-init")
+        self.assertEqual(response["result"]["instructions"], server_instructions())
+        # The one-second metadata timeout returns without releasing the upstream gate.
+        response = proxy.receive()
+        self.assertEqual(response["id"], "blocked-init")
+        self.assertEqual(response["result"]["instructions"], server_instructions())
+        self.assertEqual([m["id"] for m in self.editor.received], ["blocked-init"])
+
+    @unittest.skipUnless(os.environ.get("MONOLITH_TEST_NATIVE_PROXY"), "Native proxy required for cache interoperability")
+    def test_instructions_cache_is_shared_across_proxy_implementations(self):
+        writer = self.proxy()
+        writer.send(request("write", "initialize"))
+        self.assertEqual(writer.receive()["result"]["instructions"], self.editor.instructions)
+        self.editor.offline = True
+        command = (NativeTransportTests.command if self.command == PythonTransportTests.command
+                   else PythonTransportTests.command)
+        reader = ProxyProcess(command, self.editor, self.directory.name)
+        self.proxies.append(reader)
+        reader.send(request("read", "initialize"))
+        self.assertEqual(reader.receive()["result"]["instructions"], self.editor.instructions)
 
     def test_malformed_initialize_does_not_crash(self):
         proxy = self.proxy()
