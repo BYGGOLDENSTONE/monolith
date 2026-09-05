@@ -247,6 +247,8 @@ Small ergonomics upgrades to the `ui` and `blueprint` action packs, driven by re
 
 ## [0.20.0] - 2026-06-14
 
+AnimGraph authoring expands pose composition, cached poses, graph wiring, blending, Control Rig and linked layers. This release also adds blend-space baking and interpolation controls, state-machine teardown, IK-solver removal and a built-in layout formatter that works without Blueprint Assist in release builds.
+
 ### Added
 
 - **Blend space baking + interpolation control (`animation`).** Two new actions for getting blend spaces runtime-correct.
@@ -290,7 +292,7 @@ Small ergonomics upgrades to the `ui` and `blueprint` action packs, driven by re
 
 ## [0.19.0] - 2026-06-13
 
-An LLM-C++-ergonomics release: an eight-action `source` pack so your AI can resolve an include, signature, deprecation, Build.cs deps, header lint, or a UCLASS stub in one round-trip, plus a parser fix that tripled the engine source index. Layered on top: live-PIE introspection + driving (`editor`), anim-node binding read/write and time-series PIE sampling (`animation`), Blueprint variable census + contract reconciliation (`blueprint`), and T3D asset-text export (`project`). Two first-launch crash/load fixes (issue #70, thanks @aggitti) and a ~40% smaller `tools/list` manifest round it out.
+An LLM-C++-ergonomics release: an eight-action, read-only `source` pack so your AI can resolve an include, signature, deprecation, Build.cs deps, header lint, or a UCLASS stub in one round-trip, plus a parser fix that expanded the measured engine source index from ~300K to ~967K symbols. Layered on top: live-PIE introspection + driving (`editor`), anim-node binding read/write and time-series PIE sampling (`animation`), Blueprint variable census + contract reconciliation (`blueprint`), and T3D asset-text export (`project`). Two first-launch crash/load fixes (issue #70, thanks @aggitti) and a ~40% smaller `tools/list` manifest round it out.
 
 > **Action count is approximate.** As of this release Monolith exposes **~1,400+ actions across 25+ in-tree namespaces** (public, in-tree only). Query `monolith_discover()` (its `total_actions` field) for the exact live figure at any moment — docs are kept in the right ballpark, not pinned to an integer.
 
@@ -363,7 +365,7 @@ An LLM-C++-ergonomics release: an eight-action `source` pack so your AI can reso
 
 ## [0.18.1] - 2026-06-07
 
-A motion-matching-focused release: a from-scratch Motion Matching authoring pack across the `animation`, `chooser`, and `blueprint` namespaces, plus a PIE / profiling harness, thread-safe AnimBP authoring primitives, and a batch of AI / editor / blueprint additions.
+Motion Matching authoring spans the `animation`, `chooser`, and `blueprint` namespaces, from Pose Search and chooser tables to thread-safe AnimBPs, character scaffolding and retargeting. The accompanying PIE / profiling harness supports runtime inspection and capture, with state-machine telemetry, BehaviorTree controller startup, movement tasks, inherited-component inspection and live DataAsset readback.
 
 > **Action count is now approximate.** The surface is too large to track to the unit. As of this release Monolith exposes **1,400+ actions across 25+ in-tree namespaces** (public, in-tree only). Query `monolith_discover()` (its `total_actions` field) for the exact live figure at any moment — docs are kept in the right ballpark, not pinned to an integer.
 
@@ -418,6 +420,8 @@ A motion-matching-focused release: a from-scratch Motion Matching authoring pack
 
 ## [0.18.0] - 2026-06-01
 
+Niagara gains direct CustomHlsl source editing, simulation-stage and event-handler selectors, and a ParameterMap bridge for HLSL module creation (PR #65, @middle233), alongside search and discovery over parameters, data interfaces, materials and asset references.
+
 > **Action count:** public **1396** in-tree actions across **25** in-tree namespaces (the release headline; sibling plugins excluded). Live `monolith_discover()` with all siblings installed returns **1619** = 1396 in-tree + 223 sibling (inventory 158 + steam 28 + substance 26 + claudedesign 11) — the 223 sibling actions are advisory only and never part of the public headline. The `niagara` namespace is **129** this release (was 120), a net **+9**: issue #64 Tranche 2 (+7) and PR #65 HLSL (+2).
 
 ### Added
@@ -468,6 +472,8 @@ A motion-matching-focused release: a from-scratch Motion Matching authoring pack
 - **Wired up two previously-inert `MonolithSettings` index toggles** (both had been declared but had zero runtime consumers): `bEnableIndex` (when `false`, skips the indexing run at subsystem init while leaving query actions registered so an existing DB still answers) and `bDeferFirstTimeIndex` (when `true`, skips the automatic first-time index). Both give end users a config-level escape hatch for the deep-index crash class above. Added the `Monolith.StartIndex` console command (referenced by the existing `bDeferFirstTimeIndex` docs but never previously implemented) to trigger a full index manually after a deferred first-time index.
 
 ## [0.17.0] - 2026-05-29
+
+Reflection Intelligence adds decision records, repository risk signals, C++ reflection and replication inspection, review composition and index maintenance. MCP ergonomics add response shaping, schema-tagged asset paths, fuzzy suggestions, tool annotations, source pagination and proxy call logs. Project plugins are included in reflection and replication scans by default; marketplace scanning is configurable and Epic engine plugins remain excluded.
 
 ### Added
 
