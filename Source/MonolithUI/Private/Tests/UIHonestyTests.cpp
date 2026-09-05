@@ -21,6 +21,21 @@ bool FMonolithUIMenuUnsupportedKeysTest::RunTest(const FString& Parameters)
         TestEqual(TEXT("Dry run applied_keys is empty"), Data->GetArrayField(TEXT("applied_keys")).Num(), 0);
         TestFalse(TEXT("Dry run did not save the screen"), IFileManager::Get().FileExists(*Widget.Filename()));
     }
+    // Empty aggregation arrays request nothing and must not trip the capability error.
+    {
+        FScopedWidget Widget(*this);
+        const TSharedPtr<FJsonObject> Params = Menu(Widget, true, true);
+        for (const TCHAR* Key : { TEXT("layers"), TEXT("focus_table"), TEXT("nav_overrides") })
+        {
+            Params->SetArrayField(Key, TArray<TSharedPtr<FJsonValue>>());
+        }
+        const auto Result = FMonolithToolRegistry::Get().ExecuteAction(TEXT("ui"), TEXT("build_menu_from_spec"), Params);
+        TestTrue(TEXT("Empty aggregation arrays are a supported dry run"), Result.bSuccess);
+        if (Result.Result.IsValid())
+        {
+            TestEqual(TEXT("Empty arrays report ok status"), Result.Result->GetStringField(TEXT("status")), FString(TEXT("ok")));
+        }
+    }
     return true;
 }
 

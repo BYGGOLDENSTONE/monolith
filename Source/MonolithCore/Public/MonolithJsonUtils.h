@@ -90,6 +90,11 @@ public:
 	// plugin" from "feature flag off").
 	static constexpr int32 ErrOptionalDepUnavailable = -32010;
 
+	// A registered action (or part of it) is not implemented. Error data
+	// carries reason="not_implemented", implemented=false and the missing part,
+	// so callers never mistake a validated-but-unapplied request for success.
+	static constexpr int32 ErrNotImplemented = -32004;
+
 	// Cooperative editor coordination; separate from optional-dependency errors.
 	static constexpr int32 ErrCoordinationBusy = -32020;
 	static constexpr int32 ErrInvalidLease = -32021;

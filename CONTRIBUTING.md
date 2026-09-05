@@ -246,6 +246,7 @@ return FMonolithActionResult::Error(
 | `ErrInvalidParams` | -32602 | Missing or invalid action parameters |
 | `ErrInternalError` | -32603 | Internal execution failure; the default if no code is supplied |
 | `ErrOptionalDepUnavailable` | -32010 | Registered action requires an unavailable optional dependency |
+| `ErrNotImplemented` | -32004 | Registered action, or a requested part of it, is not implemented; attach `reason`, `implemented=false` and the missing `part` in error data |
 | `ErrParseError` | -32700 | Malformed JSON; transport layer |
 | `ErrInvalidRequest` | -32600 | Invalid JSON-RPC envelope; transport layer |
 | `ErrMethodNotFound` | -32601 | Unknown method, namespace, or dispatched action |

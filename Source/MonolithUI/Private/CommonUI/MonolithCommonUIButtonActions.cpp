@@ -856,7 +856,7 @@ namespace MonolithCommonUIButton
 		Result->SetStringField(TEXT("part"), TEXT("apply_token_binding.NativeConstruct_graph"));
 		return FMonolithActionResult::Error(
 			TEXT("Token binding graph construction in NativeConstruct is not implemented; no binding was applied."),
-			-32004).WithErrorData(Result);
+			FMonolithJsonUtils::ErrNotImplemented).WithErrorData(Result);
 	}
 
 	static FMonolithActionResult HandleApplyTokenBinding(const TSharedPtr<FJsonObject>& Params)

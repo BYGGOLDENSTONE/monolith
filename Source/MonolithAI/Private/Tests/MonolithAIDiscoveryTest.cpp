@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "Misc/AutomationTest.h"
+#include "MonolithJsonUtils.h"
 #include "MonolithToolRegistry.h"
 #include "BehaviorTree/Tasks/BTTask_Wait.h"
 
@@ -28,7 +29,7 @@ bool FMonolithAINodeDiscoveryUnavailableTest::RunTest(const FString& Parameters)
 	{
 		const auto Result = Invoke(Params(System));
 		TestFalse(TEXT("Unimplemented enumeration is not a successful empty list"), Result.bSuccess);
-		TestEqual(TEXT("Capability unavailable error"), Result.ErrorCode, -32004);
+		TestEqual(TEXT("Capability unavailable error"), Result.ErrorCode, FMonolithJsonUtils::ErrNotImplemented);
 		TestFalse(TEXT("No successful node payload"), Result.Result.IsValid());
 		if (!TestTrue(TEXT("Structured error data present"), Result.ErrorData.IsValid())) { continue; }
 		const auto Data = Result.ErrorData->AsObject();

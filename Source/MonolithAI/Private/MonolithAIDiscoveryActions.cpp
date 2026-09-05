@@ -1,4 +1,5 @@
 #include "MonolithAIDiscoveryActions.h"
+#include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 
@@ -351,7 +352,7 @@ FMonolithActionResult FMonolithAIDiscoveryActions::HandleListAINodeTypes(const T
 		Data->SetBoolField(TEXT("implemented"), false);
 		return FMonolithActionResult::Error(FString::Printf(
 			TEXT("Node type enumeration for system '%s' is not implemented. Inspect the installed engine source or the corresponding editor node picker; use system='bt' only for Behavior Tree node discovery. This does not mean no node types exist."),
-			*System), -32004).WithErrorData(Data);
+			*System), FMonolithJsonUtils::ErrNotImplemented).WithErrorData(Data);
 	}
 	else
 	{

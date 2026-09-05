@@ -105,7 +105,7 @@ namespace MonolithUI::HonestyTests
     inline TSharedPtr<FJsonObject> CheckNotImplemented(FAutomationTestBase& Test, const FMonolithActionResult& Result)
     {
         Test.TestFalse(TEXT("Unsupported work is an action error"), Result.bSuccess);
-        Test.TestEqual(TEXT("Capability error code"), Result.ErrorCode, -32004);
+        Test.TestEqual(TEXT("Capability error code"), Result.ErrorCode, FMonolithJsonUtils::ErrNotImplemented);
         const TSharedPtr<FJsonObject>* Data = nullptr;
         if (!Result.ErrorData.IsValid() || !Result.ErrorData->TryGetObject(Data) || !Data || !Data->IsValid())
         {

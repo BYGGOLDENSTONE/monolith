@@ -1036,13 +1036,15 @@ namespace MonolithUI::SpecActionsInternal
         }
 
         const TArray<TSharedPtr<FJsonValue>>* Layers = nullptr;
-        const bool bHasLayers = Params->TryGetArrayField(TEXT("layers"), Layers) && Layers;
+        // An empty array requests nothing, so only populated aggregation keys
+        // count as unimplemented work.
+        const bool bHasLayers = Params->TryGetArrayField(TEXT("layers"), Layers) && Layers && Layers->Num() > 0;
 
         const TArray<TSharedPtr<FJsonValue>>* FocusTable = nullptr;
-        const bool bHasFocusTable = Params->TryGetArrayField(TEXT("focus_table"), FocusTable) && FocusTable;
+        const bool bHasFocusTable = Params->TryGetArrayField(TEXT("focus_table"), FocusTable) && FocusTable && FocusTable->Num() > 0;
 
         const TArray<TSharedPtr<FJsonValue>>* NavOverrides = nullptr;
-        const bool bHasNavOverrides = Params->TryGetArrayField(TEXT("nav_overrides"), NavOverrides) && NavOverrides;
+        const bool bHasNavOverrides = Params->TryGetArrayField(TEXT("nav_overrides"), NavOverrides) && NavOverrides && NavOverrides->Num() > 0;
 
         TArray<TSharedPtr<FJsonValue>> UnimplementedParts;
         TArray<TSharedPtr<FJsonValue>> AppliedKeys;
@@ -1200,7 +1202,7 @@ namespace MonolithUI::SpecActionsInternal
             Out->SetArrayField(TEXT("applied_keys"), AppliedKeys);
             return FMonolithActionResult::Error(
                 TEXT("Some requested menu features are not implemented. Inspect applied_keys and screen results before retrying."),
-                -32004).WithErrorData(Out);
+                FMonolithJsonUtils::ErrNotImplemented).WithErrorData(Out);
         }
         return FMonolithActionResult::Success(Out);
     }
