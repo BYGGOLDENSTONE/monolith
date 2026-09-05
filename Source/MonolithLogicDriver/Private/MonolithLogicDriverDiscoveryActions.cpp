@@ -17,7 +17,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogMonolithLDDiscovery, Log, All);
 void FMonolithLogicDriverDiscoveryActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	Registry.RegisterAction(TEXT("logicdriver"), TEXT("get_sm_overview"),
-		TEXT("Project scan: count SM Blueprints, Node Blueprints, and component usage across the project"),
+		TEXT("Project scan: list and count SM Blueprints and Node Blueprints; component usage is not indexed"),
 		FMonolithActionHandler::CreateStatic(&HandleGetSMOverview),
 		FParamSchemaBuilder()
 			.OptionalAssetPath(TEXT("path_filter"), TEXT("Only include assets under this path prefix (e.g. /Game/StateMachines)"))
@@ -145,7 +145,7 @@ FMonolithActionResult FMonolithLogicDriverDiscoveryActions::HandleGetSMOverview(
 	}
 
 	// ── 3. Component usage — deferred to indexer (expensive scan) ──
-	// Return -1 to indicate "not yet scanned"
+	// Report availability explicitly; no numeric count is known yet.
 
 	// ── Build result ──
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -153,8 +153,7 @@ FMonolithActionResult FMonolithLogicDriverDiscoveryActions::HandleGetSMOverview(
 	Result->SetArrayField(TEXT("sm_blueprints"), SMBlueprintArray);
 	Result->SetNumberField(TEXT("node_blueprint_count"), NodeBlueprintArray.Num());
 	Result->SetArrayField(TEXT("node_blueprints"), NodeBlueprintArray);
-	Result->SetNumberField(TEXT("sm_component_count"), -1); // Not yet scanned — requires indexer
-	Result->SetArrayField(TEXT("actors_with_sm_component"), TArray<TSharedPtr<FJsonValue>>());
+	Result->SetStringField(TEXT("component_scan"), TEXT("not_indexed"));
 	if (!PathFilter.IsEmpty())
 	{
 		Result->SetStringField(TEXT("path_filter"), PathFilter);
