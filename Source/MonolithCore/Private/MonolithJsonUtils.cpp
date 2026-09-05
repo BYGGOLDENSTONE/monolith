@@ -1,4 +1,5 @@
 #include "MonolithJsonUtils.h"
+#include "MonolithToolRegistry.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Serialization/JsonReader.h"
@@ -29,10 +30,7 @@ TSharedPtr<FJsonObject> FMonolithJsonUtils::ErrorResponse(const TSharedPtr<FJson
 	TSharedPtr<FJsonObject> ErrorObj = MakeShared<FJsonObject>();
 	ErrorObj->SetNumberField(TEXT("code"), Code);
 	ErrorObj->SetStringField(TEXT("message"), Message);
-	if (Data.IsValid())
-	{
-		ErrorObj->SetField(TEXT("data"), Data);
-	}
+	ErrorObj->SetObjectField(TEXT("data"), FMonolithActionResult::NormalizeErrorData(Code, Data));
 
 	TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
 	Response->SetStringField(TEXT("jsonrpc"), TEXT("2.0"));

@@ -234,7 +234,33 @@ Never use string formatting to build SQL queries.
 
 ### Error Handling
 
-Return `FMonolithActionResult::Error(message, code)` with a clear message. Include `MonolithJsonUtils.h` and use its named constants:
+Prefer the typed `FMonolithActionResult` helpers for new action errors:
+
+| Helper | Class | Additional context |
+|---|---|---|
+| `NotFound(kind, needle, candidates)` | `not_found` | Kind and missing value; optional ranked `suggestions` (at most three) from supplied candidates |
+| `InvalidParam(name, why)` | `invalid_param` | Parameter name and explanation |
+| `PreconditionFailed(what, next_action)` | `precondition_failed` | Missing prerequisite and the next action to run |
+| `NotImplemented(part)` | `not_implemented` | `reason:not_implemented`, `implemented:false`, and missing `part` |
+| `EngineError(message)` | `engine_error` | Engine execution failure |
+| `OptionalDepUnavailable(dep)` | `optional_dep_unavailable` | Required plugin in `dep_name` |
+
+These constructors include `class`, `executed:false`, and `retryable:false` in
+error data. They describe rejection before side effects. If an error follows a
+mutation, override `executed` with `true` (or `"unknown"` when uncertain), retain
+the affected paths, and report partial results. `WithErrorData` merges an object
+over existing helper data, with caller fields taking precedence; passing null
+clears it. HTTP serialization preserves existing fields and adds a missing
+class to legacy errors without inventing execution evidence. Scalar legacy
+error data is retained under `value`.
+
+The complete class vocabulary is `invalid_param`, `not_found`,
+`precondition_failed`, `not_implemented`, `optional_dep_unavailable`,
+`engine_error`, `lease_busy`, `invalid_lease`, `not_sent`, and `unknown_outcome`.
+Classify by failure semantics, not by parsing the human-readable message.
+
+Use `Error(message, code)` when preserving an existing protocol code. Include
+`MonolithJsonUtils.h` and use its named constants:
 
 ```cpp
 return FMonolithActionResult::Error(
@@ -245,6 +271,8 @@ return FMonolithActionResult::Error(
 |----------|------|-----|
 | `ErrInvalidParams` | -32602 | Missing or invalid action parameters |
 | `ErrInternalError` | -32603 | Internal execution failure; the default if no code is supplied |
+| `ErrNotFound` | -32002 | Asset, graph, object, or other requested target was not found |
+| `ErrPreconditionFailed` | -32003 | Required state is missing; provide a next action |
 | `ErrOptionalDepUnavailable` | -32010 | Registered action requires an unavailable optional dependency |
 | `ErrNotImplemented` | -32004 | Registered action, or a requested part of it, is not implemented; attach `reason`, `implemented=false` and the missing `part` in error data |
 | `ErrParseError` | -32700 | Malformed JSON; transport layer |
@@ -253,7 +281,9 @@ return FMonolithActionResult::Error(
 | `ErrCoordinationBusy` | -32020 | Editor lease or execution busy; coordination layer |
 | `ErrInvalidLease` | -32021 | Invalid or stale lease; coordination layer |
 
-Use `.WithErrorData(Data)` to attach a `TSharedPtr<FJsonObject>` containing structured context. The HTTP server serializes the action result into the MCP response; handlers should not construct JSON-RPC envelopes themselves.
+Use `.WithErrorData(Data)` to attach structured context. The HTTP server serializes
+the action result into the MCP response, including `structuredContent` for tool
+errors; handlers should not construct JSON-RPC envelopes themselves.
 
 ### Asset Loading
 

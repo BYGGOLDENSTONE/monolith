@@ -936,7 +936,7 @@ TSharedPtr<FJsonObject> FMonolithHttpServer::HandleToolsCall(const TSharedPtr<FJ
 		TSharedPtr<FJsonObject> Error = MakeShared<FJsonObject>();
 		Error->SetStringField(TEXT("error"), ActionResult.ErrorMessage);
 		Error->SetNumberField(TEXT("code"), ActionResult.ErrorCode);
-		if (ActionResult.ErrorData.IsValid()) Error->SetField(TEXT("data"), ActionResult.ErrorData);
+		Error->SetObjectField(TEXT("data"), FMonolithActionResult::NormalizeErrorData(ActionResult.ErrorCode, ActionResult.ErrorData));
 		Result->SetObjectField(TEXT("structuredContent"), Error);
 		TextContent->SetStringField(TEXT("text"), FMonolithJsonUtils::Serialize(Error));
 	}

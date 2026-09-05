@@ -4,6 +4,7 @@
 #include "MonolithJsonUtils.h"
 #include "MonolithSettings.h"
 #include "MonolithCoordination.h"
+#include "MonolithParamSchema.h"
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 
@@ -116,6 +117,7 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
         if (!TestTrue(TEXT("Rejection includes data"), (*Error)->TryGetObjectField(TEXT("data"), Data))) return;
         TestTrue(TEXT("Execution evidence is boolean"), (*Data)->HasTypedField<EJson::Boolean>(TEXT("executed")));
         TestFalse(TEXT("Rejected request never executed"), (*Data)->GetBoolField(TEXT("executed")));
+        TestEqual(TEXT("Protocol rejection has a structured class"), (*Data)->GetStringField(TEXT("class")), FString(TEXT("invalid_param")));
     };
 
     Post(Write, TEXT("https://untrusted.example"), true);
@@ -192,6 +194,78 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
         const auto Structured = Result->GetObjectField(TEXT("structuredContent"));
         TestEqual(TEXT("Error code retained"), Structured->GetIntegerField(TEXT("code")), FMonolithJsonUtils::ErrCoordinationBusy);
         TestFalse(TEXT("Retry evidence retained"), Structured->GetObjectField(TEXT("data"))->GetBoolField(TEXT("executed")));
+        TestEqual(TEXT("Coordination class retained in HTTP result"), Structured->GetObjectField(TEXT("data"))->GetStringField(TEXT("class")), FString(TEXT("lease_busy")));
+        const auto Text = FMonolithJsonUtils::Parse(Result->GetArrayField(TEXT("content"))[0]->AsObject()->GetStringField(TEXT("text")));
+        if (TestTrue(TEXT("Error text remains JSON"), Text.IsValid()))
+            TestEqual(TEXT("Error structured and text payloads agree"), FMonolithJsonUtils::Serialize(Structured), FMonolithJsonUtils::Serialize(Text));
+    }
+
+    // HTTP must classify legacy error payloads without rewriting their execution
+    // evidence or losing scalar/array data. It must not mutate handler-owned data.
+    TArray<TPair<FString, TSharedPtr<FJsonValue>>> ErrorCases;
+    auto ExecutedData = MakeShared<FJsonObject>();
+    ExecutedData->SetBoolField(TEXT("executed"), true);
+    ExecutedData->SetBoolField(TEXT("partial"), true);
+    ErrorCases.Emplace(TEXT("executed"), MakeShared<FJsonValueObject>(ExecutedData));
+    auto UnknownData = MakeShared<FJsonObject>();
+    UnknownData->SetStringField(TEXT("executed"), TEXT("unknown"));
+    UnknownData->SetStringField(TEXT("class"), TEXT("unknown_outcome"));
+    ErrorCases.Emplace(TEXT("unknown"), MakeShared<FJsonValueObject>(UnknownData));
+    ErrorCases.Emplace(TEXT("scalar"), MakeShared<FJsonValueNumber>(42));
+    ErrorCases.Emplace(TEXT("array"), MakeShared<FJsonValueArray>(TArray<TSharedPtr<FJsonValue>>{ MakeShared<FJsonValueString>(TEXT("retained")) }));
+    ErrorCases.Emplace(TEXT("null"), MakeShared<FJsonValueNull>());
+    ErrorCases.Emplace(TEXT("absent"), TSharedPtr<FJsonValue>());
+    for (const auto& Case : ErrorCases)
+    {
+        const FString Action = TEXT("error_") + Case.Key;
+        const TSharedPtr<FJsonValue> OriginalData = Case.Value;
+        Registry.RegisterAction(TEXT("http_fixture"), Action, TEXT("Test-only legacy error shape"),
+            FMonolithActionHandler::CreateLambda([OriginalData](const TSharedPtr<FJsonObject>&)
+            {
+                FMonolithActionResult Result = FMonolithActionResult::Error(TEXT("fixture error"), FMonolithJsonUtils::ErrInternalError);
+                Result.ErrorData = OriginalData;
+                return Result;
+            }), FParamSchemaBuilder().Build());
+        auto Call = FMonolithJsonUtils::Parse(TEXT("{\"name\":\"http_fixture_query\",\"arguments\":{}}"));
+        Call->GetObjectField(TEXT("arguments"))->SetStringField(TEXT("action"), Action);
+        const auto ToolReply = Server.HandleToolsCall(MakeShared<FJsonValueNumber>(200), Call);
+        const auto ToolResult = ToolReply->GetObjectField(TEXT("result"));
+        TestTrue(TEXT("Legacy failure remains a tool error"), ToolResult->GetBoolField(TEXT("isError")));
+        const auto Structured = ToolResult->GetObjectField(TEXT("structuredContent"));
+        const auto Data = Structured->GetObjectField(TEXT("data"));
+        const auto Text = FMonolithJsonUtils::Parse(ToolResult->GetArrayField(TEXT("content"))[0]->AsObject()->GetStringField(TEXT("text")));
+        if (TestTrue(TEXT("Legacy error text is JSON"), Text.IsValid()))
+            TestEqual(TEXT("Legacy error text matches structured content"), FMonolithJsonUtils::Serialize(Text), FMonolithJsonUtils::Serialize(Structured));
+        TestEqual(TEXT("Class is supplied or preserved"), Data->GetStringField(TEXT("class")),
+            Case.Key == TEXT("unknown") ? FString(TEXT("unknown_outcome")) : FString(TEXT("engine_error")));
+        if (Case.Key == TEXT("executed"))
+        {
+            TestTrue(TEXT("Executed mutation stays true"), Data->GetBoolField(TEXT("executed")));
+            TestTrue(TEXT("Partial result detail retained"), Data->GetBoolField(TEXT("partial")));
+            TestFalse(TEXT("Normalization does not add class to caller object"), ExecutedData->HasField(TEXT("class")));
+        }
+        else if (Case.Key == TEXT("unknown"))
+        {
+            TestEqual(TEXT("Unknown execution stays unknown"), Data->GetStringField(TEXT("executed")), FString(TEXT("unknown")));
+        }
+        else
+        {
+            TestFalse(TEXT("No execution evidence invented"), Data->HasField(TEXT("executed")));
+            TestFalse(TEXT("No retry evidence invented"), Data->HasField(TEXT("retryable")));
+            if (Case.Key == TEXT("scalar")) TestEqual(TEXT("Scalar payload retained under value"), Data->GetIntegerField(TEXT("value")), 42);
+            else if (Case.Key == TEXT("array")) TestEqual(TEXT("Array payload retained under value"), Data->GetArrayField(TEXT("value"))[0]->AsString(), FString(TEXT("retained")));
+            else if (Case.Key == TEXT("null")) TestTrue(TEXT("Explicit null value retained"), Data->HasTypedField<EJson::Null>(TEXT("value")));
+            else TestFalse(TEXT("Absent payload has no invented value"), Data->HasField(TEXT("value")));
+        }
+
+        const auto ProtocolReply = FMonolithJsonUtils::ErrorResponse(MakeShared<FJsonValueNumber>(201),
+            FMonolithJsonUtils::ErrInvalidParams, TEXT("invalid envelope"), OriginalData);
+        const auto ProtocolData = ProtocolReply->GetObjectField(TEXT("error"))->GetObjectField(TEXT("data"));
+        TestEqual(TEXT("Protocol error class supplied or preserved"), ProtocolData->GetStringField(TEXT("class")),
+            Case.Key == TEXT("unknown") ? FString(TEXT("unknown_outcome")) : FString(TEXT("invalid_param")));
+        if (Case.Key == TEXT("executed")) TestTrue(TEXT("Protocol execution evidence retained"), ProtocolData->GetBoolField(TEXT("executed")));
+        else if (Case.Key == TEXT("unknown")) TestEqual(TEXT("Protocol unknown evidence retained"), ProtocolData->GetStringField(TEXT("executed")), FString(TEXT("unknown")));
+        else TestFalse(TEXT("Protocol normalization invents no execution evidence"), ProtocolData->HasField(TEXT("executed")));
     }
 
     auto& Coordinator = FMonolithCoordination::Get();

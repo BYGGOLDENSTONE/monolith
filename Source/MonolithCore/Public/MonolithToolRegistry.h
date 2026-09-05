@@ -36,11 +36,38 @@ struct FMonolithActionResult
 		return R;
 	}
 
-	/** Survivor C — attach a JSON-object data payload to an existing error. */
+	/** Typed failures default to executed:false and retryable:false. Override execution after side effects. */
+	static MONOLITHCORE_API FMonolithActionResult NotFound(const FString& Kind, const FString& Needle,
+		const TArray<FString>& Candidates = {});
+	static MONOLITHCORE_API FMonolithActionResult InvalidParam(const FString& Name, const FString& Why);
+	static MONOLITHCORE_API FMonolithActionResult PreconditionFailed(const FString& What, const FString& NextAction);
+	static MONOLITHCORE_API FMonolithActionResult NotImplemented(const FString& Part);
+	static MONOLITHCORE_API FMonolithActionResult EngineError(const FString& Message);
+	static MONOLITHCORE_API FMonolithActionResult OptionalDepUnavailable(const FString& Dep);
+
+	/** Clone data and fill a missing class. Legacy errors gain no inferred execution/retryability. */
+	static MONOLITHCORE_API TSharedPtr<FJsonObject> NormalizeErrorData(int32 Code, const TSharedPtr<FJsonValue>& Data);
+
+	/** Merge caller fields over existing object data without modifying either input. Null resets data. */
 	FMonolithActionResult& WithErrorData(const TSharedPtr<FJsonObject>& Data)
 	{
-		if (Data.IsValid()) { ErrorData = MakeShared<FJsonValueObject>(Data); }
-		else { ErrorData.Reset(); }
+		if (!Data.IsValid())
+		{
+			ErrorData.Reset();
+			return *this;
+		}
+		const TSharedPtr<FJsonObject>* Existing = nullptr;
+		if (ErrorData.IsValid() && ErrorData->TryGetObject(Existing) && Existing && Existing->IsValid())
+		{
+			TSharedPtr<FJsonObject> Merged = MakeShared<FJsonObject>();
+			Merged->Values = (*Existing)->Values;
+			for (const auto& Pair : Data->Values) Merged->Values.Add(Pair.Key, Pair.Value);
+			ErrorData = MakeShared<FJsonValueObject>(Merged);
+		}
+		else
+		{
+			ErrorData = MakeShared<FJsonValueObject>(Data);
+		}
 		return *this;
 	}
 };

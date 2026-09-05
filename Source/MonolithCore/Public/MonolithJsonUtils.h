@@ -76,6 +76,9 @@ public:
 	static constexpr int32 ErrInternalError = -32603;
 
 	// --- Monolith server-defined error codes (JSON-RPC -32000..-32099 range) ---
+	// -32001 belongs to proxy queue admission; keep domain failures separate.
+	static constexpr int32 ErrNotFound = -32002;
+	static constexpr int32 ErrPreconditionFailed = -32003;
 	//
 	// R3b / §5.5 Error Contract — emitted when an action's underlying
 	// optional sibling/marketplace plugin is absent. The action exists in
