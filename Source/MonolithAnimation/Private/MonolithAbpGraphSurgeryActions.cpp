@@ -1,4 +1,5 @@
 #include "MonolithAbpGraphSurgeryActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithParamSchema.h"
 
@@ -914,6 +915,13 @@ FMonolithActionResult FMonolithAbpGraphSurgeryActions::HandleDuplicateReparentAn
 		if (FMonolithAssetUtils::LoadAssetByPath<UObject>(DestPath))
 		{
 			return FMonolithActionResult::Error(FString::Printf(TEXT("Destination already exists: %s"), *DestPath));
+		}
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritableError))
+			{
+				return MonolithCore::WritablePathError(DestPath, WritableError);
+			}
 		}
 		UObject* Dup = UEditorAssetLibrary::DuplicateAsset(SourcePath, DestPath);
 		UAnimBlueprint* DupABP = Cast<UAnimBlueprint>(Dup);

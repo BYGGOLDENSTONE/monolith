@@ -1,6 +1,7 @@
 #if WITH_GEOMETRYSCRIPT
 
 #include "MonolithMeshCityBlockActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshFloorPlanGenerator.h"
 #include "MonolithMeshProceduralActions.h"
 #include "MonolithMeshHandlePool.h"
@@ -825,6 +826,18 @@ FMonolithActionResult FMonolithMeshCityBlockActions::CreateLotLayout(const TShar
 
 FMonolithActionResult FMonolithMeshCityBlockActions::CreateStreet(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+			}
+		}
+	}
+
 	// Parse required fields
 	const TArray<TSharedPtr<FJsonValue>>* StartArr = nullptr;
 	const TArray<TSharedPtr<FJsonValue>>* EndArr = nullptr;

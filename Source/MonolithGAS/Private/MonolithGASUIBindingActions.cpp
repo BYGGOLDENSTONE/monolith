@@ -4,6 +4,7 @@
 // Each action also registers under the `ui` namespace as an alias.
 
 #include "MonolithGASUIBindingActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithGASUIBindingBlueprintExtension.h"
 #include "MonolithGASUIBindingTypes.h"
 #include "MonolithGASInternal.h"
@@ -451,6 +452,21 @@ namespace
         bOutCompiled = false;
         bOutSaved = false;
         if (!WBP) return;
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(WBP->GetPackage()->GetName(), WritableError))
+            {
+                return;
+            }
+        }
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+            {
+                return;
+            }
+        }
+
         FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
         FKismetEditorUtilities::CompileBlueprint(WBP);
         bOutCompiled = true;
@@ -598,8 +614,23 @@ FMonolithActionResult FMonolithGASUIBindingActions::HandleBindWidgetToAttribute(
     bool    bReplaceExisting   = true;                        Params->TryGetBoolField(TEXT("replace_existing"), bReplaceExisting);
 
     FString LoadErr;
+    {
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(WbpPath, WritableError))
+        {
+            return MonolithCore::WritablePathError(WbpPath, WritableError);
+        }
+    }
     UWidgetBlueprint* WBP = LoadWBP(WbpPath, LoadErr);
     if (!WBP) return FMonolithActionResult::Error(LoadErr);
+    {
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(WBP->GetPackage()->GetName(), WritableError))
+        {
+            return MonolithCore::WritablePathError(WBP->GetPackage()->GetName(), WritableError);
+        }
+    }
+
 
     UWidget* TargetWidget = FindWidgetInWBP(WBP, FName(*WidgetNameStr));
     if (!TargetWidget)
@@ -761,8 +792,23 @@ FMonolithActionResult FMonolithGASUIBindingActions::HandleUnbindWidgetAttribute(
     if (!MonolithGAS::RequireStringParam(Params, TEXT("target_property"), TargetPropStr, Err)) return Err;
 
     FString LoadErr;
+    {
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(WbpPath, WritableError))
+        {
+            return MonolithCore::WritablePathError(WbpPath, WritableError);
+        }
+    }
     UWidgetBlueprint* WBP = LoadWBP(WbpPath, LoadErr);
     if (!WBP) return FMonolithActionResult::Error(LoadErr);
+    {
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(WBP->GetPackage()->GetName(), WritableError))
+        {
+            return MonolithCore::WritablePathError(WBP->GetPackage()->GetName(), WritableError);
+        }
+    }
+
 
     UMonolithGASUIBindingBlueprintExtension* Ext =
         UWidgetBlueprintExtension::GetExtension<UMonolithGASUIBindingBlueprintExtension>(WBP);
@@ -855,8 +901,23 @@ FMonolithActionResult FMonolithGASUIBindingActions::HandleClearWidgetAttributeBi
     if (!MonolithGAS::RequireStringParam(Params, TEXT("wbp_path"), WbpPath, Err)) return Err;
 
     FString LoadErr;
+    {
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(WbpPath, WritableError))
+        {
+            return MonolithCore::WritablePathError(WbpPath, WritableError);
+        }
+    }
     UWidgetBlueprint* WBP = LoadWBP(WbpPath, LoadErr);
     if (!WBP) return FMonolithActionResult::Error(LoadErr);
+    {
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(WBP->GetPackage()->GetName(), WritableError))
+        {
+            return MonolithCore::WritablePathError(WBP->GetPackage()->GetName(), WritableError);
+        }
+    }
+
 
     UMonolithGASUIBindingBlueprintExtension* Ext =
         UWidgetBlueprintExtension::GetExtension<UMonolithGASUIBindingBlueprintExtension>(WBP);

@@ -1,4 +1,5 @@
 #include "MonolithAudioPerceptionActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
@@ -88,6 +89,14 @@ namespace
 		{
 			OutError = TEXT("Asset has no package");
 			return false;
+		}
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(Pkg->GetName(), WritableError))
+			{
+				OutError = WritableError;
+				return false;
+			}
 		}
 		Pkg->MarkPackageDirty();
 
@@ -276,6 +285,13 @@ FMonolithActionResult FMonolithAudioPerceptionActions::BindSoundToPerception(con
 		return FMonolithActionResult::Error(ValidateError);
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	FString LoadError;
 	USoundBase* Sound = LoadSoundBase(AssetPath, LoadError);
 	if (!Sound)
@@ -332,6 +348,13 @@ FMonolithActionResult FMonolithAudioPerceptionActions::UnbindSoundFromPerception
 		return FMonolithActionResult::Error(TEXT("asset_path is required"));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	FString LoadError;
 	USoundBase* Sound = LoadSoundBase(AssetPath, LoadError);
 	if (!Sound)

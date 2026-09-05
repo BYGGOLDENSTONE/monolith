@@ -7,6 +7,7 @@
 // 3.E.6 create_widget_carousel
 // 3.E.7 create_hardware_visibility_border
 #include "MonolithCommonUIHelpers.h"
+#include "MonolithPackagePathValidator.h"
 
 #if WITH_COMMONUI
 
@@ -111,6 +112,13 @@ namespace MonolithCommonUIList
 		if (!SavePath.Split(TEXT("/"), &PackagePath, &AssetName, ESearchCase::IgnoreCase, ESearchDir::FromEnd))
 			return FMonolithActionResult::Error(TEXT("save_path must contain /"));
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(SavePath, WritableError);
+			}
+		}
 		UPackage* Package = CreatePackage(*SavePath);
 		if (!Package) return FMonolithActionResult::Error(TEXT("CreatePackage failed"));
 		if (FindObject<UObject>(Package, *AssetName))

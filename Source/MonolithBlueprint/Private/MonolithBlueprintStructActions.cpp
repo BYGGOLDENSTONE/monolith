@@ -106,6 +106,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateUserDefinedSt
 
 	// Defensive: reject malformed paths (e.g. "//Game/...") before they reach the Asset
 	// Registry or CreatePackage, which asserts in UObjectGlobals.cpp and kills the editor.
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	if (const FString ValidationError = MonolithCore::ValidatePackagePath(SavePath); !ValidationError.IsEmpty())
 	{
 		return FMonolithActionResult::Error(ValidationError);
@@ -144,6 +151,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateUserDefinedSt
 	}
 
 	// Create package
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{
@@ -276,6 +290,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateUserDefinedEn
 
 	// Defensive: reject malformed paths (e.g. "//Game/...") before they reach the Asset
 	// Registry or CreatePackage, which asserts in UObjectGlobals.cpp and kills the editor.
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	if (const FString ValidationError = MonolithCore::ValidatePackagePath(SavePath); !ValidationError.IsEmpty())
 	{
 		return FMonolithActionResult::Error(ValidationError);
@@ -314,6 +335,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateUserDefinedEn
 	}
 
 	// Create package
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{
@@ -465,6 +493,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateDataTable(con
 
 	// Defensive: reject malformed paths (e.g. "//Game/...") before they reach the Asset
 	// Registry or CreatePackage, which asserts in UObjectGlobals.cpp and kills the editor.
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	if (const FString ValidationError = MonolithCore::ValidatePackagePath(SavePath); !ValidationError.IsEmpty())
 	{
 		return FMonolithActionResult::Error(ValidationError);
@@ -511,6 +546,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateDataTable(con
 	}
 
 	// Create package
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{
@@ -807,6 +849,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateDataAsset(con
 
 	// Defensive: reject malformed paths (e.g. "//Game/...") before they reach the Asset
 	// Registry or CreatePackage, which asserts in UObjectGlobals.cpp and kills the editor.
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	if (const FString ValidationError = MonolithCore::ValidatePackagePath(SavePath); !ValidationError.IsEmpty())
 	{
 		return FMonolithActionResult::Error(ValidationError);
@@ -889,6 +938,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateDataAsset(con
 	}
 
 	// Create package
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{
@@ -984,6 +1040,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleSeedDataAsset(const
 
 	// Defensive: reject malformed paths (e.g. "//Game/...") before they reach the Asset
 	// Registry or CreatePackage, which asserts in UObjectGlobals.cpp and kills the editor.
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	if (const FString ValidationError = MonolithCore::ValidatePackagePath(SavePath); !ValidationError.IsEmpty())
 	{
 		return FMonolithActionResult::Error(ValidationError);
@@ -1108,6 +1171,13 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleSeedDataAsset(const
 	}
 
 	// Create package + instance.
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{

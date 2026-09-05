@@ -1,5 +1,6 @@
 // Copyright tumourlove. All Rights Reserved.
 #include "Actions/Hoisted/ShadowActions.h"
+#include "MonolithPackagePathValidator.h"
 
 // Monolith registry
 #include "MonolithToolRegistry.h"
@@ -402,6 +403,13 @@ FMonolithActionResult MonolithUI::FShadowActions::HandleApplyBoxShadow(const TSh
             AssetToolsModule->Get().CreateUniqueAssetName(
                 PerLayerBase, /*Suffix=*/FString(), UniquePackageName, UniqueAssetName);
 
+            {
+                FString WritableError;
+                if (!MonolithCore::EnsureWritablePackagePath(UniquePackageName, WritableError))
+                {
+                    return MonolithCore::WritablePathError(UniquePackageName, WritableError);
+                }
+            }
             UPackage* Package = CreatePackage(*UniquePackageName);
             if (!Package)
             {

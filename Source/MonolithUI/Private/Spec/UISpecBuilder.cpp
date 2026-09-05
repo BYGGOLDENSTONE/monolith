@@ -27,6 +27,7 @@
 // partially mutated.
 
 #include "Spec/UISpecBuilder.h"
+#include "MonolithPackagePathValidator.h"
 
 #include "Spec/UISpecValidator.h"
 #include "Spec/UIBuildContext.h"
@@ -565,6 +566,14 @@ namespace MonolithUI::SpecBuilderInternal
         UPackage*& OutPackage,
         FString& OutError)
     {
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+            {
+                OutError = WritableError;
+                return nullptr;
+            }
+        }
         bOutPreExisting = false;
         OutPackage = nullptr;
 
@@ -617,6 +626,14 @@ namespace MonolithUI::SpecBuilderInternal
 
         // Create-new path. The dry-walk has passed; we now do the disk-side
         // mutation. Failures here are recovered by caller via MarkAsGarbage.
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+            {
+                OutError = WritableError;
+                return nullptr;
+            }
+        }
         OutPackage = CreatePackage(*AssetPath);
         if (!OutPackage)
         {
@@ -690,6 +707,22 @@ namespace MonolithUI::SpecBuilderInternal
             return false;
         }
 
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(WBP->GetPackage()->GetName(), WritableError))
+            {
+                OutError = WritableError;
+                return false;
+            }
+        }
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+            {
+                OutError = WritableError;
+                return false;
+            }
+        }
         FAssetRegistryModule::AssetCreated(WBP);
         WBP->GetPackage()->MarkPackageDirty();
 

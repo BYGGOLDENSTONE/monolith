@@ -1,6 +1,7 @@
 #if WITH_GEOMETRYSCRIPT
 
 #include "MonolithMeshOperationActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshHandlePool.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
@@ -236,6 +237,14 @@ FMonolithActionResult FMonolithMeshOperationActions::SaveHandle(const TSharedPtr
 	{
 		return FMonolithActionResult::Error(FString::Printf(
 			TEXT("Invalid collision mode '%s'. Valid: auto, convex, box, complex_as_simple, none"), *CollisionMode));
+	}
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(TargetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(TargetPath, WritableError);
+		}
 	}
 
 	FString Error;

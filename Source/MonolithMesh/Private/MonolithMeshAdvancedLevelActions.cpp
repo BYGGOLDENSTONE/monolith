@@ -1,4 +1,5 @@
 #include "MonolithMeshAdvancedLevelActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshUtils.h"
 #include "MonolithMeshAnalysis.h"
 #include "MonolithToolRegistry.h"
@@ -1420,6 +1421,13 @@ FMonolithActionResult FMonolithMeshAdvancedLevelActions::CreateBlueprintPrefab(c
 		NSLOCTEXT("Monolith", "CreateBlueprintPrefab", "Monolith: Create Blueprint Prefab"));
 
 	// Create package (no dialog)
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{

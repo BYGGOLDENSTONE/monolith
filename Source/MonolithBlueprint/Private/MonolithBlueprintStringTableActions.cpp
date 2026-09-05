@@ -8,6 +8,8 @@
 // Modify and an open tab may need a reselect to refresh. Game-thread only.
 
 #include "MonolithBlueprintStringTableActions.h"
+#include "UObject/Package.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithParamSchema.h"
 #include "Internationalization/StringTable.h"
@@ -154,6 +156,14 @@ FMonolithActionResult FMonolithBlueprintStringTableActions::HandleSetStringTable
 	UStringTable* StringTable = ResolveStringTable(AssetPath, Error);
 	if (!StringTable) { return FMonolithActionResult::Error(Error); }
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(StringTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(StringTable->GetOutermost()->GetName(), WritableError);
+		}
+	}
+
 	FString ModeStr = TEXT("upsert");
 	Params->TryGetStringField(TEXT("mode"), ModeStr);
 	ModeStr = ModeStr.ToLower();
@@ -245,6 +255,14 @@ FMonolithActionResult FMonolithBlueprintStringTableActions::HandleRemoveStringTa
 	FString Error;
 	UStringTable* StringTable = ResolveStringTable(AssetPath, Error);
 	if (!StringTable) { return FMonolithActionResult::Error(Error); }
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(StringTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(StringTable->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	const FStringTableRef Table = StringTable->GetMutableStringTable();
 

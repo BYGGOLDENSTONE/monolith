@@ -1,4 +1,5 @@
 #include "MonolithGASAbilityActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithGASInternal.h"
 #include "MonolithAssetUtils.h"
@@ -627,6 +628,13 @@ FMonolithActionResult FMonolithGASAbilityActions::HandleCreateAbility(const TSha
 	}
 
 	// Create package
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{
@@ -2388,6 +2396,13 @@ FMonolithActionResult FMonolithGASAbilityActions::HandleDuplicateAbility(const T
 	}
 
 	// Duplicate using UEditorAssetLibrary
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(NewPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(NewPath, WritableError);
+		}
+	}
 	UObject* DupObj = UEditorAssetLibrary::DuplicateAsset(AssetPath, NewPath);
 	if (!DupObj)
 	{

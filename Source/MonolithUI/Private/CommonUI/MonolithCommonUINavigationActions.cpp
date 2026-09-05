@@ -5,6 +5,7 @@
 // 3.D.4 get_focus_path [RUNTIME]
 // 3.D.5 request_refresh_focus [RUNTIME]
 #include "MonolithCommonUIHelpers.h"
+#include "MonolithPackagePathValidator.h"
 
 #if WITH_COMMONUI
 
@@ -139,10 +140,24 @@ namespace MonolithCommonUINavigation
 		if (!Params.IsValid() || !Params->TryGetArrayField(TEXT("entries"), Entries) || !Entries)
 			return FMonolithActionResult::Error(TEXT("entries array required: [{widget_name, direction, rule, explicit_target?}]"));
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(WbpPath, WritableError))
+			{
+				return MonolithCore::WritablePathError(WbpPath, WritableError);
+			}
+		}
 		UWidgetBlueprint* Wbp = LoadObject<UWidgetBlueprint>(nullptr, *WbpPath);
 		if (!Wbp || !Wbp->WidgetTree)
 			return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load WBP '%s'"), *WbpPath));
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(Wbp->GetOutermost()->GetName(), WritableError))
+			{
+				return MonolithCore::WritablePathError(Wbp->GetOutermost()->GetName(), WritableError);
+			}
+		}
 		// Cache widget lookups so a multi-entry batch resolves each widget once.
 		TMap<FName, UWidget*> WidgetByName;
 		Wbp->WidgetTree->ForEachWidget([&](UWidget* W)

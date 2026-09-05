@@ -1,6 +1,7 @@
 #if WITH_GEOMETRYSCRIPT
 
 #include "MonolithMeshFacadeActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshProceduralActions.h"
 #include "MonolithMeshHandlePool.h"
 #include "MonolithToolRegistry.h"
@@ -1033,6 +1034,18 @@ void FMonolithMeshFacadeActions::AddCrackGeometry(UDynamicMesh* Mesh,
 
 FMonolithActionResult FMonolithMeshFacadeActions::GenerateFacade(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+			}
+		}
+	}
+
 	if (!Pool)
 	{
 		return FMonolithActionResult::Error(GS_ERROR_FACADE);
@@ -1450,6 +1463,18 @@ FMonolithActionResult FMonolithMeshFacadeActions::ListFacadeStyles(const TShared
 
 FMonolithActionResult FMonolithMeshFacadeActions::ApplyHorrorDamage(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+			}
+		}
+	}
+
 	if (!Pool)
 	{
 		return FMonolithActionResult::Error(GS_ERROR_FACADE);
@@ -1631,6 +1656,14 @@ FMonolithActionResult FMonolithMeshFacadeActions::ApplyHorrorDamage(const TShare
 	if (DamageSavePath.IsEmpty())
 	{
 		DamageSavePath = FString::Printf(TEXT("/Game/Procedural/Damage/%s_Damage"), *TargetActorName);
+	}
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DamageSavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(DamageSavePath, WritableError);
+		}
 	}
 
 	bool bOverwrite = Params->HasField(TEXT("overwrite")) ? Params->GetBoolField(TEXT("overwrite")) : false;

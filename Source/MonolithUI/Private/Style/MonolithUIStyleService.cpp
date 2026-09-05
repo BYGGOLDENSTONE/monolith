@@ -2,6 +2,7 @@
 // MonolithUIStyleService.cpp — Phase G
 
 #include "Style/MonolithUIStyleService.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithJsonUtils.h"
 
 #if WITH_COMMONUI
@@ -367,6 +368,14 @@ UClass* FMonolithUIStyleService::CreateNewStyleAsset(
         FinalPackageName,
         FinalAssetName);
 
+    {
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(FinalPackageName, WritableError))
+        {
+            OutError = WritableError;
+            return nullptr;
+        }
+    }
     UPackage* Package = CreatePackage(*FinalPackageName);
     if (!Package)
     {

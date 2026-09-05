@@ -7,6 +7,8 @@
 // {path,current,proposed,ok,reason} surface as bulk_fill.apply. Game-thread only.
 
 #include "MonolithBlueprintDataTableActions.h"
+#include "UObject/Package.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
@@ -399,6 +401,15 @@ FMonolithActionResult FMonolithBlueprintDataTableActions::HandleSetDataTableRows
 	{
 		return FMonolithActionResult::Error(Error);
 	}
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DataTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(DataTable->GetOutermost()->GetName(), WritableError);
+		}
+	}
+
 	UScriptStruct* RowStruct = const_cast<UScriptStruct*>(RowStructConst);
 
 	FMonolithDryRunGuard Guard(Params);
@@ -617,6 +628,14 @@ FMonolithActionResult FMonolithBlueprintDataTableActions::HandleRemoveDataTableR
 	UDataTable* DataTable = ResolveDataTable(AssetPath, RowStruct, Error);
 	if (!DataTable) { return FMonolithActionResult::Error(Error); }
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DataTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(DataTable->GetOutermost()->GetName(), WritableError);
+		}
+	}
+
 	// FDataTableEditorUtils::RemoveRow broadcasts RowList internally.
 	const bool bRemoved = FDataTableEditorUtils::RemoveRow(DataTable, FName(*RowName));
 	if (!bRemoved)
@@ -657,6 +676,14 @@ FMonolithActionResult FMonolithBlueprintDataTableActions::HandleRenameDataTableR
 	FString Error;
 	UDataTable* DataTable = ResolveDataTable(AssetPath, RowStruct, Error);
 	if (!DataTable) { return FMonolithActionResult::Error(Error); }
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DataTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(DataTable->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	// FDataTableEditorUtils::RenameRow broadcasts RowList internally.
 	const bool bRenamed = FDataTableEditorUtils::RenameRow(DataTable, FName(*OldName), FName(*NewName));
@@ -700,6 +727,14 @@ FMonolithActionResult FMonolithBlueprintDataTableActions::HandleDuplicateDataTab
 	FString Error;
 	UDataTable* DataTable = ResolveDataTable(AssetPath, RowStruct, Error);
 	if (!DataTable) { return FMonolithActionResult::Error(Error); }
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DataTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(DataTable->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	// FDataTableEditorUtils::DuplicateRow broadcasts RowList internally; returns
 	// the new row's data pointer (nullptr on failure).
@@ -794,6 +829,14 @@ FMonolithActionResult FMonolithBlueprintDataTableActions::HandleImportDataTable(
 	if (!DataTable)
 	{
 		return FMonolithActionResult::Error(FString::Printf(TEXT("DataTable not found: %s"), *AssetPath));
+	}
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DataTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(DataTable->GetOutermost()->GetName(), WritableError);
+		}
 	}
 
 	// CreateTableFrom*String require RowStruct preset; guard with a clear message.

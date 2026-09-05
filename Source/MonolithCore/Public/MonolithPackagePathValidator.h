@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Misc/PackageName.h"
+#include "MonolithToolRegistry.h"
 
 /**
  * Defensive validator for long package paths (e.g. "/Game/Foo/Bar").
@@ -23,6 +24,11 @@
  */
 namespace MonolithCore
 {
+	/** Write permission, separate from path shape. Engine and Script are never writable. */
+	MONOLITHCORE_API bool EnsureWritablePackagePath(const FString& PackagePath, FString& OutError);
+	MONOLITHCORE_API TArray<FString> GetWritablePackageRoots();
+	MONOLITHCORE_API FMonolithActionResult WritablePathError(const FString& PackagePath, const FString& Error);
+
 	/**
 	 * Rewrites "<PackagePath>.<ObjectName>" to "<PackagePath>" when <ObjectName>
 	 * is exactly the leaf name of <PackagePath>.

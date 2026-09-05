@@ -1,4 +1,6 @@
 #include "MonolithAnimationActions.h"
+#include "UObject/Package.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
@@ -4343,6 +4345,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateSequence(const TSha
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg)
 	{
@@ -4384,6 +4393,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleDuplicateSequence(const T
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *DestPath));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(DestPath, WritableError);
+		}
+	}
 	UObject* DuplicatedObj = UEditorAssetLibrary::DuplicateAsset(SourcePath, DestPath);
 	if (!DuplicatedObj)
 	{
@@ -4420,6 +4436,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateMontage(const TShar
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg)
 	{
@@ -5072,6 +5095,14 @@ FMonolithActionResult FMonolithAnimationActions::HandleAddCompatibleSkeleton(con
 	if (!Skeleton)
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(Skeleton->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(Skeleton->GetOutermost()->GetName(), WritableError);
+		}
+	}
+
 	USkeleton* Compat = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(CompatPath);
 	if (!Compat)
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Compatible Skeleton not found: %s"), *CompatPath));
@@ -5119,6 +5150,14 @@ FMonolithActionResult FMonolithAnimationActions::HandleRemoveCompatibleSkeleton(
 	USkeleton* Skeleton = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(AssetPath);
 	if (!Skeleton)
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Skeleton not found: %s"), *AssetPath));
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(Skeleton->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(Skeleton->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	// USkeleton::RemoveCompatibleSkeleton() exists in 5.7+.
 	USkeleton* Compat = FMonolithAssetUtils::LoadAssetByPath<USkeleton>(CompatPath);
@@ -8592,6 +8631,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateBlendSpace(const TS
 	if (FMonolithAssetUtils::LoadAssetByPath<UObject>(AssetPath))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 
@@ -8649,6 +8695,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateBlendSpace1D(const 
 	if (FMonolithAssetUtils::LoadAssetByPath<UObject>(AssetPath))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 
@@ -8698,6 +8751,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateAimOffset(const TSh
 	if (FMonolithAssetUtils::LoadAssetByPath<UObject>(AssetPath))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 
@@ -8753,6 +8813,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateAimOffset1D(const T
 	if (FMonolithAssetUtils::LoadAssetByPath<UObject>(AssetPath))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 
@@ -8801,6 +8868,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateComposite(const TSh
 	if (FMonolithAssetUtils::LoadAssetByPath<UObject>(AssetPath))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 
@@ -8867,6 +8941,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateAnimBlueprint(const
 		}
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 
@@ -10181,6 +10262,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleBuildSequenceFromPoses(co
 			return FMonolithActionResult::Error(FString::Printf(TEXT("Invalid asset path: %s"), *AssetPath));
 		AssetName = AssetPath.Mid(LastSlash + 1);
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+			{
+				return MonolithCore::WritablePathError(AssetPath, WritableError);
+			}
+		}
 		UPackage* Pkg = CreatePackage(*AssetPath);
 		if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 
@@ -10985,6 +11073,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateIKRig(const TShared
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 
@@ -11087,6 +11182,13 @@ FMonolithActionResult FMonolithAnimationActions::HandleCreateIKRetargeter(const 
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 

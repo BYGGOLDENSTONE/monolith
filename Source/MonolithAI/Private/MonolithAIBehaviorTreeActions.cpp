@@ -1,4 +1,5 @@
 #include "MonolithAIBehaviorTreeActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithJsonUtils.h"
@@ -992,6 +993,7 @@ namespace
 		}
 
 		FString PkgError;
+		if (!MonolithCore::EnsureWritablePackagePath(BBPath, OutError)) return nullptr;
 		UPackage* BBPackage = MonolithAI::GetOrCreatePackage(BBPath, PkgError);
 		if (!BBPackage)
 		{
@@ -1871,6 +1873,13 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleCreateBehaviorTree(c
 	}
 
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(PackagePath, PkgError);
 	if (!Package)
 	{
@@ -2077,6 +2086,13 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleDuplicateBehaviorTre
 
 	FString DestAssetName = FPackageName::GetShortName(DestPath);
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(DestPath, WritableError);
+		}
+	}
 	UPackage* DestPackage = MonolithAI::GetOrCreatePackage(DestPath, PkgError);
 	if (!DestPackage)
 	{
@@ -3635,6 +3651,13 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleBuildBTFromSpec(cons
 
 	// Create package
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(SavePath, PkgError);
 	if (!Package)
 	{
@@ -4678,6 +4701,13 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleCreateBTTaskBlueprin
 	}
 
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(SavePath, PkgError);
 	if (!Package)
 	{
@@ -4752,6 +4782,13 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleCreateBTDecoratorBlu
 	}
 
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(SavePath, PkgError);
 	if (!Package)
 	{
@@ -4826,6 +4863,13 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleCreateBTServiceBluep
 	}
 
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(SavePath, PkgError);
 	if (!Package)
 	{

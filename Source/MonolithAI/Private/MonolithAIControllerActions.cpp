@@ -1,4 +1,5 @@
 #include "MonolithAIControllerActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 
@@ -154,6 +155,13 @@ FMonolithActionResult FMonolithAIControllerActions::HandleCreateAIController(con
 	}
 
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(PackagePath, PkgError);
 	if (!Package)
 	{

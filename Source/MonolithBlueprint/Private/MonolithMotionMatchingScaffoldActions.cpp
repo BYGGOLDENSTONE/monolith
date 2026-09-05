@@ -1,4 +1,6 @@
 #include "MonolithMotionMatchingScaffoldActions.h"
+#include "Misc/Paths.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithBlueprintInternal.h"
 #include "MonolithBlueprintComponentActions.h"
 #include "MonolithBlueprintComponentResolver.h"
@@ -527,6 +529,8 @@ namespace
 	/** Create a UDataAsset-derived asset (IMC or IA) at a /Game path. Returns nullptr on collision/failure. */
 	UObject* CreateInputAsset(UClass* AssetClass, const FString& PackagePath, FString& OutError)
 	{
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, OutError)) return nullptr;
+
 		int32 LastSlash = INDEX_NONE;
 		if (!PackagePath.FindLastChar(TEXT('/'), LastSlash))
 		{
@@ -583,6 +587,36 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleScaffoldLoco
 	if (!BP)
 	{
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Blueprint not found: %s"), *BpPath));
+	}
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(ImcPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(ImcPath, WritableError);
+		}
+	}
+	for (const TSharedPtr<FJsonValue>& Entry : *ActionsArr)
+	{
+		const TSharedPtr<FJsonObject> Obj = Entry.IsValid() ? Entry->AsObject() : nullptr;
+		if (!Obj.IsValid()) continue;
+		FString ActionName;
+		Obj->TryGetStringField(TEXT("name"), ActionName);
+		const FString Destination = FPaths::GetPath(ImcPath) / (TEXT("IA_") + ActionName);
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(Destination, WritableError))
+			{
+				return MonolithCore::WritablePathError(Destination, WritableError);
+			}
+		}
 	}
 
 	// --- Create the InputMappingContext asset ---

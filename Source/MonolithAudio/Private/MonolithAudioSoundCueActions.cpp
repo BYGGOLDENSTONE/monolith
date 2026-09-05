@@ -1,4 +1,5 @@
 #include "MonolithAudioSoundCueActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h" // LogMonolith
@@ -562,6 +563,14 @@ USoundCue* FMonolithAudioSoundCueActions::CreateEmptySoundCue(const FString& Ass
 		return nullptr;
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			OutError = WritableError;
+			return nullptr;
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg)
 	{
@@ -809,6 +818,13 @@ FMonolithActionResult FMonolithAudioSoundCueActions::CreateSoundCue(const TShare
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundCue* Cue = CreateEmptySoundCue(AssetPath, Error);
 	if (!Cue)
 	{
@@ -1407,6 +1423,13 @@ FMonolithActionResult FMonolithAudioSoundCueActions::BuildSoundCueFromSpec(const
 
 	// Create the cue
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundCue* Cue = CreateEmptySoundCue(AssetPath, Error);
 	if (!Cue)
 	{
@@ -1597,6 +1620,13 @@ FMonolithActionResult FMonolithAudioSoundCueActions::CreateRandomSoundCue(const 
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundCue* Cue = CreateEmptySoundCue(AssetPath, Error);
 	if (!Cue) return FMonolithActionResult::Error(Error);
 
@@ -1681,6 +1711,13 @@ FMonolithActionResult FMonolithAudioSoundCueActions::CreateLayeredSoundCue(const
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundCue* Cue = CreateEmptySoundCue(AssetPath, Error);
 	if (!Cue) return FMonolithActionResult::Error(Error);
 
@@ -1768,6 +1805,13 @@ FMonolithActionResult FMonolithAudioSoundCueActions::CreateLoopingAmbientCue(con
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundCue* Cue = CreateEmptySoundCue(AssetPath, Error);
 	if (!Cue) return FMonolithActionResult::Error(Error);
 
@@ -1864,6 +1908,13 @@ FMonolithActionResult FMonolithAudioSoundCueActions::CreateDistanceCrossfadeCue(
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundCue* Cue = CreateEmptySoundCue(AssetPath, Error);
 	if (!Cue) return FMonolithActionResult::Error(Error);
 
@@ -1989,6 +2040,13 @@ FMonolithActionResult FMonolithAudioSoundCueActions::CreateSwitchSoundCue(const 
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundCue* Cue = CreateEmptySoundCue(AssetPath, Error);
 	if (!Cue) return FMonolithActionResult::Error(Error);
 
@@ -2051,6 +2109,13 @@ FMonolithActionResult FMonolithAudioSoundCueActions::DuplicateSoundCue(const TSh
 	if (!Source) { return FMonolithActionResult::Error(FString::Printf(TEXT("Source asset not found: '%s'"), *SourcePath)); }
 	FString DestPackagePath, DestAssetName;
 	DestPath.Split(TEXT("/"), &DestPackagePath, &DestAssetName, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(DestPath, WritableError);
+		}
+	}
 	UObject* Duplicated = AssetTools.DuplicateAsset(DestAssetName, DestPackagePath, Source);
 	if (!Duplicated)
 	{

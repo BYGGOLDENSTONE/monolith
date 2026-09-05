@@ -180,9 +180,12 @@ FMonolithActionResult FMonolithUIActions::HandleCreateWidgetBlueprint(const TSha
 
     // Defensive: reject malformed paths (e.g. "//Game/...") before they reach CreatePackage,
     // which asserts in UObjectGlobals.cpp and kills the editor.
-    if (const FString ValidationError = MonolithCore::ValidatePackagePath(SavePath); !ValidationError.IsEmpty())
     {
-        return FMonolithActionResult::Error(ValidationError);
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+        {
+            return MonolithCore::WritablePathError(SavePath, WritableError);
+        }
     }
 
     FString ParentClassName = MonolithUIInternal::GetOptionalString(Params, TEXT("parent_class"));

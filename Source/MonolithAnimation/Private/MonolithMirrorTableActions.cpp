@@ -1,4 +1,5 @@
 #include "MonolithMirrorTableActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithParamSchema.h"
 
@@ -96,6 +97,13 @@ FMonolithActionResult FMonolithMirrorTableActions::HandleCreateMirrorDataTable(c
 	if (FMonolithAssetUtils::LoadAssetByPath<UObject>(AssetPath))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 

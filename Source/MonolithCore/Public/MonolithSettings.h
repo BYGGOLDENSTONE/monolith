@@ -59,6 +59,12 @@ public:
 	UPROPERTY(config, EditAnywhere, Category="Indexing")
 	TArray<FString> AdditionalContentPaths;
 
+	/** Plugin package roots Monolith may write, e.g. /MyPlugin. Empty by default.
+	 * Indexing a plugin via AdditionalContentPaths does not grant write permission.
+	 * /Engine and /Script remain protected even if listed here. */
+	UPROPERTY(config, EditAnywhere, Category="Write Safety")
+	TArray<FString> WritablePluginContentRoots;
+
 	/** Override path for ProjectIndex.db (empty = default Saved/ location) */
 	UPROPERTY(config, EditAnywhere, Category="Indexing", meta=(RelativePath))
 	FDirectoryPath DatabasePathOverride;

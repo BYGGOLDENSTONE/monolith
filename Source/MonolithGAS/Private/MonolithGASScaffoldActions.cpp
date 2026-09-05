@@ -1,4 +1,5 @@
 #include "MonolithGASScaffoldActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithGASInternal.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -1045,6 +1046,13 @@ FMonolithActionResult FMonolithGASScaffoldActions::HandleScaffoldDamagePipeline(
 			continue;
 		}
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(GEPath, WritableError))
+			{
+				return MonolithCore::WritablePathError(GEPath, WritableError);
+			}
+		}
 		UPackage* Package = CreatePackage(*GEPath);
 		if (!Package)
 		{
@@ -1205,6 +1213,13 @@ FMonolithActionResult FMonolithGASScaffoldActions::HandleScaffoldStatusEffect(co
 		return FMonolithActionResult::Error(ExistError);
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{
@@ -1428,6 +1443,13 @@ FMonolithActionResult FMonolithGASScaffoldActions::HandleScaffoldWeaponAbility(c
 		return FMonolithActionResult::Error(ExistError);
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{

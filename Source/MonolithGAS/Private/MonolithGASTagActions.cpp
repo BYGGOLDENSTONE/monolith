@@ -1,4 +1,5 @@
 #include "MonolithGASTagActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithGASInternal.h"
 #include "GameplayTagsManager.h"
@@ -264,6 +265,13 @@ FMonolithActionResult FMonolithGASTagActions::HandleAddGameplayTags(const TShare
 	{
 		// ── DataTable mode ──
 		FString Error;
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(TablePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(TablePath, WritableError);
+			}
+		}
 		UObject* Existing = MonolithGAS::LoadAssetFromPath(TablePath, Error);
 		UDataTable* DataTable = Cast<UDataTable>(Existing);
 
@@ -289,6 +297,13 @@ FMonolithActionResult FMonolithGASTagActions::HandleAddGameplayTags(const TShare
 				return FMonolithActionResult::Error(ExistError);
 			}
 
+			{
+				FString WritableError;
+				if (!MonolithCore::EnsureWritablePackagePath(TablePath, WritableError))
+				{
+					return MonolithCore::WritablePathError(TablePath, WritableError);
+				}
+			}
 			UPackage* Package = MonolithGAS::GetOrCreatePackage(TablePath, Error);
 			if (!Package)
 			{

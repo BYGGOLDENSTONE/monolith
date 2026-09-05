@@ -50,7 +50,7 @@ bool FMonolithCorePackagePathTest::RunTest(const FString& /*Parameters*/)
 		{ TEXT("/Game/My_Folder/M_Asset_01"),TEXT("/Game/My_Folder/M_Asset_01"),TEXT("underscores and digits") },
 		{ TEXT("/Game/123/456"),             TEXT("/Game/123/456"),             TEXT("digit-only segments") },
 		{ TEXT("/Game/Foo/M-Bar"),           TEXT("/Game/Foo/M-Bar"),           TEXT("hyphen is a legal package char") },
-		{ TEXT("/Engine/Foo"),               TEXT("/Engine/Foo"),               TEXT("engine root is writable, not read-only") },
+		{ TEXT("/Engine/Foo"),               TEXT("/Engine/Foo"),               TEXT("valid shape; EnsureWritablePackagePath separately denies writes") },
 		{ TEXT("/Engine/Foo/Bar/Baz"),       TEXT("/Engine/Foo/Bar/Baz"),       TEXT("nested engine path") },
 
 		// Object-path forms newly accepted by the normalisation step. The suffix

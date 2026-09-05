@@ -1,4 +1,5 @@
 #include "MonolithAINavigationActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 
@@ -857,6 +858,13 @@ FMonolithActionResult FMonolithAINavigationActions::HandleCreateNavArea(const TS
 		return FMonolithActionResult::Error(Error);
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(SavePath, Error);
 	if (!Package)
 	{
@@ -2035,6 +2043,28 @@ FMonolithActionResult FMonolithAINavigationActions::HandleRebuildNavigation(cons
 	double TimeoutSeconds = Params->HasField(TEXT("timeout_seconds")) ? Params->GetNumberField(TEXT("timeout_seconds")) : 30.0;
 	TimeoutSeconds = FMath::Clamp(TimeoutSeconds, 1.0, 120.0);
 
+	// Validate current level/nav packages before triggering generation or saving.
+	if (bSaveAfter)
+	{
+		TSet<UPackage*> PackagesToCheck;
+		PackagesToCheck.Add(World->GetOutermost());
+		for (ANavigationData* NavData : NavSys->NavDataSet)
+		{
+			if (NavData) PackagesToCheck.Add(NavData->GetOutermost());
+		}
+		for (UPackage* Package : PackagesToCheck)
+		{
+			if (!Package) continue;
+			const FString Path = Package->GetName();
+			if (!FPackageName::IsValidLongPackageName(Path) || Path.StartsWith(TEXT("/Temp/"))) continue;
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(Path, WritableError))
+			{
+				return MonolithCore::WritablePathError(Path, WritableError);
+			}
+		}
+	}
+
 	// Trigger the (async) navmesh rebuild.
 	NavSys->Build();
 
@@ -2092,6 +2122,22 @@ FMonolithActionResult FMonolithAINavigationActions::HandleRebuildNavigation(cons
 			if (UPackage* WorldPkg = World->GetOutermost())
 			{
 				PackagesToSave.Add(WorldPkg);
+			}
+
+			// Generation may add packages. Preflight the complete final set before the first save.
+			for (UPackage* Package : PackagesToSave)
+			{
+				if (!Package) continue;
+				const FString Path = Package->GetName();
+				if (!FPackageName::IsValidLongPackageName(Path) || Path.StartsWith(TEXT("/Temp/"))) continue;
+				FString WritableError;
+				if (!MonolithCore::EnsureWritablePackagePath(Path, WritableError))
+				{
+					FMonolithActionResult Rejection = MonolithCore::WritablePathError(Path, WritableError);
+					// Navigation generation already ran, although no package was saved.
+					Rejection.ErrorData->AsObject()->SetBoolField(TEXT("executed"), true);
+					return Rejection;
+				}
 			}
 
 			for (UPackage* Pkg : PackagesToSave)

@@ -61,6 +61,7 @@
 #include "Slate/WidgetRenderer.h"
 #include "RenderDeferredCleanup.h"
 #include "UObject/SavePackage.h"
+#include "MonolithPackagePathValidator.h"
 #include "LevelEditorViewport.h"
 #include "PixelFormat.h"
 #include "ObjectTools.h"
@@ -3354,10 +3355,32 @@ FMonolithActionResult FMonolithEditorActions::HandleImportTexture(
 	}
 
 	// Import using AssetTools
+	FString WritableError;
+	WritableError = MonolithCore::ValidatePackagePath(Destination);
+	if (!WritableError.IsEmpty()) return MonolithCore::WritablePathError(Destination, WritableError);
+	if (!MonolithCore::EnsureWritablePackagePath(Destination, WritableError))
+	{
+		return MonolithCore::WritablePathError(Destination, WritableError);
+	}
 	UAutomatedAssetImportData* ImportData = NewObject<UAutomatedAssetImportData>();
 	ImportData->Filenames.Add(SourcePath);
 	ImportData->DestinationPath = FPackageName::GetLongPackagePath(Destination);
 	ImportData->bReplaceExisting = true;
+	const FString ImportedPackagePath = ImportData->DestinationPath / FPaths::GetBaseFilename(SourcePath);
+	if (!MonolithCore::EnsureWritablePackagePath(ImportedPackagePath, WritableError))
+	{
+		return MonolithCore::WritablePathError(ImportedPackagePath, WritableError);
+	}
+	if (UEditorAssetLibrary::DoesAssetExist(ImportedPackagePath))
+	{
+		if (UObject* Existing = UEditorAssetLibrary::LoadAsset(ImportedPackagePath))
+		{
+			if (!MonolithCore::EnsureWritablePackagePath(Existing->GetOutermost()->GetName(), WritableError))
+			{
+				return MonolithCore::WritablePathError(Existing->GetOutermost()->GetName(), WritableError);
+			}
+		}
+	}
 
 	FAssetToolsModule& AssetToolsModule =
 		FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
@@ -3375,6 +3398,13 @@ FMonolithActionResult FMonolithEditorActions::HandleImportTexture(
 	}
 
 	// Apply optional settings
+	if (!MonolithCore::EnsureWritablePackagePath(Texture->GetOutermost()->GetName(), WritableError))
+	{
+		FMonolithActionResult Error = MonolithCore::WritablePathError(Texture->GetOutermost()->GetName(), WritableError);
+		Error.ErrorData->AsObject()->SetBoolField(TEXT("executed"), true);
+		Error.ErrorData->AsObject()->SetBoolField(TEXT("partial"), true);
+		return Error;
+	}
 	if (Params->HasField(TEXT("settings")))
 	{
 		const TSharedPtr<FJsonObject>* SettingsObj;
@@ -3477,6 +3507,13 @@ FMonolithActionResult FMonolithEditorActions::HandleStitchFlipbook(
 	}
 
 	// Parse frame_paths array
+	FString WritableError;
+	WritableError = MonolithCore::ValidatePackagePath(DestPath);
+	if (!WritableError.IsEmpty()) return MonolithCore::WritablePathError(DestPath, WritableError);
+	if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritableError))
+	{
+		return MonolithCore::WritablePathError(DestPath, WritableError);
+	}
 	const TArray<TSharedPtr<FJsonValue>>* FramePathsArray = nullptr;
 	if (!Params->TryGetArrayField(TEXT("frame_paths"), FramePathsArray) || !FramePathsArray || FramePathsArray->Num() == 0)
 	{
@@ -4713,6 +4750,8 @@ FMonolithActionResult FMonolithEditorActions::HandleSavePackages(const TSharedPt
 		FString Name;
 		if (Val.IsValid() && Val->TryGetString(Name) && !Name.IsEmpty())
 		{
+			const FString PathError = MonolithCore::ValidatePackagePath(Name);
+			if (!PathError.IsEmpty()) return MonolithCore::WritablePathError(Name, PathError);
 			RequestedNames.AddUnique(Name);
 		}
 	}
@@ -4722,6 +4761,15 @@ FMonolithActionResult FMonolithEditorActions::HandleSavePackages(const TSharedPt
 	}
 
 	bool bFailOnUnrequested = false;
+	// Preflight the entire request before the first package can be saved.
+	for (const FString& PackageName : RequestedNames)
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackageName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackageName, WritableError);
+		}
+	}
 	if (Params.IsValid()) { Params->TryGetBoolField(TEXT("fail_on_unrequested_dirty"), bFailOnUnrequested); }
 
 	bool bDryRun = false;

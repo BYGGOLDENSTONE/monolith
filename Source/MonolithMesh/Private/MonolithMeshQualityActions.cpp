@@ -1,4 +1,5 @@
 #include "MonolithMeshQualityActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshUtils.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithMeshAnalysis.h"
@@ -513,6 +514,13 @@ FMonolithActionResult FMonolithMeshQualityActions::GenerateProxyMesh(const TShar
 	// Create the output package
 	FString PackageName = SavePath;
 	FString AssetName = FPackageName::GetShortName(PackageName);
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackageName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackageName, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*PackageName);
 	if (!Package)
 	{
@@ -635,6 +643,13 @@ FMonolithActionResult FMonolithMeshQualityActions::SetupHlod(const TSharedPtr<FJ
 	// Create the HLOD layer asset
 	FString PackageName = SavePath;
 	FString AssetName = FPackageName::GetShortName(PackageName);
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackageName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackageName, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*PackageName);
 	if (!Package)
 	{

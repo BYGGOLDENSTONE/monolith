@@ -1,4 +1,5 @@
 #include "MonolithAIBlackboardActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 
@@ -431,6 +432,13 @@ FMonolithActionResult FMonolithAIBlackboardActions::HandleCreateBlackboard(const
 
 	// Create package
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(PackagePath, PkgError);
 	if (!Package)
 	{
@@ -648,6 +656,13 @@ FMonolithActionResult FMonolithAIBlackboardActions::HandleDuplicateBlackboard(co
 
 	// Create dest package
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(DestPath, WritableError);
+		}
+	}
 	UPackage* DestPackage = MonolithAI::GetOrCreatePackage(DestPath, PkgError);
 	if (!DestPackage)
 	{

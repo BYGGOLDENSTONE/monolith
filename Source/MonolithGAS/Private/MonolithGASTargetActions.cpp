@@ -1,4 +1,5 @@
 #include "MonolithGASTargetActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithGASInternal.h"
 #include "MonolithAssetUtils.h"
@@ -228,6 +229,13 @@ FMonolithActionResult FMonolithGASTargetActions::HandleCreateTargetActor(const T
 	}
 
 	// Create package and Blueprint
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{

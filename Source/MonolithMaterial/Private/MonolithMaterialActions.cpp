@@ -2589,7 +2589,12 @@ FMonolithActionResult FMonolithMaterialActions::CreateMaterial(const TSharedPtr<
 	const FString PathError = MonolithCore::ValidatePackagePath(AssetPath);
 	if (!PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(AssetPath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(AssetPath, WritablePathError);
 	}
 
 	// Extract package path and asset name from the asset path
@@ -2693,7 +2698,12 @@ FMonolithActionResult FMonolithMaterialActions::CreateMaterialInstance(const TSh
 	const FString PathError = MonolithCore::ValidatePackagePath(AssetPath);
 	if (!PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(AssetPath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(AssetPath, WritablePathError);
 	}
 
 	// Load parent material
@@ -2829,10 +2839,22 @@ FMonolithActionResult FMonolithMaterialActions::SetMaterialProperty(const TShare
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(AssetPath, WritablePathError);
+	}
+
 	UMaterial* Mat = LoadBaseMaterial(AssetPath);
 	if (!Mat)
 	{
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load base material at '%s'"), *AssetPath));
+	}
+
+	FString ResolvedPathError;
+	if (!MonolithCore::EnsureWritablePackagePath(Mat->GetPackage()->GetName(), ResolvedPathError))
+	{
+		return MonolithCore::WritablePathError(Mat->GetPackage()->GetName(), ResolvedPathError);
 	}
 
 	GEditor->BeginTransaction(FText::FromString(TEXT("SetMaterialProperty")));
@@ -3354,6 +3376,12 @@ FMonolithActionResult FMonolithMaterialActions::DuplicateMaterial(const TSharedP
 {
 	FString SourcePath = Params->GetStringField(TEXT("source_path"));
 	FString DestPath = Params->GetStringField(TEXT("dest_path"));
+
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(DestPath, WritablePathError);
+	}
 
 	// Check source exists
 	UObject* SourceObj = UEditorAssetLibrary::LoadAsset(SourcePath);
@@ -5042,12 +5070,23 @@ FMonolithActionResult FMonolithMaterialActions::SaveMaterial(const TSharedPtr<FJ
 {
 	FString AssetPath = Params->GetStringField(TEXT("asset_path"));
 	bool bOnlyIfDirty = Params->HasField(TEXT("only_if_dirty")) ? Params->GetBoolField(TEXT("only_if_dirty")) : true;
+	FString InputPathError;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, InputPathError))
+	{
+		return MonolithCore::WritablePathError(AssetPath, InputPathError);
+	}
 
 	// Verify asset exists
 	UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
 	if (!LoadedAsset)
 	{
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to load asset at '%s'"), *AssetPath));
+	}
+
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(LoadedAsset->GetPackage()->GetName(), WritablePathError))
+	{
+		return MonolithCore::WritablePathError(LoadedAsset->GetPackage()->GetName(), WritablePathError);
 	}
 
 	bool bWasDirty = LoadedAsset->GetPackage()->IsDirty();
@@ -6322,7 +6361,12 @@ FMonolithActionResult FMonolithMaterialActions::CreateMaterialFunction(const TSh
 	const FString PathError = MonolithCore::ValidatePackagePath(AssetPath);
 	if (!PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(AssetPath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(AssetPath, WritablePathError);
 	}
 
 	// Extract package path and asset name
@@ -7430,6 +7474,24 @@ FMonolithActionResult FMonolithMaterialActions::BatchSetMaterialProperty(const T
 		return FMonolithActionResult::Error(TEXT("asset_paths array is empty"));
 	}
 
+	// Validate the whole batch before starting a transaction or mutating any material.
+	for (const FString& AssetPath : AssetPaths)
+	{
+		FString WritablePathError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritablePathError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritablePathError);
+		}
+		if (UMaterial* Mat = LoadBaseMaterial(AssetPath))
+		{
+			FString ResolvedPathError;
+			if (!MonolithCore::EnsureWritablePackagePath(Mat->GetPackage()->GetName(), ResolvedPathError))
+			{
+				return MonolithCore::WritablePathError(Mat->GetPackage()->GetName(), ResolvedPathError);
+			}
+		}
+	}
+
 	// Build a params object without asset_paths — just the properties
 	// We reuse SetMaterialProperty by forwarding per-asset, but we wrap in a single transaction
 	GEditor->BeginTransaction(FText::FromString(TEXT("BatchSetMaterialProperty")));
@@ -7763,12 +7825,25 @@ static bool ParseTextureLODGroup(const FString& Str, TextureGroup& OutGroup)
 struct FTextureImportResult
 {
 	bool bSuccess = false;
+	bool bImportExecuted = false;
 	FString AssetPath;
 	FString ErrorMessage;
+	FString RejectedPath;
 	UTexture2D* Texture = nullptr;
 	int32 ResX = 0;
 	int32 ResY = 0;
 };
+
+static FMonolithActionResult TextureImportPathError(const FTextureImportResult& ImportResult)
+{
+	FMonolithActionResult Error = MonolithCore::WritablePathError(ImportResult.RejectedPath, ImportResult.ErrorMessage);
+	if (ImportResult.bImportExecuted)
+	{
+		Error.ErrorData->AsObject()->SetBoolField(TEXT("executed"), true);
+		Error.ErrorData->AsObject()->SetBoolField(TEXT("partial"), true);
+	}
+	return Error;
+}
 
 static FTextureImportResult ImportTextureInternal(
 	const FString& SourceFile,
@@ -7782,6 +7857,37 @@ static FTextureImportResult ImportTextureInternal(
 {
 	FTextureImportResult Result;
 
+	FString FinalAssetPath = DestName.IsEmpty() ? DestPath : FPaths::GetPath(DestPath) / DestName;
+	Result.ErrorMessage = MonolithCore::ValidatePackagePath(FinalAssetPath);
+	if (!Result.ErrorMessage.IsEmpty() || !MonolithCore::EnsureWritablePackagePath(FinalAssetPath, Result.ErrorMessage))
+	{
+		Result.RejectedPath = FinalAssetPath;
+		return Result;
+	}
+	const FString DestDirectory = FPackageName::GetLongPackagePath(FinalAssetPath);
+	const FString FinalDestName = FPackageName::GetLongPackageAssetName(FinalAssetPath);
+	const FString FallbackPath = DestDirectory / FPaths::GetBaseFilename(SourceFile);
+	if (!MonolithCore::EnsureWritablePackagePath(FallbackPath, Result.ErrorMessage))
+	{
+		Result.RejectedPath = FallbackPath;
+		return Result;
+	}
+	// Follow existing redirectors before the importer can replace or save their targets.
+	for (const FString& Candidate : { FinalAssetPath, FallbackPath })
+	{
+		if (UEditorAssetLibrary::DoesAssetExist(Candidate))
+		{
+			if (UObject* Existing = UEditorAssetLibrary::LoadAsset(Candidate))
+			{
+				if (!MonolithCore::EnsureWritablePackagePath(Existing->GetPackage()->GetName(), Result.ErrorMessage))
+				{
+					Result.RejectedPath = Existing->GetPackage()->GetName();
+					return Result;
+				}
+			}
+		}
+	}
+
 	// Validate source file exists on disk
 	if (!FPlatformFileManager::Get().GetPlatformFile().FileExists(*SourceFile))
 	{
@@ -7789,12 +7895,7 @@ static FTextureImportResult ImportTextureInternal(
 		return Result;
 	}
 
-	// Split dest_path into directory and asset name
-	FString DestDirectory = FPaths::GetPath(DestPath);
-	FString FinalDestName = DestName.IsEmpty() ? FPaths::GetBaseFilename(DestPath) : DestName;
-
 	// Check if asset already exists
-	FString FinalAssetPath = DestDirectory / FinalDestName;
 	if (!bReplaceExisting && UEditorAssetLibrary::DoesAssetExist(FinalAssetPath))
 	{
 		Result.ErrorMessage = FString::Printf(TEXT("Asset already exists at '%s'. Set replace_existing: true to overwrite."), *FinalAssetPath);
@@ -7815,6 +7916,7 @@ static FTextureImportResult ImportTextureInternal(
 	TArray<UAssetImportTask*> Tasks;
 	Tasks.Add(ImportTask);
 	AssetTools.ImportAssetTasks(Tasks);
+	Result.bImportExecuted = true;
 
 	// Verify the import succeeded by loading the asset
 	UObject* ImportedObj = UEditorAssetLibrary::LoadAsset(FinalAssetPath);
@@ -7823,8 +7925,6 @@ static FTextureImportResult ImportTextureInternal(
 	if (!Texture)
 	{
 		// Try without explicit name (some importers use the source filename)
-		FString FallbackName = FPaths::GetBaseFilename(SourceFile);
-		FString FallbackPath = DestDirectory / FallbackName;
 		ImportedObj = UEditorAssetLibrary::LoadAsset(FallbackPath);
 		Texture = ImportedObj ? Cast<UTexture2D>(ImportedObj) : nullptr;
 		if (Texture)
@@ -7838,6 +7938,12 @@ static FTextureImportResult ImportTextureInternal(
 		Result.ErrorMessage = FString::Printf(
 			TEXT("Import appeared to succeed but texture not found at '%s'. Check that the source file is a valid image format."),
 			*FinalAssetPath);
+		return Result;
+	}
+
+	if (!MonolithCore::EnsureWritablePackagePath(Texture->GetPackage()->GetName(), Result.ErrorMessage))
+	{
+		Result.RejectedPath = Texture->GetPackage()->GetName();
 		return Result;
 	}
 
@@ -7935,6 +8041,10 @@ FMonolithActionResult FMonolithMaterialActions::ImportTexture(const TSharedPtr<F
 
 	if (!ImportResult.bSuccess)
 	{
+		if (!ImportResult.RejectedPath.IsEmpty())
+		{
+			return TextureImportPathError(ImportResult);
+		}
 		return FMonolithActionResult::Error(ImportResult.ErrorMessage);
 	}
 
@@ -8045,7 +8155,12 @@ FMonolithActionResult FMonolithMaterialActions::CreatePbrMaterialFromDisk(const 
 	const FString MaterialPathError = MonolithCore::ValidatePackagePath(MaterialPath);
 	if (!MaterialPathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("material_path: %s"), *MaterialPathError));
+		return MonolithCore::WritablePathError(MaterialPath, MaterialPathError);
+	}
+	FString WritableMaterialPathError;
+	if (!MonolithCore::EnsureWritablePackagePath(MaterialPath, WritableMaterialPathError))
+	{
+		return MonolithCore::WritablePathError(MaterialPath, WritableMaterialPathError);
 	}
 
 	// Validate material_path format
@@ -8083,10 +8198,16 @@ FMonolithActionResult FMonolithMaterialActions::CreatePbrMaterialFromDisk(const 
 		TextureFolder = TextureFolder.LeftChop(1);
 	}
 
-	const FString TextureFolderError = MonolithCore::ValidatePackagePath(TextureFolder);
+	FString TextureFolderProbe = TextureFolder / TEXT("MonolithWriteProbe");
+	const FString TextureFolderError = MonolithCore::ValidatePackagePath(TextureFolderProbe);
 	if (!TextureFolderError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(FString::Printf(TEXT("texture_folder: %s"), *TextureFolderError));
+		return MonolithCore::WritablePathError(TextureFolder, TextureFolderError);
+	}
+	FString WritableTextureFolderError;
+	if (!MonolithCore::EnsureWritablePackagePath(TextureFolderProbe, WritableTextureFolderError))
+	{
+		return MonolithCore::WritablePathError(TextureFolder, WritableTextureFolderError);
 	}
 
 	// Non-destructive collision check runs BEFORE Phase 1 so a doomed create fails without
@@ -8131,6 +8252,7 @@ FMonolithActionResult FMonolithMaterialActions::CreatePbrMaterialFromDisk(const 
 
 	TArray<FImportedTexture> ImportedTextures;
 	TArray<TSharedPtr<FJsonValue>> TextureErrors;
+	bool bAnyTextureImportExecuted = false;
 
 	for (const auto& MapEntry : MapsObj->Values)
 	{
@@ -8163,6 +8285,13 @@ FMonolithActionResult FMonolithMaterialActions::CreatePbrMaterialFromDisk(const 
 		FTextureImportResult ImportResult = ImportTextureInternal(
 			DiskPath, TexDestPath, FString(), MapSettings->Compression, MapSettings->bSRGB,
 			MapSettings->LODGroup, MaxTextureSize, bReplaceExisting);
+		bAnyTextureImportExecuted |= ImportResult.bImportExecuted;
+		ImportResult.bImportExecuted = bAnyTextureImportExecuted;
+
+		if (!ImportResult.RejectedPath.IsEmpty())
+		{
+			return TextureImportPathError(ImportResult);
+		}
 
 		if (ImportResult.bSuccess)
 		{
@@ -8380,7 +8509,12 @@ FMonolithActionResult FMonolithMaterialActions::CreateFunctionInstance(const TSh
 	const FString PathError = MonolithCore::ValidatePackagePath(AssetPath);
 	if (!PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(AssetPath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(AssetPath, WritablePathError);
 	}
 
 	// Check if asset already exists

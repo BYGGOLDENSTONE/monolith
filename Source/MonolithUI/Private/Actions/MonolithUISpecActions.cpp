@@ -14,6 +14,7 @@
 // the JSON wire shape onto FUISpecBuilderInputs and back to a JSON response.
 
 #include "Actions/MonolithUISpecActions.h"
+#include "MonolithPackagePathValidator.h"
 
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
@@ -568,6 +569,13 @@ namespace MonolithUI::SpecActionsInternal
             Inputs.bTreatWarningsAsErrors = true;
         }
 
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+            {
+                return MonolithCore::WritablePathError(AssetPath, WritableError);
+            }
+        }
         const FUISpecBuilderResult R = FUISpecBuilder::Build(Inputs);
         return FMonolithActionResult::Success(PackResponse(R, Inputs.bDryRun));
     }
@@ -1148,6 +1156,13 @@ namespace MonolithUI::SpecActionsInternal
                 In.bTreatWarningsAsErrors = true;
             }
 
+            {
+                FString WritableError;
+                if (!MonolithCore::EnsureWritablePackagePath(ScreenAssetPath, WritableError))
+                {
+                    return MonolithCore::WritablePathError(ScreenAssetPath, WritableError);
+                }
+            }
             const FUISpecBuilderResult R = FUISpecBuilder::Build(In);
             TotalCreated  += R.NodesCreated;
             TotalModified += R.NodesModified;

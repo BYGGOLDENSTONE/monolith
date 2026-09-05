@@ -113,6 +113,8 @@ UPackage* GetOrCreatePackage(const FString& SavePath, FString& OutError)
 		PackageName = TEXT("/Game/") + PackageName;
 	}
 
+	if (!MonolithCore::EnsureWritablePackagePath(PackageName, OutError)) return nullptr;
+
 	// Defensive: reject malformed paths (e.g. "//Game/...") before CreatePackage asserts and kills the editor.
 	FString NormalizedName;
 	if (const FString ValidationError = MonolithCore::ValidatePackagePath(PackageName, NormalizedName); !ValidationError.IsEmpty())

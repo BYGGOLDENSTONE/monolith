@@ -1,4 +1,5 @@
 #include "MonolithAIAdvancedActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 
@@ -285,6 +286,13 @@ FMonolithActionResult FMonolithAIAdvancedActions::HandleCreateMassEntityConfig(c
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Create MassEntityConfig")));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*PackagePath);
 	if (!Package)
 	{

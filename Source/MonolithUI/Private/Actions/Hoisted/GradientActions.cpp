@@ -1,5 +1,6 @@
 // Copyright tumourlove. All Rights Reserved.
 #include "Actions/Hoisted/GradientActions.h"
+#include "MonolithPackagePathValidator.h"
 
 // Monolith registry
 #include "MonolithToolRegistry.h"
@@ -241,6 +242,13 @@ FMonolithActionResult MonolithUI::FGradientActions::HandleCreateGradientMidFromS
         Destination, /*Suffix=*/FString(),
         /*out*/ UniquePackageName, /*out*/ UniqueAssetName);
 
+    {
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(UniquePackageName, WritableError))
+        {
+            return MonolithCore::WritablePathError(UniquePackageName, WritableError);
+        }
+    }
     UPackage* Package = CreatePackage(*UniquePackageName);
     if (!Package)
     {

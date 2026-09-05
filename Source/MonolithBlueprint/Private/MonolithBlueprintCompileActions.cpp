@@ -1,4 +1,6 @@
 #include "MonolithBlueprintCompileActions.h"
+#include "UObject/Package.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithBlueprintInternal.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
@@ -452,6 +454,13 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleCreateBlueprint(co
 	// can pull stale RF_Transient flags from a leftover .uasset into the
 	// in-memory package, then the subsequent SaveLoadedAsset writes the
 	// transient state back to disk as partial bytes.
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{
@@ -553,6 +562,13 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleDuplicateBlueprint
 		return FMonolithActionResult::Error(TEXT("Missing required parameter: new_path"));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(NewPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(NewPath, WritableError);
+		}
+	}
 	UObject* Duplicated = UEditorAssetLibrary::DuplicateAsset(AssetPath, NewPath);
 	bool bSuccess = (Duplicated != nullptr);
 
@@ -641,6 +657,14 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleSaveAsset(const TS
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(Asset->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(Asset->GetOutermost()->GetName(), WritableError);
+		}
+	}
+
 	bool bWasDirty = Asset->GetOutermost()->IsDirty();
 	bool bSaved = UEditorAssetLibrary::SaveLoadedAsset(Asset, false);
 
@@ -668,6 +692,7 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleSaveDirtyAssets(co
 
 	TArray<TSharedPtr<FJsonValue>> SavedArr;
 	TArray<TSharedPtr<FJsonValue>> FailedArr;
+	TArray<UBlueprint*> BlueprintsToSave;
 
 	for (TObjectIterator<UBlueprint> It; It; ++It)
 	{
@@ -687,6 +712,18 @@ FMonolithActionResult FMonolithBlueprintCompileActions::HandleSaveDirtyAssets(co
 			continue;
 		}
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+			{
+				return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+			}
+		}
+		BlueprintsToSave.Add(BP);
+	}
+
+	for (UBlueprint* BP : BlueprintsToSave)
+	{
 		const FString AssetPath = BP->GetPathName();
 		const bool bSaved = UEditorAssetLibrary::SaveLoadedAsset(BP, false);
 		(bSaved ? SavedArr : FailedArr).Add(MakeShared<FJsonValueString>(AssetPath));

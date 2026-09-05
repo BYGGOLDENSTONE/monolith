@@ -10,6 +10,8 @@
 // (the only thing that utility provides). Game-thread only.
 
 #include "MonolithBlueprintCurveTableActions.h"
+#include "UObject/Package.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithParamSchema.h"
 #include "Engine/CurveTable.h"
@@ -266,6 +268,14 @@ FMonolithActionResult FMonolithBlueprintCurveTableActions::HandleSetCurveTableKe
 	UCurveTable* CurveTable = ResolveCurveTable(AssetPath, Error);
 	if (!CurveTable) { return FMonolithActionResult::Error(Error); }
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(CurveTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(CurveTable->GetOutermost()->GetName(), WritableError);
+		}
+	}
+
 	FString ModeStr = TEXT("replace");
 	Params->TryGetStringField(TEXT("mode"), ModeStr);
 	ModeStr = ModeStr.ToLower();
@@ -391,6 +401,14 @@ FMonolithActionResult FMonolithBlueprintCurveTableActions::HandleAddCurveTableRo
 	UCurveTable* CurveTable = ResolveCurveTable(AssetPath, Error);
 	if (!CurveTable) { return FMonolithActionResult::Error(Error); }
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(CurveTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(CurveTable->GetOutermost()->GetName(), WritableError);
+		}
+	}
+
 	FString InterpStr = TEXT("linear");
 	Params->TryGetStringField(TEXT("interp_mode"), InterpStr);
 	ERichCurveInterpMode InterpMode = RCIM_Linear;
@@ -470,6 +488,14 @@ FMonolithActionResult FMonolithBlueprintCurveTableActions::HandleRemoveCurveTabl
 	UCurveTable* CurveTable = ResolveCurveTable(AssetPath, Error);
 	if (!CurveTable) { return FMonolithActionResult::Error(Error); }
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(CurveTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(CurveTable->GetOutermost()->GetName(), WritableError);
+		}
+	}
+
 	const FName RowFName(*RowName);
 	if (!CurveTable->GetRowMap().Contains(RowFName))
 	{
@@ -520,6 +546,14 @@ FMonolithActionResult FMonolithBlueprintCurveTableActions::HandleRenameCurveTabl
 	FString Error;
 	UCurveTable* CurveTable = ResolveCurveTable(AssetPath, Error);
 	if (!CurveTable) { return FMonolithActionResult::Error(Error); }
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(CurveTable->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(CurveTable->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	FName OldFName(*OldName);
 	FName NewFName(*NewName);

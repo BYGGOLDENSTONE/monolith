@@ -1,4 +1,5 @@
 #include "MonolithAIStateTreeActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 
@@ -793,6 +794,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleCreateStateTree(const T
 		return FMonolithActionResult::Error(PathErr);
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*PackagePath);
 	if (!Package)
 	{
@@ -988,6 +996,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleDuplicateStateTree(cons
 
 	FScopedTransaction Transaction(FText::FromString(TEXT("Monolith: Duplicate StateTree")));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(DestPath, WritableError);
+		}
+	}
 	UPackage* DestPackage = CreatePackage(*DestPath);
 	UStateTree* NewST = Cast<UStateTree>(StaticDuplicateObject(SourceST, DestPackage, *DestName));
 	if (!NewST)
@@ -2998,6 +3013,13 @@ FMonolithActionResult FMonolithAIStateTreeActions::HandleBuildStateTreeFromSpec(
 	}
 
 	// Create the StateTree asset
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{

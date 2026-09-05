@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "MonolithPackagePathValidator.h"
 #include "WidgetBlueprint.h"
 #include "Animation/WidgetAnimation.h"
 #include "Blueprint/WidgetTree.h"
@@ -391,6 +392,14 @@ namespace MonolithUIInternal
             return nullptr;
         }
 
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+            {
+                OutError = MonolithCore::WritablePathError(SavePath, WritableError);
+                return nullptr;
+            }
+        }
         UPackage* Package = CreatePackage(*SavePath);
         if (!Package)
         {
@@ -428,6 +437,20 @@ namespace MonolithUIInternal
     // Save and compile a widget blueprint
     inline void SaveAndCompileWidgetBlueprint(UWidgetBlueprint* WBP, const FString& SavePath)
     {
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+            {
+                return;
+            }
+        }
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(WBP->GetPackage()->GetName(), WritableError))
+            {
+                return;
+            }
+        }
         ReconcileWidgetVariableGuids(WBP);
         FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
         FKismetEditorUtilities::CompileBlueprint(WBP);

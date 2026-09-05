@@ -1,4 +1,5 @@
 #include "MonolithChooserActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h" // MonolithKeyToString (5.7/5.8 JSON key shim)
 
@@ -580,6 +581,20 @@ FMonolithActionResult FMonolithChooserActions::HandleDuplicateChooserTree(const 
 	int32 Duplicated = 0;
 
 	// -----------------------------------------------------------------------
+	for (const TSharedPtr<FJsonValue>& SourceValue : *SourcesPtr)
+	{
+		FString SourcePath;
+		if (!SourceValue.IsValid() || !SourceValue->TryGetString(SourcePath) || SourcePath.IsEmpty()) continue;
+		const FString Destination = MakeDestAssetPath(DestFolder, SourcePath);
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(Destination, WritableError))
+			{
+				return MonolithCore::WritablePathError(Destination, WritableError);
+			}
+		}
+	}
+
 	// PASS 1: duplicate ALL sources first and SaveAsset each, so every
 	// duplicate (and its new remap-target path) exists on disk before any
 	// reference walk runs. No remap happens in this pass.
@@ -596,6 +611,13 @@ FMonolithActionResult FMonolithChooserActions::HandleDuplicateChooserTree(const 
 		Entry->SetStringField(TEXT("source"), SourcePath);
 
 		const FString DestPath = MakeDestAssetPath(DestFolder, SourcePath);
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritableError))
+			{
+				return MonolithCore::WritablePathError(DestPath, WritableError);
+			}
+		}
 		UObject* Dup = UEditorAssetLibrary::DuplicateAsset(SourcePath, DestPath);
 		if (!Dup)
 		{

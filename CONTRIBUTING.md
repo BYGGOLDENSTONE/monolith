@@ -257,6 +257,16 @@ Use `.WithErrorData(Data)` to attach a `TSharedPtr<FJsonObject>` containing stru
 
 ### Asset Loading
 
+Before creating or saving an asset, call `MonolithCore::EnsureWritablePackagePath`
+from `MonolithPackagePathValidator.h` and propagate a rejected path through
+`MonolithCore::WritablePathError`. Validate the entire destination set before a
+batch mutates anything, and check the resolved package when loading can follow a
+redirect. `ValidatePackagePath` normalizes and checks shape; it grants no write
+permission. `/Game` (including `/Game/Tests/Monolith`) is writable. Plugin content
+requires an explicit `WritablePluginContentRoots` setting; indexing content via
+`AdditionalContentPaths` alone grants no plugin write permission. `/Engine` and
+`/Script` cannot be made writable through either setting.
+
 Use the 4-tier fallback in `FMonolithAssetUtils`:
 
 ```cpp

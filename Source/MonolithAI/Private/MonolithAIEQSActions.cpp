@@ -1,4 +1,5 @@
 #include "MonolithAIEQSActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithJsonUtils.h"
@@ -758,6 +759,13 @@ FMonolithActionResult FMonolithAIEQSActions::HandleCreateEQSQuery(const TSharedP
 	}
 
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(PackagePath, PkgError);
 	if (!Package)
 	{
@@ -900,6 +908,13 @@ FMonolithActionResult FMonolithAIEQSActions::HandleDuplicateEQSQuery(const TShar
 
 	FString DestAssetName = FPackageName::GetShortName(DestPath);
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(DestPath, WritableError);
+		}
+	}
 	UPackage* DestPackage = MonolithAI::GetOrCreatePackage(DestPath, PkgError);
 	if (!DestPackage)
 	{
@@ -1874,6 +1889,13 @@ FMonolithActionResult FMonolithAIEQSActions::HandleBuildEQSQueryFromSpec(const T
 	}
 
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(SavePath, PkgError);
 	if (!Package)
 	{

@@ -9,6 +9,7 @@
 // 2.B.8 configure_common_text
 // 2.B.9 configure_common_border
 #include "MonolithCommonUIHelpers.h"
+#include "MonolithPackagePathValidator.h"
 
 #if WITH_COMMONUI
 
@@ -16,6 +17,7 @@
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithUICommon.h"
+#include "MonolithUISettings.h"
 
 #include "CommonButtonBase.h"
 #include "CommonTextBlock.h"
@@ -94,6 +96,19 @@ namespace MonolithCommonUIButton
 			Properties = MakeShared<FJsonObject>();
 		}
 
+		// Match the style service's normalized/default folder before it can create an asset.
+		const UMonolithUISettings* Settings = UMonolithUISettings::Get();
+		const FString TargetFolder = UMonolithUISettings::NormalizeFolderPath(PackagePath.IsEmpty()
+			? (Settings ? Settings->GeneratedStylesPath : FString(TEXT("/Game/UI/Styles")))
+			: PackagePath);
+		const FString WritePath = TargetFolder / (AssetName.IsEmpty() ? TEXT("MonolithWriteProbe") : AssetName);
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(WritePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(WritePath, WritableError);
+			}
+		}
 		FUIStyleResolution Resolution = FMonolithUIStyleService::Get().ResolveOrCreate(
 			StyleClass, AssetName, PackagePath, Properties);
 
@@ -394,6 +409,13 @@ namespace MonolithCommonUIButton
 					UBlueprint* BP = LoadObject<UBlueprint>(nullptr, *DefaultPath);
 					if (!BP)
 					{
+						{
+							FString WritableError;
+							if (!MonolithCore::EnsureWritablePackagePath(DefaultPath, WritableError))
+							{
+								return MonolithCore::WritablePathError(DefaultPath, WritableError);
+							}
+						}
 						UPackage* Pkg = CreatePackage(*DefaultPath);
 						if (Pkg)
 						{

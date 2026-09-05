@@ -1,6 +1,7 @@
 #if WITH_GEOMETRYSCRIPT
 
 #include "MonolithMeshRoofActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshProceduralActions.h"
 #include "MonolithMeshHandlePool.h"
 #include "MonolithMeshUtils.h"
@@ -580,6 +581,18 @@ bool FMonolithMeshRoofActions::BuildGambrelRoof(UDynamicMesh* Mesh, const TArray
 
 FMonolithActionResult FMonolithMeshRoofActions::GenerateRoof(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+			}
+		}
+	}
+
 	if (!Pool)
 	{
 		return FMonolithActionResult::Error(GS_ERROR_ROOF);

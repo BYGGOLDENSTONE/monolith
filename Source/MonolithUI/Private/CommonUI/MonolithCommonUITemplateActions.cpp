@@ -33,6 +33,7 @@
 // the whole file compiles to an empty TU when CommonUI is absent.
 
 #include "MonolithCommonUIHelpers.h"
+#include "MonolithPackagePathValidator.h"
 
 #if WITH_COMMONUI
 
@@ -215,6 +216,13 @@ namespace MonolithCommonUITemplate
         if (!SplitSavePath(SavePath, PackagePath, OutAssetName))
         {
             return FMonolithActionResult::Error(TEXT("save_path must contain at least one / separator"));
+        }
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+            {
+                return MonolithCore::WritablePathError(SavePath, WritableError);
+            }
         }
         OutPackage = CreatePackage(*SavePath);
         if (!OutPackage)
@@ -417,6 +425,21 @@ namespace MonolithCommonUITemplate
     static void SaveScaffoldedPackage(UPackage* Package, UWidgetBlueprint* Wbp, const FString& SavePath)
     {
         if (!Package || !Wbp) return;
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(Package->GetName(), WritableError))
+            {
+                return;
+            }
+        }
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+            {
+                return;
+            }
+        }
+
         FAssetRegistryModule::AssetCreated(Wbp);
         Package->MarkPackageDirty();
         FSavePackageArgs SaveArgs;

@@ -85,6 +85,14 @@ UPackage* GetOrCreatePackage(const FString& SavePath, FString& OutError)
 		return nullptr;
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackageName, WritableError))
+		{
+			OutError = WritableError;
+			return nullptr;
+		}
+	}
 	UPackage* Package = CreatePackage(*PackageName);
 	if (!Package)
 	{

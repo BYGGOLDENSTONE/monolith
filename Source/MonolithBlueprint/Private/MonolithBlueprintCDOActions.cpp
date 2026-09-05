@@ -1,4 +1,5 @@
 #include "MonolithBlueprintCDOActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithBlueprintInternal.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
@@ -589,6 +590,14 @@ FMonolithActionResult FMonolithBlueprintCDOActions::HandleSetPropertyAtPath(cons
 			Result.Result->SetStringField(TEXT("resolved_leaf_type"), Resolved.LeafTypeName);
 		}
 		return Result;
+	}
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(TargetObject->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(TargetObject->GetOutermost()->GetName(), WritableError);
+		}
 	}
 
 	// --- Engine edit cradle (matches set_cdo_property / Details-panel write path).

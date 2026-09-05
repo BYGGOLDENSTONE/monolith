@@ -1,4 +1,5 @@
 #include "MonolithAudioAssetActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
@@ -114,6 +115,14 @@ TAsset* FMonolithAudioAssetActions::CreateAudioAsset(const FString& AssetPath, F
 		return nullptr;
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			OutError = WritableError;
+			return nullptr;
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg)
 	{
@@ -597,6 +606,13 @@ FMonolithActionResult FMonolithAudioAssetActions::CreateSoundAttenuation(const T
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundAttenuation* Asset = CreateAudioAsset<USoundAttenuationFactory, USoundAttenuation>(AssetPath, Error);
 	if (!Asset)
 	{
@@ -690,6 +706,13 @@ FMonolithActionResult FMonolithAudioAssetActions::CreateSoundClass(const TShared
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundClass* Asset = CreateAudioAsset<USoundClassFactory, USoundClass>(AssetPath, Error);
 	if (!Asset)
 	{
@@ -886,6 +909,13 @@ FMonolithActionResult FMonolithAudioAssetActions::CreateSoundMix(const TSharedPt
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundMix* Asset = CreateAudioAsset<USoundMixFactory, USoundMix>(AssetPath, Error);
 	if (!Asset)
 	{
@@ -1081,6 +1111,13 @@ FMonolithActionResult FMonolithAudioAssetActions::CreateSoundConcurrency(const T
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundConcurrency* Asset = CreateAudioAsset<USoundConcurrencyFactory, USoundConcurrency>(AssetPath, Error);
 	if (!Asset)
 	{
@@ -1174,6 +1211,13 @@ FMonolithActionResult FMonolithAudioAssetActions::CreateSoundSubmix(const TShare
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	USoundSubmix* Asset = CreateAudioAsset<USoundSubmixFactory, USoundSubmix>(AssetPath, Error);
 	if (!Asset)
 	{
@@ -1620,6 +1664,13 @@ FMonolithActionResult FMonolithAudioAssetActions::CreateTestWave(const TSharedPt
 	FMemory::Memcpy(WavBlob.GetData() + PayloadStart, Pcm.GetData(), PcmByteCount);
 
 	// ---- 6. Create package + USoundWave ------------------------------------
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg)
 	{

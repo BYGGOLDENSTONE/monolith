@@ -1,4 +1,5 @@
 #include "MonolithPoseSearchActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithAssetUtils.h"
 #include "MonolithParamSchema.h"
 
@@ -662,6 +663,13 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleCreatePoseSearchSchema(c
 	if (FMonolithAssetUtils::LoadAssetByPath<UObject>(AssetPath))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 
@@ -726,6 +734,13 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleCreatePoseSearchDatabase
 	if (FMonolithAssetUtils::LoadAssetByPath<UObject>(AssetPath))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 
@@ -1258,6 +1273,13 @@ FMonolithActionResult FMonolithPoseSearchActions::HandleCreateNormalizationSet(c
 	if (FMonolithAssetUtils::LoadAssetByPath<UObject>(AssetPath))
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset already exists at '%s'"), *AssetPath));
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg) return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to create package at '%s'"), *AssetPath));
 

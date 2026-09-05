@@ -1,4 +1,5 @@
 #include "MonolithChooserAuthoringActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 
 #include "Dom/JsonObject.h"
@@ -564,6 +565,13 @@ FMonolithActionResult FMonolithChooserAuthoringActions::HandleCreateChooserTable
 	}
 	AssetName = AssetPath.Mid(LastSlash + 1);
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
+	}
 	UPackage* Pkg = CreatePackage(*AssetPath);
 	if (!Pkg)
 	{

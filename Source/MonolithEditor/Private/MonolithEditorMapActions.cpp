@@ -41,6 +41,7 @@
 #include "Interfaces/IPluginManager.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
+#include "MonolithPackagePathValidator.h"
 
 // =============================================================================
 //  Helpers
@@ -150,6 +151,13 @@ FMonolithActionResult FMonolithEditorMapActions::HandleCreateEmptyMap(const TSha
 	}
 
 	FString PackagePath, AssetName, Error;
+	InPath.RemoveFromEnd(TEXT("/"));
+	Error = MonolithCore::ValidatePackagePath(InPath);
+	if (!Error.IsEmpty()) return MonolithCore::WritablePathError(InPath, Error);
+	if (!MonolithCore::EnsureWritablePackagePath(InPath, Error))
+	{
+		return MonolithCore::WritablePathError(InPath, Error);
+	}
 	if (!SplitAssetPath(InPath, PackagePath, AssetName, Error))
 	{
 		return FMonolithActionResult::Error(Error);

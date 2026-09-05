@@ -1,5 +1,6 @@
 // Copyright tumourlove. All Rights Reserved.
 #include "Actions/Hoisted/TextureIngestActions.h"
+#include "MonolithPackagePathValidator.h"
 
 // Monolith registry
 #include "MonolithToolRegistry.h"
@@ -274,6 +275,13 @@ FMonolithActionResult MonolithUI::FTextureIngestActions::HandleImportTextureFrom
         /*out*/ UniquePackageName, /*out*/ UniqueAssetName);
 
     // --- Create package + texture ---
+    {
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(UniquePackageName, WritableError))
+        {
+            return MonolithCore::WritablePathError(UniquePackageName, WritableError);
+        }
+    }
     UPackage* Package = CreatePackage(*UniquePackageName);
     if (!Package)
     {

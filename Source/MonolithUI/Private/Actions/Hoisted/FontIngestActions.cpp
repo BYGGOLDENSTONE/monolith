@@ -1,5 +1,6 @@
 // Copyright tumourlove. All Rights Reserved.
 #include "Actions/Hoisted/FontIngestActions.h"
+#include "MonolithPackagePathValidator.h"
 
 // Monolith registry
 #include "MonolithToolRegistry.h"
@@ -232,6 +233,13 @@ FMonolithActionResult MonolithUI::FFontIngestActions::HandleImportFontFamily(con
             DesiredFacePackageBase, /*Suffix=*/FString(),
             /*out*/ UniqueFacePackageName, /*out*/ UniqueFaceAssetName);
 
+        {
+            FString WritableError;
+            if (!MonolithCore::EnsureWritablePackagePath(UniqueFacePackageName, WritableError))
+            {
+                return MonolithCore::WritablePathError(UniqueFacePackageName, WritableError);
+            }
+        }
         UPackage* FacePackage = CreatePackage(*UniqueFacePackageName);
         if (!FacePackage)
         {
@@ -307,6 +315,13 @@ FMonolithActionResult MonolithUI::FFontIngestActions::HandleImportFontFamily(con
         DesiredFamilyPackageBase, /*Suffix=*/FString(),
         /*out*/ UniqueFamilyPackageName, /*out*/ UniqueFamilyAssetName);
 
+    {
+        FString WritableError;
+        if (!MonolithCore::EnsureWritablePackagePath(UniqueFamilyPackageName, WritableError))
+        {
+            return MonolithCore::WritablePathError(UniqueFamilyPackageName, WritableError);
+        }
+    }
     UPackage* FamilyPackage = CreatePackage(*UniqueFamilyPackageName);
     if (!FamilyPackage)
     {

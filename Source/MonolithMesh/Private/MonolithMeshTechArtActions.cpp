@@ -1,4 +1,5 @@
 #include "MonolithMeshTechArtActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshUtils.h"
 #include "MonolithToolRegistry.h"
 #include "MonolithParamSchema.h"
@@ -429,6 +430,14 @@ FMonolithActionResult FMonolithMeshTechArtActions::FixMeshQuality(const TSharedP
 	if (AssetPath.IsEmpty())
 	{
 		return FMonolithActionResult::Error(TEXT("'asset_path' is required"));
+	}
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(AssetPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(AssetPath, WritableError);
+		}
 	}
 
 	// Parse operations (default: all)

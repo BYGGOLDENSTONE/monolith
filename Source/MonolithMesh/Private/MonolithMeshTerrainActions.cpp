@@ -1,6 +1,7 @@
 #if WITH_GEOMETRYSCRIPT
 
 #include "MonolithMeshTerrainActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshBuildingTypes.h"
 #include "MonolithMeshProceduralActions.h"
 #include "MonolithMeshHandlePool.h"
@@ -1306,6 +1307,18 @@ FMonolithActionResult FMonolithMeshTerrainActions::AnalyzeBuildingSite(const TSh
 
 FMonolithActionResult FMonolithMeshTerrainActions::CreateFoundation(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+			}
+		}
+	}
+
 	if (!Pool)
 	{
 		return FMonolithActionResult::Error(GS_ERROR_TERRAIN);
@@ -1463,6 +1476,18 @@ FMonolithActionResult FMonolithMeshTerrainActions::CreateFoundation(const TShare
 
 FMonolithActionResult FMonolithMeshTerrainActions::CreateRetainingWall(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+			}
+		}
+	}
+
 	if (!Pool)
 	{
 		return FMonolithActionResult::Error(GS_ERROR_TERRAIN);
@@ -1554,6 +1579,18 @@ FMonolithActionResult FMonolithMeshTerrainActions::CreateRetainingWall(const TSh
 
 FMonolithActionResult FMonolithMeshTerrainActions::PlaceBuildingOnTerrain(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path_prefix"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath + TEXT("_Foundation"), WritableError))
+			{
+				return MonolithCore::WritablePathError(RequestedSavePath + TEXT("_Foundation"), WritableError);
+			}
+		}
+	}
+
 	if (!Pool)
 	{
 		return FMonolithActionResult::Error(GS_ERROR_TERRAIN);

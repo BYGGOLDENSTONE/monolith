@@ -1,6 +1,7 @@
 #if WITH_GEOMETRYSCRIPT
 
 #include "MonolithMeshArchFeatureActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshBuildingTypes.h"
 #include "MonolithMeshProceduralActions.h"
 #include "MonolithMeshHandlePool.h"
@@ -481,6 +482,16 @@ void FMonolithMeshArchFeatureActions::RegisterActions(FMonolithToolRegistry& Reg
 
 FMonolithActionResult FMonolithMeshArchFeatureActions::CreateBalcony(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+		}
+	}
+
 	if (!Pool) return FMonolithActionResult::Error(GS_ERROR_ARCH);
 
 	// Required params
@@ -607,6 +618,16 @@ FMonolithActionResult FMonolithMeshArchFeatureActions::CreateBalcony(const TShar
 
 FMonolithActionResult FMonolithMeshArchFeatureActions::CreatePorch(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+		}
+	}
+
 	if (!Pool) return FMonolithActionResult::Error(GS_ERROR_ARCH);
 
 	FString SavePath;
@@ -818,6 +839,16 @@ FMonolithActionResult FMonolithMeshArchFeatureActions::CreatePorch(const TShared
 
 FMonolithActionResult FMonolithMeshArchFeatureActions::CreateFireEscape(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+		}
+	}
+
 	if (!Pool) return FMonolithActionResult::Error(GS_ERROR_ARCH);
 
 	FString SavePath;
@@ -1124,6 +1155,16 @@ FMonolithActionResult FMonolithMeshArchFeatureActions::CreateFireEscape(const TS
 
 FMonolithActionResult FMonolithMeshArchFeatureActions::CreateRampConnector(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+		}
+	}
+
 	if (!Pool) return FMonolithActionResult::Error(GS_ERROR_ARCH);
 
 	FString SavePath;
@@ -1331,6 +1372,16 @@ FMonolithActionResult FMonolithMeshArchFeatureActions::CreateRampConnector(const
 
 FMonolithActionResult FMonolithMeshArchFeatureActions::CreateRailing(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+		}
+	}
+
 	if (!Pool) return FMonolithActionResult::Error(GS_ERROR_ARCH);
 
 	FString SavePath;

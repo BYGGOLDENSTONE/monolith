@@ -1,4 +1,5 @@
 #include "MonolithGASEffectActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithGASInternal.h"
 
@@ -107,6 +108,13 @@ void MarkModified_Effect(UBlueprint* BP)
 		return;
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return;
+		}
+	}
 	BP->Modify();
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 	FKismetEditorUtilities::CompileBlueprint(BP, EBlueprintCompileOptions::SkipGarbageCollection);
@@ -969,6 +977,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleCreateGameplayEffect(cons
 	}
 
 	// Create package
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{
@@ -1272,6 +1287,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleAddModifier(const TShared
 	FString AssetPath;
 	FMonolithActionResult Err;
 	if (!LoadGEFromParams(Params, BP, GE, AssetPath, Err)) return Err;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	// Parse attribute
 	FString AttrStr;
@@ -1338,6 +1360,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetModifier(const TShared
 	FString AssetPath;
 	FMonolithActionResult Err;
 	if (!LoadGEFromParams(Params, BP, GE, AssetPath, Err)) return Err;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	if (!Params->HasField(TEXT("modifier_index")))
 	{
@@ -1411,6 +1440,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleRemoveModifier(const TSha
 	FString AssetPath;
 	FMonolithActionResult Err;
 	if (!LoadGEFromParams(Params, BP, GE, AssetPath, Err)) return Err;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	bool bHasIndex = Params->HasField(TEXT("modifier_index"));
 	FString AttrStr = Params->GetStringField(TEXT("attribute"));
@@ -1504,6 +1540,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleAddGEComponent(const TSha
 	FString AssetPath;
 	FMonolithActionResult Err;
 	if (!LoadGEFromParams(Params, BP, GE, AssetPath, Err)) return Err;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	FString ComponentType;
 	if (!MonolithGAS::RequireStringParam(Params, TEXT("component_type"), ComponentType, Err)) return Err;
@@ -1674,6 +1717,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetGEComponent(const TSha
 	FString AssetPath;
 	FMonolithActionResult Err;
 	if (!LoadGEFromParams(Params, BP, GE, AssetPath, Err)) return Err;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	FString ComponentType;
 	if (!MonolithGAS::RequireStringParam(Params, TEXT("component_type"), ComponentType, Err)) return Err;
@@ -1836,6 +1886,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetEffectStacking(const T
 	FString AssetPath;
 	FMonolithActionResult Err;
 	if (!LoadGEFromParams(Params, BP, GE, AssetPath, Err)) return Err;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	FString StackTypeStr;
 	if (!MonolithGAS::RequireStringParam(Params, TEXT("stacking_type"), StackTypeStr, Err)) return Err;
@@ -1935,6 +1992,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetDuration(const TShared
 	FString AssetPath;
 	FMonolithActionResult Err;
 	if (!LoadGEFromParams(Params, BP, GE, AssetPath, Err)) return Err;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	FString DurationStr;
 	if (!MonolithGAS::RequireStringParam(Params, TEXT("duration_policy"), DurationStr, Err)) return Err;
@@ -1977,6 +2041,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleSetPeriod(const TSharedPt
 	FString AssetPath;
 	FMonolithActionResult Err;
 	if (!LoadGEFromParams(Params, BP, GE, AssetPath, Err)) return Err;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	if (!Params->HasField(TEXT("period")))
 	{
@@ -2236,6 +2307,14 @@ namespace
 			return nullptr;
 		}
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+			{
+				OutError = MonolithCore::WritablePathError(SavePath, WritableError);
+				return nullptr;
+			}
+		}
 		UPackage* Package = CreatePackage(*SavePath);
 		if (!Package)
 		{
@@ -2872,6 +2951,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleAddExecution(const TShare
 	FString AssetPath;
 	FMonolithActionResult Err;
 	if (!LoadGEFromParams(Params, BP, GE, AssetPath, Err)) return Err;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	FString CalcClassPath;
 	if (!MonolithGAS::RequireStringParam(Params, TEXT("calculation_class"), CalcClassPath, Err)) return Err;
@@ -3465,6 +3551,13 @@ FMonolithActionResult FMonolithGASEffectActions::HandleRemoveGEComponent(const T
 	FString AssetPath;
 	FMonolithActionResult LoadErr;
 	if (!LoadGEFromParams(Params, BP, GE, AssetPath, LoadErr)) return LoadErr;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+		{
+			return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+		}
+	}
 
 	FString TypeStr;
 	FMonolithActionResult Err;

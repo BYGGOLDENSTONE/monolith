@@ -1,4 +1,5 @@
 #include "MonolithGASAttributeActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithAssetUtils.h"
@@ -543,6 +544,13 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleCreateAttributeSet(con
 		}
 
 		FString Error;
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(SavePath, WritableError);
+			}
+		}
 		UPackage* Package = MonolithGAS::GetOrCreatePackage(SavePath, Error);
 		if (!Package)
 		{
@@ -782,6 +790,13 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleAddAttribute(const TSh
 			return FMonolithActionResult::Error(Error);
 		}
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(BP->GetOutermost()->GetName(), WritableError))
+			{
+				return MonolithCore::WritablePathError(BP->GetOutermost()->GetName(), WritableError);
+			}
+		}
 		FName VarName(*AttrName);
 
 		// Check for duplicate
@@ -2240,6 +2255,13 @@ FMonolithActionResult FMonolithGASAttributeActions::HandleCreateAttributeInitDat
 	}
 
 	FString Error;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithGAS::GetOrCreatePackage(SavePath, Error);
 	if (!Package)
 	{

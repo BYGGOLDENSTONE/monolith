@@ -1,4 +1,5 @@
 #include "MonolithMeshHandlePool.h"
+#include "MonolithPackagePathValidator.h"
 
 #if !WITH_GEOMETRYSCRIPT
 // Stub implementations when GeometryScript is not available
@@ -151,6 +152,8 @@ bool UMonolithMeshHandlePool::ReleaseHandle(const FString& HandleName)
 bool UMonolithMeshHandlePool::SaveHandle(const FString& HandleName, const FString& TargetPath, bool bOverwrite, FString& OutError,
 	const FString& CollisionMode, int32 MaxHulls)
 {
+	if (!MonolithCore::EnsureWritablePackagePath(TargetPath, OutError)) return false;
+
 	FString Error;
 	UDynamicMesh* DynMesh = GetHandle(HandleName, Error);
 	if (!DynMesh)

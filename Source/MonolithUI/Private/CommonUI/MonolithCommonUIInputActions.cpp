@@ -7,6 +7,7 @@
 // 2.C.6 set_input_type_override [RUNTIME]
 // 2.C.7 list_platform_input_tables
 #include "MonolithCommonUIHelpers.h"
+#include "MonolithPackagePathValidator.h"
 
 #if WITH_COMMONUI
 
@@ -85,6 +86,13 @@ namespace MonolithCommonUIInput
 			!Params->TryGetStringField(TEXT("display_name"), DisplayName))
 			return FMonolithActionResult::Error(TEXT("table_path, row_name, display_name required"));
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(TablePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(TablePath, WritableError);
+			}
+		}
 		UDataTable* DT = LoadObject<UDataTable>(nullptr, *TablePath);
 		if (!DT) return FMonolithActionResult::Error(FString::Printf(TEXT("DataTable '%s' not found"), *TablePath));
 		if (DT->RowStruct != FCommonInputActionDataBase::StaticStruct())

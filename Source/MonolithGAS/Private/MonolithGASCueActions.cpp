@@ -1,4 +1,5 @@
 #include "MonolithGASCueActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithGASInternal.h"
 #include "MonolithAssetUtils.h"
@@ -247,6 +248,13 @@ FMonolithActionResult FMonolithGASCueActions::HandleCreateGameplayCueNotify(cons
 	}
 
 	// Create package
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*SavePath);
 	if (!Package)
 	{

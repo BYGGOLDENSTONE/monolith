@@ -1,6 +1,7 @@
 #if WITH_GEOMETRYSCRIPT
 
 #include "MonolithMeshBuildingActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshFacadeActions.h"
 #include "MonolithMeshProceduralActions.h"
 #include "MonolithMeshHandlePool.h"
@@ -1649,6 +1650,18 @@ void FMonolithMeshBuildingActions::GenerateIntegratedFacade(UDynamicMesh* Mesh,
 
 FMonolithActionResult FMonolithMeshBuildingActions::CreateBuildingFromGrid(const TSharedPtr<FJsonObject>& Params)
 {
+	FString RequestedSavePath;
+	if (Params->TryGetStringField(TEXT("save_path"), RequestedSavePath) && !RequestedSavePath.IsEmpty())
+	{
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(RequestedSavePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(RequestedSavePath, WritableError);
+			}
+		}
+	}
+
 	if (!Pool)
 	{
 		return FMonolithActionResult::Error(GS_ERROR_BUILDING);

@@ -1,4 +1,5 @@
 #include "MonolithAIScaffoldActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 
@@ -600,6 +601,14 @@ FMonolithActionResult FMonolithAIScaffoldActions::HandleHelloWorldAI(const TShar
 		return ErrResult;
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath / TEXT("MonolithWriteProbe"), WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath / TEXT("MonolithWriteProbe"), WritableError);
+		}
+	}
+
 	FString Name = Params->GetStringField(TEXT("name"));
 	if (Name.IsEmpty())
 	{
@@ -732,6 +741,13 @@ FMonolithActionResult FMonolithAIScaffoldActions::HandleHelloWorldAI(const TShar
 		else
 		{
 			FString PkgError;
+			{
+				FString WritableError;
+				if (!MonolithCore::EnsureWritablePackagePath(CharacterPath, WritableError))
+				{
+					return MonolithCore::WritablePathError(CharacterPath, WritableError);
+				}
+			}
 			UPackage* Package = MonolithAI::GetOrCreatePackage(CharacterPath, PkgError);
 			if (Package)
 			{
@@ -816,6 +832,15 @@ FMonolithActionResult FMonolithAIScaffoldActions::HandleScaffoldCompleteAICharac
 	{
 		return ErrResult;
 	}
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath / TEXT("MonolithWriteProbe"), WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath / TEXT("MonolithWriteProbe"), WritableError);
+		}
+	}
+
 	if (!MonolithAI::RequireStringParam(Params, TEXT("name"), Name, ErrResult))
 	{
 		return ErrResult;
@@ -916,6 +941,13 @@ FMonolithActionResult FMonolithAIScaffoldActions::HandleScaffoldCompleteAICharac
 		else
 		{
 			FString PkgError;
+			{
+				FString WritableError;
+				if (!MonolithCore::EnsureWritablePackagePath(CharacterPath, WritableError))
+				{
+					return MonolithCore::WritablePathError(CharacterPath, WritableError);
+				}
+			}
 			UPackage* Package = MonolithAI::GetOrCreatePackage(CharacterPath, PkgError);
 			if (Package)
 			{
@@ -1171,6 +1203,14 @@ FMonolithActionResult FMonolithAIScaffoldActions::HandleScaffoldTeamSystem(const
 		return ErrResult;
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath / TEXT("MonolithWriteProbe"), WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath / TEXT("MonolithWriteProbe"), WritableError);
+		}
+	}
+
 	const TArray<TSharedPtr<FJsonValue>>* TeamsArr = nullptr;
 	if (!Params->TryGetArrayField(TEXT("teams"), TeamsArr) || !TeamsArr || TeamsArr->Num() == 0)
 	{
@@ -1291,6 +1331,15 @@ FMonolithActionResult FMonolithAIScaffoldActions::HandleScaffoldPatrolInvestigat
 	{
 		return ErrResult;
 	}
+
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(SavePath / TEXT("MonolithWriteProbe"), WritableError))
+		{
+			return MonolithCore::WritablePathError(SavePath / TEXT("MonolithWriteProbe"), WritableError);
+		}
+	}
+
 	if (!MonolithAI::RequireStringParam(Params, TEXT("name"), Name, ErrResult))
 	{
 		return ErrResult;
@@ -1464,6 +1513,13 @@ FMonolithActionResult FMonolithAIScaffoldActions::HandleScaffoldPatrolInvestigat
 		if (MonolithAI::EnsureAssetPathFree(CharacterPath, CharAssetName, PathError))
 		{
 			FString PkgError;
+			{
+				FString WritableError;
+				if (!MonolithCore::EnsureWritablePackagePath(CharacterPath, WritableError))
+				{
+					return MonolithCore::WritablePathError(CharacterPath, WritableError);
+				}
+			}
 			UPackage* Package = MonolithAI::GetOrCreatePackage(CharacterPath, PkgError);
 			if (Package)
 			{

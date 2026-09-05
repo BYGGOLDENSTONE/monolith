@@ -1,4 +1,5 @@
 #include "MonolithAISmartObjectActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
 
@@ -418,6 +419,13 @@ FMonolithActionResult FMonolithAISmartObjectActions::HandleCreateSmartObjectDefi
 	}
 
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(PackagePath, PkgError);
 	if (!Package)
 	{
@@ -1396,6 +1404,13 @@ FMonolithActionResult FMonolithAISmartObjectActions::HandleCreateSOFromTemplate(
 	}
 
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath, WritableError);
+		}
+	}
 	UPackage* Package = MonolithAI::GetOrCreatePackage(PackagePath, PkgError);
 	if (!Package)
 	{
@@ -1528,6 +1543,13 @@ FMonolithActionResult FMonolithAISmartObjectActions::HandleDuplicateSmartObjectD
 
 	FString DestAssetName = FPackageName::GetShortName(DestPath);
 	FString PkgError;
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(DestPath, WritableError))
+		{
+			return MonolithCore::WritablePathError(DestPath, WritableError);
+		}
+	}
 	UPackage* DestPackage = MonolithAI::GetOrCreatePackage(DestPath, PkgError);
 	if (!DestPackage)
 	{

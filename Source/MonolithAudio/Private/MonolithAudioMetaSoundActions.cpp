@@ -1,4 +1,5 @@
 #include "MonolithAudioMetaSoundActions.h"
+#include "MonolithPackagePathValidator.h"
 
 #if WITH_METASOUND
 
@@ -571,6 +572,13 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateMetaSoundSource(cons
 		return FMonolithActionResult::Error(TEXT("UMetaSoundEditorSubsystem not available"));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath / AssetName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath / AssetName, WritableError);
+		}
+	}
 	EMetaSoundBuilderResult SaveResult;
 	TScriptInterface<IMetaSoundDocumentInterface> NewAsset = EditorSub->BuildToAsset(
 		Builder, TEXT("Monolith"), AssetName, PackagePath, SaveResult, nullptr);
@@ -621,6 +629,13 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateMetaSoundPatch(const
 		return FMonolithActionResult::Error(TEXT("UMetaSoundEditorSubsystem not available"));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath / AssetName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath / AssetName, WritableError);
+		}
+	}
 	EMetaSoundBuilderResult SaveResult;
 	TScriptInterface<IMetaSoundDocumentInterface> NewAsset = EditorSub->BuildToAsset(
 		Builder, TEXT("Monolith"), AssetName, PackagePath, SaveResult, nullptr);
@@ -2149,6 +2164,13 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::BuildMetaSoundFromSpec(con
 		return FMonolithActionResult::Error(TEXT("UMetaSoundEditorSubsystem not available"));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath / AssetName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath / AssetName, WritableError);
+		}
+	}
 	EMetaSoundBuilderResult SaveResult;
 	TScriptInterface<IMetaSoundDocumentInterface> NewAsset = EditorSub->BuildToAsset(
 		Builder, TEXT("Monolith"), AssetName, PackagePath, SaveResult, nullptr);
@@ -2231,6 +2253,13 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateMetaSoundPreset(cons
 		return FMonolithActionResult::Error(TEXT("UMetaSoundEditorSubsystem not available"));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath / AssetName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath / AssetName, WritableError);
+		}
+	}
 	EMetaSoundBuilderResult SaveResult;
 	TScriptInterface<IMetaSoundDocumentInterface> NewAsset = EditorSub->BuildToAsset(
 		&Builder, TEXT("Monolith"), AssetName, PackagePath, SaveResult, nullptr);
@@ -2334,6 +2363,13 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateOneShotSfx(const TSh
 		return FMonolithActionResult::Error(TEXT("UMetaSoundEditorSubsystem not available"));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath / AssetName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath / AssetName, WritableError);
+		}
+	}
 	EMetaSoundBuilderResult SaveResult;
 	TScriptInterface<IMetaSoundDocumentInterface> NewAsset = EditorSub->BuildToAsset(
 		Builder, TEXT("Monolith"), AssetName, PackagePath, SaveResult, nullptr);
@@ -2497,6 +2533,13 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateLoopingAmbientMetaSo
 		return FMonolithActionResult::Error(TEXT("UMetaSoundEditorSubsystem not available"));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath / AssetName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath / AssetName, WritableError);
+		}
+	}
 	EMetaSoundBuilderResult SaveResult;
 	TScriptInterface<IMetaSoundDocumentInterface> NewAsset = EditorSub->BuildToAsset(
 		Builder, TEXT("Monolith"), AssetName, PackagePath, SaveResult, nullptr);
@@ -2655,6 +2698,13 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateSynthesizedTone(cons
 		return FMonolithActionResult::Error(TEXT("UMetaSoundEditorSubsystem not available"));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath / AssetName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath / AssetName, WritableError);
+		}
+	}
 	EMetaSoundBuilderResult SaveResult;
 	TScriptInterface<IMetaSoundDocumentInterface> NewAsset = EditorSub->BuildToAsset(
 		Builder, TEXT("Monolith"), AssetName, PackagePath, SaveResult, nullptr);
@@ -2839,6 +2889,13 @@ FMonolithActionResult FMonolithAudioMetaSoundActions::CreateInteractiveMetaSound
 		return FMonolithActionResult::Error(TEXT("UMetaSoundEditorSubsystem not available"));
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath / AssetName, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath / AssetName, WritableError);
+		}
+	}
 	EMetaSoundBuilderResult SaveResult;
 	TScriptInterface<IMetaSoundDocumentInterface> NewAsset = EditorSub->BuildToAsset(
 		Builder, TEXT("Monolith"), AssetName, PackagePath, SaveResult, nullptr);

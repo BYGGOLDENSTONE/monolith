@@ -3480,6 +3480,11 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 FMonolithActionResult FMonolithNiagaraActions::HandleAddEmitter(const TSharedPtr<FJsonObject>& Params)
 {
 	FString SystemPath = NA_GetAssetPath(Params);
+	FString InputPathError;
+	if (!MonolithCore::EnsureWritablePackagePath(SystemPath, InputPathError))
+	{
+		return MonolithCore::WritablePathError(SystemPath, InputPathError);
+	}
 	// Accept common alias names for the emitter asset path
 	FString EmitterAssetPath = Params->GetStringField(TEXT("emitter_asset"));
 	if (EmitterAssetPath.IsEmpty()) EmitterAssetPath = Params->GetStringField(TEXT("emitter_path"));
@@ -3491,6 +3496,12 @@ FMonolithActionResult FMonolithNiagaraActions::HandleAddEmitter(const TSharedPtr
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
 	if (!System) return FMonolithActionResult::Error(TEXT("Failed to load system"));
+
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(System->GetPackage()->GetName(), WritablePathError))
+	{
+		return MonolithCore::WritablePathError(System->GetPackage()->GetName(), WritablePathError);
+	}
 
 	UNiagaraEmitter* EmitterAsset = FMonolithAssetUtils::LoadAssetByPath<UNiagaraEmitter>(EmitterAssetPath);
 	if (!EmitterAsset) return FMonolithActionResult::Error(FString::Printf(
@@ -3837,7 +3848,12 @@ FMonolithActionResult FMonolithNiagaraActions::HandleCreateSystem(const TSharedP
 	// a malformed path (e.g. "//Game/Foo") asserts inside CreatePackage.
 	if (const FString PathError = MonolithCore::ValidatePackagePath(SavePath); !PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(SavePath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(SavePath, WritablePathError);
 	}
 
 	if (!TemplatePath.IsEmpty())
@@ -3902,7 +3918,12 @@ FMonolithActionResult FMonolithNiagaraActions::HandleCreateStatelessEmitter(cons
 
 	if (const FString PathError = MonolithCore::ValidatePackagePath(SavePath); !PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(SavePath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(SavePath, WritablePathError);
 	}
 
 	const FString PackagePath = FPackageName::GetLongPackagePath(SavePath);
@@ -5448,7 +5469,12 @@ FMonolithActionResult FMonolithNiagaraActions::CreateScriptFromHLSL(const TShare
 	// Validate the destination up front — a malformed path asserts inside CreatePackage below.
 	if (const FString PathError = MonolithCore::ValidatePackagePath(SavePath); !PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(SavePath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(SavePath, WritablePathError);
 	}
 
 	// Parse inputs array
@@ -9113,7 +9139,12 @@ FMonolithActionResult FMonolithNiagaraActions::HandleDuplicateSystem(const TShar
 	// Validate the destination before loading the source system or calling AssetTools.
 	if (const FString PathError = MonolithCore::ValidatePackagePath(SavePath); !PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(SavePath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(SavePath, WritablePathError);
 	}
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
@@ -11956,7 +11987,12 @@ FMonolithActionResult FMonolithNiagaraActions::HandleCreateNPC(const TSharedPtr<
 	// Validate the destination before the existing-asset probe or CreatePackage.
 	if (const FString PathError = MonolithCore::ValidatePackagePath(SavePath); !PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(SavePath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(SavePath, WritablePathError);
 	}
 
 	const FString PackagePath = FPackageName::GetLongPackagePath(SavePath);
@@ -12278,7 +12314,12 @@ FMonolithActionResult FMonolithNiagaraActions::HandleCreateEffectType(const TSha
 	// Validate the destination before the existing-asset probe or CreatePackage.
 	if (const FString PathError = MonolithCore::ValidatePackagePath(SavePath); !PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(SavePath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(SavePath, WritablePathError);
 	}
 
 	const FString PackagePath = FPackageName::GetLongPackagePath(SavePath);
@@ -13911,7 +13952,12 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSaveEmitterAsTemplate(const
 	// Validate the destination before loading the source system or creating the package.
 	if (const FString PathError = MonolithCore::ValidatePackagePath(SavePath); !PathError.IsEmpty())
 	{
-		return FMonolithActionResult::Error(PathError);
+		return MonolithCore::WritablePathError(SavePath, PathError);
+	}
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritablePathError))
+	{
+		return MonolithCore::WritablePathError(SavePath, WritablePathError);
 	}
 
 	UNiagaraSystem* System = LoadSystem(SystemPath);
@@ -14138,6 +14184,11 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSaveSystem(const TSharedPtr
 	FString AssetPath = NA_GetAssetPath(Params);
 	if (AssetPath.IsEmpty())
 		return FMonolithActionResult::Error(TEXT("Missing required param: asset_path"));
+	FString InputPathError;
+	if (!MonolithCore::EnsureWritablePackagePath(AssetPath, InputPathError))
+	{
+		return MonolithCore::WritablePathError(AssetPath, InputPathError);
+	}
 
 	bool bOnlyIfDirty = Params->HasField(TEXT("only_if_dirty")) ? Params->GetBoolField(TEXT("only_if_dirty")) : true;
 
@@ -14156,6 +14207,12 @@ FMonolithActionResult FMonolithNiagaraActions::HandleSaveSystem(const TSharedPtr
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Asset '%s' is %s — not a Niagara asset type"), *AssetPath, *LoadedAsset->GetClass()->GetName()));
 
 	UPackage* Pkg = LoadedAsset->GetPackage();
+	FString WritablePathError;
+	if (!MonolithCore::EnsureWritablePackagePath(Pkg->GetName(), WritablePathError))
+	{
+		return MonolithCore::WritablePathError(Pkg->GetName(), WritablePathError);
+	}
+
 	bool bWasDirty = Pkg->IsDirty();
 
 	if (bOnlyIfDirty && !bWasDirty)

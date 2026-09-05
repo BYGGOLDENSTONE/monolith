@@ -1,6 +1,7 @@
 // MonolithCommonUIHelpers.cpp
 // Implementation of shared CommonUI authoring / mutation / runtime helpers.
 #include "MonolithCommonUIHelpers.h"
+#include "MonolithPackagePathValidator.h"
 
 #if WITH_COMMONUI
 
@@ -38,6 +39,13 @@ namespace MonolithCommonUI
 
 		const FString FullPath = FString::Printf(TEXT("%s/%s"), *PackagePath, *AssetName);
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(FullPath, WritableError))
+			{
+				return MonolithCore::WritablePathError(FullPath, WritableError);
+			}
+		}
 		UPackage* Package = CreatePackage(*FullPath);
 		if (!Package)
 		{
@@ -93,6 +101,13 @@ namespace MonolithCommonUI
 		OutWbp = nullptr;
 		OutWidget = nullptr;
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(WbpPath, WritableError))
+			{
+				return MonolithCore::WritablePathError(WbpPath, WritableError);
+			}
+		}
 		UWidgetBlueprint* Wbp = LoadObject<UWidgetBlueprint>(nullptr, *WbpPath);
 		if (!Wbp)
 		{
@@ -103,6 +118,13 @@ namespace MonolithCommonUI
 			return FMonolithActionResult::Error(TEXT("LoadWidgetForMutation: WBP has no WidgetTree"));
 		}
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(Wbp->GetOutermost()->GetName(), WritableError))
+			{
+				return MonolithCore::WritablePathError(Wbp->GetOutermost()->GetName(), WritableError);
+			}
+		}
 		// Traverse the widget tree looking for the named widget.
 		UWidget* Found = nullptr;
 		Wbp->WidgetTree->ForEachWidget([&Found, &WidgetName](UWidget* Widget)
@@ -136,6 +158,13 @@ namespace MonolithCommonUI
 			return FMonolithActionResult::Error(TEXT("CompileAndSaveWidgetBlueprint: Wbp is null"));
 		}
 
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(Wbp->GetOutermost()->GetName(), WritableError))
+			{
+				return MonolithCore::WritablePathError(Wbp->GetOutermost()->GetName(), WritableError);
+			}
+		}
 		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Wbp);
 		FKismetEditorUtilities::CompileBlueprint(Wbp);
 

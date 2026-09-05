@@ -1,4 +1,5 @@
 #include "MonolithMeshAudioActions.h"
+#include "MonolithPackagePathValidator.h"
 #include "MonolithMeshAcoustics.h"
 #include "MonolithMeshUtils.h"
 #include "MonolithMeshAnalysis.h"
@@ -1768,6 +1769,14 @@ FMonolithActionResult FMonolithMeshAudioActions::CreateSurfaceDataTable(const TS
 		}
 	}
 
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath, WritableError);
+		}
+	}
+
 	FScopedAudioTransaction Transaction(FText::FromString(TEXT("Monolith: Create Surface DataTable")));
 
 	// Step 1: Register surface types via UPhysicsSettings CDO
@@ -1827,6 +1836,13 @@ FMonolithActionResult FMonolithMeshAudioActions::CreateSurfaceDataTable(const TS
 	PhysSettingsMutable->SaveConfig();
 
 	// Step 2: Create the DataTable
+	{
+		FString WritableError;
+		if (!MonolithCore::EnsureWritablePackagePath(PackagePath, WritableError))
+		{
+			return MonolithCore::WritablePathError(PackagePath, WritableError);
+		}
+	}
 	UPackage* Package = CreatePackage(*PackagePath);
 	if (!Package)
 	{

@@ -8,6 +8,7 @@
 // 2.A.7 get_activatable_stack_state [RUNTIME]
 // 2.A.8 set_activatable_transition
 #include "MonolithCommonUIHelpers.h"
+#include "MonolithPackagePathValidator.h"
 
 #if WITH_COMMONUI
 
@@ -52,6 +53,13 @@ namespace MonolithCommonUIActivatable
 			return FMonolithActionResult::Error(TEXT("save_path must contain at least one / separator"));
 
 		// Create package + factory-instantiated WBP with parent class UCommonActivatableWidget
+		{
+			FString WritableError;
+			if (!MonolithCore::EnsureWritablePackagePath(SavePath, WritableError))
+			{
+				return MonolithCore::WritablePathError(SavePath, WritableError);
+			}
+		}
 		UPackage* Package = CreatePackage(*SavePath);
 		if (!Package)
 			return FMonolithActionResult::Error(FString::Printf(TEXT("CreatePackage failed for '%s'"), *SavePath));
