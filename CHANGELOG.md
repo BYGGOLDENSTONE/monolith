@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **16.** LogicDriver component scans report not_indexed instead of a sentinel count (dependency-specific build remains unverified).
 - **17.** LogicDriver skill tables match registrations; stale counts are removed and action references are validated.
 - **18.** Dangling references and the obsolete spec redirect are removed; coordination docs match current behavior.
-- **19.** Every push/PR runs CI; repository lint covers templates, versions, skills, logging, ASCII scripts and private files. Generated logging avoids unity collisions.
+- **19.** Every push/PR runs CI; repository lint covers templates, versions, skills, logging, ASCII scripts and private files. The logging check ignores string literals and comments, so code generators still emit `LogTemp` for the user's project unchanged.
 - **20.** Contributor examples use the actual action/delegate/schema/error APIs and list required companion updates.
 - **21.** README release history is consolidated under shipped changelog versions; measured index size and the development banner are retained.
 - **22.** Tool sources are trackable while local build outputs remain ignored; the unused funding template is removed.

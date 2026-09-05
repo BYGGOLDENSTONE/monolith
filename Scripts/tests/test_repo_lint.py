@@ -64,6 +64,20 @@ class RepositoryLintTests(unittest.TestCase):
         self.assertTrue(any("Foo.cpp" in item for item in failures))
         self.assertTrue(any("build.ps1" in item for item in failures))
 
+    def test_generated_code_strings_and_comments_are_not_linted(self):
+        # Code generators emit UE_LOG(LogTemp, ...) for the user's project as
+        # string literals; commented history is not plugin logging either.
+        generated = (
+            'Cpp += TEXT("\\tUE_LOG(' + 'LogTemp, Log, TEXT(\\"hi\\"));\\n");\n'
+            '// was ' + 'LogTemp before the LogMonolith migration\n'
+            '/* multi-line\n ' + 'LogTemp */\n'
+            'UE_LOG(LogMonolith, Log, TEXT("ok"));\n')
+        self.write("Source/Gen.cpp", generated)
+        self.assertEqual(lint.check_source_hygiene(self.root), [])
+        self.assertTrue(lint.uses_log_temp('DEFINE_LOG_CATEGORY_STATIC(' + 'LogTemp, Log, All);'))
+        self.assertFalse(lint.uses_log_temp('TEXT("' + 'LogTemp")'))
+        self.assertFalse(lint.uses_log_temp('LogTemplate'))
+
     def test_private_guard_uses_index_even_for_ignored_files(self):
         self.version_fixture()
         self.write("Templates/.mcp.json.example", "{}")

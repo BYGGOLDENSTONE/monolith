@@ -63,10 +63,29 @@ def check_versions(root):
     return descriptor
 
 
+CPP_STRINGS_AND_COMMENTS = re.compile(
+    r'"(?:\\.|[^"\\\n])*"'      # double-quoted literal
+    r"|'(?:\\.|[^'\\\n])*'"     # char literal
+    r'|//[^\n]*'                # line comment
+    r'|/\*.*?\*/',              # block comment
+    re.S)
+LOG_TEMP = re.compile(r"\bLogTemp\b")
+
+
+def uses_log_temp(source):
+    """True when plugin code references LogTemp outside strings and comments.
+
+    Code generators legitimately emit `UE_LOG(LogTemp, ...)` inside string
+    literals for the user's project; only the plugin's own logging is linted.
+    """
+    return bool(LOG_TEMP.search(CPP_STRINGS_AND_COMMENTS.sub(" ", source)))
+
+
 def check_source_hygiene(root):
     failures = []
     for path in sorted((root / "Source").rglob("*")):
-        if path.is_file() and b"LogTemp" in path.read_bytes():
+        if path.is_file() and path.suffix in (".h", ".cpp", ".inl") and uses_log_temp(
+                path.read_text(encoding="utf-8-sig", errors="replace")):
             failures.append("Disallowed logging category: " + str(path.relative_to(root)))
     for path in sorted((root / "Scripts").glob("*.ps1")):
         if any(value > 127 for value in path.read_bytes()):
