@@ -537,15 +537,15 @@ FMonolithActionResult FMonolithToolRegistry::ExecuteAction(
 	//   1. K3 unknown-param soft-warn (pre-existing behaviour)
 	//   2. Survivor D — AssetPath \→/ rewrite warnings (plan §3.D)
 	//   3. Survivor B — response-shaping warnings (plan §3.B, e.g. _fields/_omit collision)
+	TArray<FString> AllWarnings;
+	AllWarnings.Append(PathParamWarnings);
+	for (const FString& K : Unknown)
+	{
+		AllWarnings.Add(FString::Printf(TEXT("Unknown param '%s' for action '%s:%s'"), *K, *Namespace, *Action));
+	}
+	TSharedPtr<FJsonObject> WarningTarget;
 	if (ActionResult.bSuccess && ActionResult.Result.IsValid())
 	{
-		TArray<FString> AllWarnings;
-		AllWarnings.Append(PathParamWarnings);
-		for (const FString& K : Unknown)
-		{
-			AllWarnings.Add(FString::Printf(TEXT("Unknown param '%s' for action '%s:%s'"), *K, *Namespace, *Action));
-		}
-
 		// Survivor B post-filter — mutates ActionResult.Result in-place and may
 		// append its own warnings (e.g., mutually-exclusive _fields + _omit).
 		// Runs BEFORE attaching the warnings array so its warnings get included
@@ -553,21 +553,36 @@ FMonolithActionResult FMonolithToolRegistry::ExecuteAction(
 		// strip the warnings[] key out from under us via _fields whitelist.
 		// (We attach warnings to ActionResult.Result AFTER ApplyResponseShaping.)
 		ApplyResponseShaping(ActionResult.Result, EffectiveParams, AllWarnings);
-
-		if (AllWarnings.Num() > 0 && ActionResult.Result.IsValid())
+		WarningTarget = ActionResult.Result;
+	}
+	else if (!ActionResult.bSuccess && AllWarnings.Num() > 0)
+	{
+		const TSharedPtr<FJsonObject>* ExistingData = nullptr;
+		if (ActionResult.ErrorData.IsValid() && ActionResult.ErrorData->TryGetObject(ExistingData)
+			&& ExistingData && ExistingData->IsValid())
 		{
-			TArray<TSharedPtr<FJsonValue>> Existing;
-			const TArray<TSharedPtr<FJsonValue>>* Found = nullptr;
-			if (ActionResult.Result->TryGetArrayField(TEXT("warnings"), Found) && Found)
-			{
-				Existing = *Found;
-			}
-			for (const FString& W : AllWarnings)
-			{
-				Existing.Add(MakeShared<FJsonValueString>(W));
-			}
-			ActionResult.Result->SetArrayField(TEXT("warnings"), Existing);
+			WarningTarget = *ExistingData;
 		}
+		else
+		{
+			WarningTarget = MakeShared<FJsonObject>();
+			if (ActionResult.ErrorData.IsValid()) WarningTarget->SetField(TEXT("value"), ActionResult.ErrorData);
+			ActionResult.WithErrorData(WarningTarget);
+		}
+	}
+	if (AllWarnings.Num() > 0 && WarningTarget.IsValid())
+	{
+		TArray<TSharedPtr<FJsonValue>> Existing;
+		const TArray<TSharedPtr<FJsonValue>>* Found = nullptr;
+		if (WarningTarget->TryGetArrayField(TEXT("warnings"), Found) && Found)
+		{
+			Existing = *Found;
+		}
+		for (const FString& W : AllWarnings)
+		{
+			Existing.Add(MakeShared<FJsonValueString>(W));
+		}
+		WarningTarget->SetArrayField(TEXT("warnings"), Existing);
 	}
 
 	return ActionResult;

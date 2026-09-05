@@ -287,4 +287,55 @@ bool FMonolithParamKindXcopyPayloadIntactTest::RunTest(const FString& /*Paramete
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithFailureWarningsTest, "Monolith.ParamKind.FailureWarnings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMonolithFailureWarningsTest::RunTest(const FString& Parameters)
+{
+	const FString Ns = TEXT("monolith_test_failure_warnings");
+	const FString PreviousStrict = FPlatformMisc::GetEnvironmentVariable(TEXT("STRICT_PARAMS"));
+	FPlatformMisc::SetEnvironmentVar(TEXT("STRICT_PARAMS"), TEXT("0"));
+	ON_SCOPE_EXIT
+	{
+		FMonolithToolRegistry::Get().UnregisterNamespace(Ns);
+		FPlatformMisc::SetEnvironmentVar(TEXT("STRICT_PARAMS"), *PreviousStrict);
+	};
+	AddExpectedMessage(TEXT("Unknown param 'typo'"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, 2);
+	for (bool bObjectData : {true, false})
+	{
+		FMonolithToolRegistry::Get().RegisterAction(Ns, TEXT("fail"), TEXT("Fail with existing error data"),
+			FMonolithActionHandler::CreateLambda([bObjectData](const TSharedPtr<FJsonObject>&)
+			{
+				auto Error = FMonolithActionResult::Error(TEXT("Fixture failure"));
+				if (bObjectData)
+				{
+					auto Data = MakeShared<FJsonObject>();
+					Data->SetStringField(TEXT("reason"), TEXT("fixture"));
+					Data->SetArrayField(TEXT("warnings"), {MakeShared<FJsonValueString>(TEXT("existing warning"))});
+					Error.WithErrorData(Data);
+				}
+				else Error.ErrorData = MakeShared<FJsonValueString>(TEXT("original data"));
+				return Error;
+			}), FParamSchemaBuilder().RequiredAssetPath(TEXT("asset_path"), TEXT("Fixture path")).Build());
+		auto Params = MakeShared<FJsonObject>();
+		Params->SetStringField(TEXT("asset_path"), TEXT("/Game/Foo\\Bar"));
+		Params->SetBoolField(TEXT("typo"), true);
+		Params->SetArrayField(TEXT("_fields"), {MakeShared<FJsonValueString>(TEXT("unrelated"))});
+		const auto Result = FMonolithToolRegistry::Get().ExecuteAction(Ns, TEXT("fail"), Params);
+		TestFalse(TEXT("Failure retained"), Result.bSuccess);
+		if (!TestTrue(TEXT("Failure has warning data"), Result.ErrorData.IsValid())) continue;
+		const auto Data = Result.ErrorData->AsObject();
+		TestEqual(TEXT("Original data preserved despite shaping flag"),
+			Data->GetStringField(bObjectData ? TEXT("reason") : TEXT("value")),
+			FString(bObjectData ? TEXT("fixture") : TEXT("original data")));
+		TArray<FString> Warnings;
+		for (const auto& Value : Data->GetArrayField(TEXT("warnings"))) Warnings.Add(Value->AsString());
+		TestTrue(TEXT("Typo hint retained on failure"), MonolithParamKindTestDetail::AnyWarningContains(Warnings, TEXT("Unknown param 'typo'")));
+		TestTrue(TEXT("Path rewrite hint retained on failure"), MonolithParamKindTestDetail::AnyWarningContains(Warnings, TEXT("Normalised backslashes")));
+		if (bObjectData) TestTrue(TEXT("Existing warning preserved"), Warnings.Contains(TEXT("existing warning")));
+		FMonolithToolRegistry::Get().UnregisterNamespace(Ns);
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
