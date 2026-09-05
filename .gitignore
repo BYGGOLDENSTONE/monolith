@@ -26,8 +26,12 @@ Docs/research/
 # CommonUI shipped M0.5 (v0.14.0, 2026-04-19) — tracked in git
 # Conditional on WITH_COMMONUI; MONOLITH_RELEASE_BUILD=1 compiles it out
 
-# Build tools and proxy binaries — local to dev machine
-Tools/
+# Local tool helpers and CMake build outputs (tool sources are public)
+/Tools/**/_compile.bat
+/Tools/**/build/
+/Tools/**/CMakeFiles/
+/Tools/**/CMakeCache.txt
+/Tools/**/cmake_install.cmake
 
 # Agent training infrastructure — local to dev machine, not part of core plugin
 Scripts/vfx_training_harness.py
