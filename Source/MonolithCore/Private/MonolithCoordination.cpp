@@ -195,6 +195,23 @@ FMonolithActionResult FMonolithCoordination::CheckAccess(const FString& Namespac
 	return FMonolithActionResult::Success(nullptr);
 }
 
+FMonolithCoordination::FBatchScope::FBatchScope(FMonolithCoordination& InCoordinator)
+	: Coordinator(InCoordinator)
+{
+	check(IsInGameThread());
+	FScopeLock Lock(&Coordinator.Mutex);
+	PreviousBatch = Coordinator.CurrentBatch;
+	Coordinator.CurrentBatch = this;
+}
+
+FMonolithCoordination::FBatchScope::~FBatchScope()
+{
+	FScopeLock Lock(&Coordinator.Mutex);
+	check(Coordinator.CurrentBatch == this);
+	Coordinator.CurrentBatch = PreviousBatch;
+	if (bPinned) { --Coordinator.ActiveExecutions; }
+}
+
 FMonolithCoordination::FExecutionScope::FExecutionScope(FMonolithCoordination& InCoordinator, const FString& Token)
 	: Coordinator(InCoordinator), bLeased(!Token.IsEmpty())
 {
@@ -203,7 +220,15 @@ FMonolithCoordination::FExecutionScope::FExecutionScope(FMonolithCoordination& I
 	PreviousToken = Coordinator.ExecutionToken;
 	Coordinator.ExecutionToken = Token;
 	++Coordinator.DispatchDepth;
-	if (bLeased) { ++Coordinator.ActiveExecutions; }
+	if (bLeased)
+	{
+		++Coordinator.ActiveExecutions;
+		if (Coordinator.CurrentBatch && !Coordinator.CurrentBatch->bPinned)
+		{
+			Coordinator.CurrentBatch->bPinned = true;
+			++Coordinator.ActiveExecutions;
+		}
+	}
 }
 
 FMonolithCoordination::FExecutionScope::~FExecutionScope()

@@ -201,4 +201,57 @@ bool FMonolithLeaseRegistryTest::RunTest(const FString& Parameters)
 	Token.Reset();
 	return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithLeaseBatchPinTest, "Monolith.Coordination.BatchLeasePin",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMonolithLeaseBatchPinTest::RunTest(const FString& Parameters)
+{
+	using namespace MonolithCoordinationTest;
+	double Now = 0;
+	FMonolithCoordination Coordinator([&Now] { return Now; });
+	{
+		FMonolithCoordination::FBatchScope UnleasedBatch(Coordinator);
+		FString UnleasedToken;
+		TestTrue(TEXT("Unowned call allowed without lease"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), MakeShared<FJsonObject>(), UnleasedToken, false).bSuccess);
+		{
+			FMonolithCoordination::FExecutionScope Item(Coordinator, UnleasedToken);
+		}
+		TestFalse(TEXT("Unowned execution does not pin batch"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("executing")));
+	}
+	const FString Token = TokenOf(Coordinator.Handle(Acquire()));
+	auto OwnedParams = Request(TEXT("unused"), Token);
+	auto Empty = MakeShared<FJsonObject>();
+	FString ExecutionToken;
+	int32 Executed = 0;
+	{
+		FMonolithCoordination::FBatchScope Batch(Coordinator);
+		TestFalse(TEXT("Empty batch scope does not pin a lease"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("executing")));
+		TestTrue(TEXT("First batch item validates independently"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), OwnedParams, ExecutionToken, false).bSuccess);
+		{
+			FMonolithCoordination::FExecutionScope Item(Coordinator, ExecutionToken);
+			++Executed;
+			Now = 11;
+			{
+				FMonolithCoordination::FBatchScope ReentrantBatch(Coordinator);
+				TestEqual(TEXT("Modal reentry is still rejected"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), OwnedParams, ExecutionToken, false).ErrorCode, FMonolithJsonUtils::ErrCoordinationBusy);
+			}
+		}
+		TestTrue(TEXT("Batch retains pin between items"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("executing")));
+		TestEqual(TEXT("Batch never inherits token into unowned item"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), Empty, ExecutionToken, false).ErrorCode, FMonolithJsonUtils::ErrCoordinationBusy);
+		TestEqual(TEXT("Mixed token stays invalid"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), Request(TEXT("unused"), TEXT("wrong")), ExecutionToken, false).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
+		auto EmptyToken = MakeShared<FJsonObject>();
+		EmptyToken->SetStringField(TEXT("_lease_token"), TEXT(""));
+		TestEqual(TEXT("Explicit empty token stays invalid"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), EmptyToken, ExecutionToken, false).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
+		TestTrue(TEXT("Second batch item passes after original deadline"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), OwnedParams, ExecutionToken, false).bSuccess);
+		{
+			FMonolithCoordination::FExecutionScope Item(Coordinator, ExecutionToken);
+			++Executed;
+		}
+		TestEqual(TEXT("Release waits for batch completion"), Coordinator.Handle(Request(TEXT("release"), Token)).ErrorCode, FMonolithJsonUtils::ErrCoordinationBusy);
+	}
+	TestEqual(TEXT("Both leased batch items executed"), Executed, 2);
+	TestFalse(TEXT("Batch pin cleared"), Coordinator.Handle(Request(TEXT("status"))).Result->GetBoolField(TEXT("executing")));
+	TestEqual(TEXT("Expired lease no longer pinned after batch"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), OwnedParams, ExecutionToken, false).ErrorCode, FMonolithJsonUtils::ErrInvalidLease);
+	TestTrue(TEXT("No token context leaks after batch"), Coordinator.CheckAccess(TEXT("editor"), TEXT("write"), Empty, ExecutionToken, false).bSuccess);
+	return true;
+}
 #endif

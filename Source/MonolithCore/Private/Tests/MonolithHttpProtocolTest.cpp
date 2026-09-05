@@ -3,6 +3,7 @@
 #include "MonolithToolRegistry.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithSettings.h"
+#include "MonolithCoordination.h"
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 
@@ -162,6 +163,42 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
         const auto Structured = Result->GetObjectField(TEXT("structuredContent"));
         TestEqual(TEXT("Error code retained"), Structured->GetIntegerField(TEXT("code")), FMonolithJsonUtils::ErrCoordinationBusy);
         TestFalse(TEXT("Retry evidence retained"), Structured->GetObjectField(TEXT("data"))->GetBoolField(TEXT("executed")));
+    }
+
+    auto& Coordinator = FMonolithCoordination::Get();
+    auto LeaseRequest = MakeShared<FJsonObject>();
+    LeaseRequest->SetStringField(TEXT("operation"), TEXT("acquire"));
+    LeaseRequest->SetStringField(TEXT("owner"), TEXT("http-batch-automation"));
+    LeaseRequest->SetNumberField(TEXT("ttl_seconds"), 120);
+    const auto Acquired = Coordinator.Handle(LeaseRequest);
+    if (TestTrue(TEXT("Batch fixture acquires lease"), Acquired.bSuccess))
+    {
+        const FString Token = Acquired.Result->GetStringField(TEXT("_lease_token"));
+        auto MakeOwnedWrite = [&Write](const FString& ItemToken, bool bStringParams)
+        {
+            auto Item = FMonolithJsonUtils::Parse(Write);
+            auto Arguments = Item->GetObjectField(TEXT("params"))->GetObjectField(TEXT("arguments"));
+            auto Nested = MakeShared<FJsonObject>();
+            Nested->SetStringField(TEXT("_lease_token"), ItemToken);
+            if (bStringParams) Arguments->SetStringField(TEXT("params"), FMonolithJsonUtils::Serialize(Nested));
+            else Arguments->SetObjectField(TEXT("params"), Nested);
+            return FMonolithJsonUtils::Serialize(Item);
+        };
+        const FString OwnedWrite = MakeOwnedWrite(Token, false);
+        const FString StringOwnedWrite = MakeOwnedWrite(Token, true);
+        const int32 BeforeBatch = Executed;
+        Post(TEXT("[42,") + OwnedWrite + TEXT("]"));
+        TestEqual(TEXT("Malformed item does not prevent later owned execution"), Executed, BeforeBatch + 1);
+        TestTrue(TEXT("Malformed batch item retains invalid-request response"), Body.Contains(TEXT("-32600")));
+        Post(TEXT("[") + OwnedWrite + TEXT(",") + MakeOwnedWrite(TEXT("wrong"), false) + TEXT(",") + StringOwnedWrite + TEXT("]"));
+        TestEqual(TEXT("Only valid mixed-token items execute"), Executed, BeforeBatch + 3);
+        TestTrue(TEXT("Mixed-token batch retains invalid-lease error"), Body.Contains(FString::FromInt(FMonolithJsonUtils::ErrInvalidLease)));
+        Post(TEXT("[") + OwnedWrite + TEXT(",") + Write + TEXT("]"));
+        TestEqual(TEXT("Unowned item never inherits batch token"), Executed, BeforeBatch + 4);
+        TestTrue(TEXT("Unowned item retains busy error"), Body.Contains(FString::FromInt(FMonolithJsonUtils::ErrCoordinationBusy)));
+        LeaseRequest->SetStringField(TEXT("operation"), TEXT("release"));
+        LeaseRequest->SetStringField(TEXT("_lease_token"), Token);
+        TestTrue(TEXT("Release succeeds after batch response"), Coordinator.Handle(LeaseRequest).bSuccess);
     }
 
     FHttpServerRequest Get;

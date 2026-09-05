@@ -2,6 +2,7 @@
 #include "MonolithCoreModule.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithToolRegistry.h"
+#include "MonolithCoordination.h"
 #include "MonolithSettings.h"
 #include "HttpServerModule.h"
 #include "HttpServerRequest.h"
@@ -318,6 +319,8 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 	}
 
 	// Process each request
+	TUniquePtr<FMonolithCoordination::FBatchScope> BatchScope;
+	if (bBatch) { BatchScope = MakeUnique<FMonolithCoordination::FBatchScope>(FMonolithCoordination::Get()); }
 	for (const TSharedPtr<FJsonObject>& Req : Requests)
 	{
 		TSharedPtr<FJsonObject> Resp = ProcessJsonRpcRequest(Req);
@@ -327,6 +330,7 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 			Responses.Add(Resp);
 		}
 	}
+	BatchScope.Reset();
 
 	// Build response
 	FString ResponseBody;

@@ -18,6 +18,24 @@ public:
 	FMonolithActionResult CheckAccess(const FString& Namespace, const FString& Action,
 		const TSharedPtr<FJsonObject>& Params, FString& OutExecutionToken, bool bInheritLeaseContext = true);
 
+	class FExecutionScope;
+	/** Pins the first validated leased execution until the HTTP batch finishes.
+	 * Each item still validates its own token; no dispatch context is inherited.
+	 */
+	class FBatchScope
+	{
+	public:
+		explicit FBatchScope(FMonolithCoordination& InCoordinator);
+		~FBatchScope();
+		FBatchScope(const FBatchScope&) = delete;
+		FBatchScope& operator=(const FBatchScope&) = delete;
+	private:
+		friend class FExecutionScope;
+		FMonolithCoordination& Coordinator;
+		FBatchScope* PreviousBatch;
+		bool bPinned = false;
+	};
+
 	/** Synchronous nested registry dispatch inherits the validated parent's token.
 	 * Active calls finish even if their lease expires; expiration applies before the
 	 * next top-level call. Never propagate this context to asynchronous/background work.
@@ -49,4 +67,5 @@ private:
 	int32 DispatchDepth = 0;
 	// Accessed only on the game thread, never by transport worker threads.
 	FString ExecutionToken;
+	FBatchScope* CurrentBatch = nullptr;
 };

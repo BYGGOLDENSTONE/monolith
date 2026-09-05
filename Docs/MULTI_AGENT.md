@@ -60,6 +60,8 @@ Renew before expiry and retain the lease through asynchronous compile completion
 
 Release after verification:
 
+Legacy HTTP JSON-RPC batches pin a validated lease through the remaining items. Every protected item still needs its own token. Send `release` after the batch response arrives; release inside a pinned batch is rejected as executing.
+
 ```json
 {"operation":"release","_lease_token":"TOKEN_FROM_ACQUIRE"}
 ```
