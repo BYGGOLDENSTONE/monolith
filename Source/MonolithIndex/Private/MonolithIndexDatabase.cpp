@@ -233,6 +233,10 @@ bool FMonolithIndexDatabase::Open(const FString& InDbPath)
 	if (Database)
 	{
 		Close();
+		if (Database)
+		{
+			return false;
+		}
 	}
 
 	DbPath = InDbPath;
@@ -364,7 +368,10 @@ void FMonolithIndexDatabase::Close()
 {
 	if (Database)
 	{
-		Database->Close();
+		if (!ensureAlwaysMsgf(Database->Close(), TEXT("Monolith SQLite Close failed: finalize all outstanding statements before closing the index database")))
+		{
+			return;
+		}
 		delete Database;
 		Database = nullptr;
 	}

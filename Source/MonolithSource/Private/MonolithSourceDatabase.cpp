@@ -100,6 +100,10 @@ bool FMonolithSourceDatabase::Open(const FString& DbPath)
 	if (Database)
 	{
 		Close();
+		if (Database)
+		{
+			return false;
+		}
 	}
 
 	CachedDbPath = DbPath;
@@ -150,7 +154,10 @@ void FMonolithSourceDatabase::Close()
 	FScopeLock Lock(&DbLock);
 	if (Database)
 	{
-		Database->Close();
+		if (!ensureAlwaysMsgf(Database->Close(), TEXT("Monolith SQLite Close failed: finalize all outstanding statements before closing the source database")))
+		{
+			return;
+		}
 		delete Database;
 		Database = nullptr;
 	}
@@ -932,9 +939,11 @@ bool FMonolithSourceDatabase::OpenForWriting(const FString& DbPath)
 
 	if (Database)
 	{
-		Database->Close();
-		delete Database;
-		Database = nullptr;
+		Close();
+		if (Database)
+		{
+			return false;
+		}
 	}
 
 	CachedDbPath = DbPath;

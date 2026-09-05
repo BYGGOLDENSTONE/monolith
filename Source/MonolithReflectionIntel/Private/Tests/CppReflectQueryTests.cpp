@@ -29,7 +29,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
-#include "SQLiteDatabase.h"
+#include "MonolithSQLiteDatabase.h"
 
 namespace MonolithCppReflectTestDetail
 {
@@ -133,7 +133,7 @@ bool FCppReflectUHTArtefactParseTest::RunTest(const FString& /*Parameters*/)
 		return false;
 	}
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath))
 	{
@@ -224,7 +224,7 @@ bool FCppReflectEmptyRootsDegradedTest::RunTest(const FString& /*Parameters*/)
 {
 	using namespace MonolithCppReflectTestDetail;
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath))
 	{
@@ -269,7 +269,7 @@ bool FCppReflectCursorPaginationTest::RunTest(const FString& /*Parameters*/)
 {
 	using namespace MonolithCppReflectTestDetail;
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath))
 	{
@@ -360,7 +360,7 @@ bool FCppReflectFindSpecifierTest::RunTest(const FString& /*Parameters*/)
 		return false;
 	}
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath))
 	{
@@ -421,7 +421,9 @@ bool FCppReflectFindSpecifierTest::RunTest(const FString& /*Parameters*/)
 	TestTrue(TEXT("ASampleActor surfaces under lowercase specifier 'abstract' (COLLATE NOCASE)"),
 		bFoundASampleActorCaseInsensitive);
 
-	Db.Close();
+	TestTrue(TEXT("Finalize specifier statement before closing database"), Stmt.Destroy());
+	TestTrue(TEXT("Finalize lowercase specifier statement before closing database"), LowerStmt.Destroy());
+	TestTrue(TEXT("Close database after finalizing statements"), Db.Close());
 	IFileManager::Get().Delete(*DbPath, false, true);
 	IFileManager::Get().DeleteDirectory(*WorkRoot, false, true);
 	return true;

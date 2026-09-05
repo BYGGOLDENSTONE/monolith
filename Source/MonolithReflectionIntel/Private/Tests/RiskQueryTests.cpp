@@ -25,7 +25,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
-#include "SQLiteDatabase.h"
+#include "MonolithSQLiteDatabase.h"
 
 namespace MonolithRiskTestDetail
 {
@@ -87,7 +87,7 @@ bool FRiskGitCoChangeSchemaTest::RunTest(const FString& /*Parameters*/)
 {
 	using namespace MonolithRiskTestDetail;
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath))
 	{
@@ -158,7 +158,7 @@ bool FRiskConditionalGateSweepTest::RunTest(const FString& /*Parameters*/)
 		FFileHelper::SaveStringToFile(CppText, *StagedCpp);
 	}
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath))
 	{
@@ -223,7 +223,7 @@ bool FRiskHotspotScoreFormulaTest::RunTest(const FString& /*Parameters*/)
 {
 	using namespace MonolithRiskTestDetail;
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath))
 	{
@@ -320,7 +320,8 @@ bool FRiskHotspotScoreFormulaTest::RunTest(const FString& /*Parameters*/)
 		AddError(TEXT("Heavy.cpp row not found in risk_hotspot_scores"));
 	}
 
-	Db.Close();
+	TestTrue(TEXT("Finalize hotspot statement before closing database"), Stmt.Destroy());
+	TestTrue(TEXT("Close database after finalizing statements"), Db.Close());
 	IFileManager::Get().Delete(*DbPath, false, true);
 	return true;
 }
@@ -339,7 +340,7 @@ bool FRiskCoChangeWeightingTest::RunTest(const FString& /*Parameters*/)
 {
 	using namespace MonolithRiskTestDetail;
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath))
 	{

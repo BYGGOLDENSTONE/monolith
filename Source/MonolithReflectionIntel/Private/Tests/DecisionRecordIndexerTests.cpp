@@ -25,7 +25,7 @@
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
 #include "Misc/Timespan.h"
-#include "SQLiteDatabase.h"
+#include "MonolithSQLiteDatabase.h"
 
 namespace MonolithDecisionTestDetail
 {
@@ -95,7 +95,7 @@ bool FDecisionSchemaBootstrapTest::RunTest(const FString& /*Parameters*/)
 {
 	using namespace MonolithDecisionTestDetail;
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath))
 	{
@@ -141,7 +141,7 @@ bool FDecisionHeuristicAccuracyTest::RunTest(const FString& /*Parameters*/)
 		return true;
 	}
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath))
 	{
@@ -158,6 +158,8 @@ bool FDecisionHeuristicAccuracyTest::RunTest(const FString& /*Parameters*/)
 	TestTrue(TEXT("At least 4 decision rows from fixture corpus"), Rows >= 4);
 
 	// Assert 03_non_decision contributed zero rows — direct query.
+	// Keep marker names out of the negative fixture's prose: even a sentence
+	// denying "because"/"rationale"/"evidence" matches the documented heuristic.
 	FSQLitePreparedStatement Stmt;
 	TestTrue(TEXT("Prepare LIKE query"),
 		Stmt.Create(Db, TEXT("SELECT COUNT(*) FROM decision_records WHERE source_path LIKE ?;")));
@@ -169,7 +171,8 @@ bool FDecisionHeuristicAccuracyTest::RunTest(const FString& /*Parameters*/)
 		TestEqual(TEXT("03_non_decision contributes zero rows"), NonDecCount, 0);
 	}
 
-	Db.Close();
+	TestTrue(TEXT("Finalize heuristic statement before closing database"), Stmt.Destroy());
+	TestTrue(TEXT("Close database after finalizing statements"), Db.Close());
 	IFileManager::Get().Delete(*DbPath, /*bRequireExists=*/false, /*bEvenReadOnly=*/true);
 	return true;
 }
@@ -194,7 +197,7 @@ bool FDecisionSupersessionChainTest::RunTest(const FString& /*Parameters*/)
 		return true;
 	}
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath)) { AddError(TEXT("OpenTempDb failed")); return false; }
 
@@ -252,7 +255,7 @@ bool FDecisionStalenessFlagTest::RunTest(const FString& /*Parameters*/)
 	const FDateTime AgedTime = FDateTime::UtcNow() - FTimespan::FromDays(60.0);
 	IFileManager::Get().SetTimeStamp(*Dst, AgedTime);
 
-	FSQLiteDatabase Db;
+	FMonolithSQLiteDatabase Db;
 	FString DbPath;
 	if (!OpenTempDb(Db, DbPath)) { AddError(TEXT("OpenTempDb failed")); return false; }
 
@@ -274,7 +277,8 @@ bool FDecisionStalenessFlagTest::RunTest(const FString& /*Parameters*/)
 	}
 	TestTrue(TEXT("At least one stale row past 30-day cutoff"), StaleCount >= 1);
 
-	Db.Close();
+	TestTrue(TEXT("Finalize staleness statement before closing database"), Stmt.Destroy());
+	TestTrue(TEXT("Close database after finalizing statements"), Db.Close());
 	IFileManager::Get().Delete(*DbPath, /*bRequireExists=*/false, /*bEvenReadOnly=*/true);
 	IFileManager::Get().DeleteDirectory(*WorkDir, /*bRequireExists=*/false, /*bTree=*/true);
 	return true;

@@ -131,6 +131,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMonolithCursorPaginationQueryMismatchRejectionTest::RunTest(const FString& /*Parameters*/)
 {
 	using namespace MonolithCursorPaginationTestDetail;
+	if (!IsSourceIndexAvailable())
+	{
+		AddInfo(TEXT("Skipping: source index not available in this test run"));
+		return true;
+	}
 
 	// Fabricate a cursor with a deliberately bogus query hash. ComputeQueryHash
 	// for ("FooBarBaz",...) will not produce 0x12345678; the dispatch must
