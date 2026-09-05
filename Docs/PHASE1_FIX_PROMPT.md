@@ -19,6 +19,7 @@ You are working in the Monolith repository, an Unreal Engine 5.7 editor plugin t
 - Scope discipline: no job framework, no per-asset locks, no MCP resources, no recipes namespace, no auth. Those are Phase 3. If an item needs one of them, stop that item, note it, continue.
 - Behaviour changes that alter an action's default (item 3) must be listed in `CHANGELOG.md` under `## Unreleased` with a `**Breaking:**` prefix.
 - Keep `.ps1` ASCII-only, use `LogMonolith`, no whitespace churn. Read the cited code before editing; line numbers may have drifted. If a cited behaviour no longer exists, skip and say why.
+- Work in the main checkout. If you create a `git worktree` (or any copy of the repository) for an isolated build or test, remove it with `git worktree remove` as soon as that item is committed, and never leave one under `Saved/`, the system temp directory, or next to the repository. Phase 0 left five behind. `git worktree list` must show only the main checkout in your final report.
 
 ## Items
 
