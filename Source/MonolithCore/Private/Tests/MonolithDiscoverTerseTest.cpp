@@ -696,10 +696,21 @@ bool FMonolithDiscoverInventoryTest::RunTest(const FString& Parameters)
 		{
 			const auto Row = Value->AsObject();
 			TestEqual(TEXT("Action names require explicit opt-in"), Row->HasField(TEXT("actions")), bIncludeNames);
-			TestFalse(TEXT("Every namespace has a short description"), Row->GetStringField(TEXT("description")).IsEmpty());
+			// In-tree namespaces carry a curated one-line description; unknown
+			// namespaces (this fixture, sibling plugins) omit the field rather
+			// than emitting a placeholder.
+			if (Row->HasField(TEXT("description")))
+			{
+				TestFalse(TEXT("Description is never an empty string"), Row->GetStringField(TEXT("description")).IsEmpty());
+			}
+			if (Row->GetStringField(TEXT("namespace")) == TEXT("monolith"))
+			{
+				TestTrue(TEXT("In-tree namespace has a description"), Row->HasField(TEXT("description")));
+			}
 			TestTrue(TEXT("Every namespace has categories array"), Row->HasTypedField<EJson::Array>(TEXT("categories")));
 			if (Row->GetStringField(TEXT("namespace")) != Namespace) continue;
 			bFoundFixture = true;
+			TestFalse(TEXT("Unknown namespace has no placeholder description"), Row->HasField(TEXT("description")));
 			TestEqual(TEXT("Fixture count unchanged"), Row->GetIntegerField(TEXT("action_count")), 4);
 			const auto& Categories = Row->GetArrayField(TEXT("categories"));
 			if (TestEqual(TEXT("Categories are unique and omit empty"), Categories.Num(), 2))

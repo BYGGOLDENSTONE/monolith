@@ -102,7 +102,7 @@ List available tool namespaces with action counts, short descriptions, and sorte
 | `category` | string | optional | Filter actions within the namespace by category |
 | `include_action_names` | boolean | optional | Add each namespace's `actions` name array to the inventory; default false |
 
-**Returns:** With no namespace or filter, `namespaces[]` rows contain `namespace`, `action_count`, `description`, and `categories[]`; action names require `include_action_names=true`. Per-namespace results contain action names and one-line descriptions by default. Use `detail=true` to inline schemas or `describe_query("action_schema", ...)` for one action's full parameter schema. `tools/list` advertises dispatch tools; it does not provide every action's schema.
+**Returns:** With no namespace or filter, `namespaces[]` rows contain `namespace`, `action_count`, `categories[]`, and a one-line `description` for in-tree namespaces (omitted for namespaces the server has no summary for, such as sibling plugins); action names require `include_action_names=true`. Per-namespace results contain action names and one-line descriptions by default. Use `detail=true` to inline schemas or `describe_query("action_schema", ...)` for one action's full parameter schema. `tools/list` advertises dispatch tools; it does not provide every action's schema.
 
 ---
 

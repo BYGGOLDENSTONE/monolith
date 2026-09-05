@@ -21,6 +21,43 @@ struct FKnownOptionalModule
 	FString InstallHint;
 };
 
+// One-line purpose per in-tree namespace for the top-level discover inventory.
+// Namespaces without an entry (sibling plugins, test fixtures) emit no
+// description rather than a placeholder.
+static const TCHAR* NamespaceDescription(const FString& Ns)
+{
+	static const TMap<FString, const TCHAR*> Descriptions = {
+		{ TEXT("blueprint"),      TEXT("Blueprint assets: create, variables, functions, graph nodes, components, compile, save, diff.") },
+		{ TEXT("material"),       TEXT("Materials and instances: expression graphs, parameters, compile, preview, transactions.") },
+		{ TEXT("animation"),      TEXT("Skeletons, sequences, montages, blend spaces, AnimGraph and state machines, retargeting, Motion Matching, live anim telemetry.") },
+		{ TEXT("niagara"),        TEXT("Niagara systems and emitters: module stacks, parameters, HLSL nodes, timing, search.") },
+		{ TEXT("mesh"),           TEXT("Static and skeletal meshes: import, procedural geometry, LODs, collision, level blockout, quality checks.") },
+		{ TEXT("ui"),             TEXT("UMG and CommonUI widgets: spec builders, styles, bindings, accessibility, settings scaffolds.") },
+		{ TEXT("ai"),             TEXT("Behavior Trees, Blackboards, State Trees, EQS, Smart Objects, perception, navigation, AI controllers.") },
+		{ TEXT("gas"),            TEXT("Gameplay Ability System: attributes, abilities, effects, cues, tags, UI bindings.") },
+		{ TEXT("logicdriver"),    TEXT("Logic Driver Pro state machines: graphs, states, transitions, runtime control.") },
+		{ TEXT("combograph"),     TEXT("ComboGraph combo trees: nodes, edges, transitions, effects.") },
+		{ TEXT("chooser"),        TEXT("Chooser tables for Motion Matching and animation selection.") },
+		{ TEXT("audio"),          TEXT("Sound Cues, MetaSounds, sound classes, submixes, attenuation, perception, batch audio operations.") },
+		{ TEXT("editor"),         TEXT("Editor control: builds, logs, crash context, scene and asset capture, PIE introspection and driving, profiling, maps.") },
+		{ TEXT("source"),         TEXT("Offline engine and project C++ source index: symbol search, signatures, include paths, deprecations, Build.cs deps, class stubs.") },
+		{ TEXT("project"),        TEXT("Project asset index: full-text asset and node search, references, T3D export, generated-asset cleanup.") },
+		{ TEXT("config"),         TEXT("INI configuration: read and write project and engine settings.") },
+		{ TEXT("level_sequence"), TEXT("Level Sequences: tracks, bindings, keys, playback settings.") },
+		{ TEXT("bulk_fill"),      TEXT("Reflection-driven deep property writes across adapter namespaces, with dry-run.") },
+		{ TEXT("describe"),       TEXT("Read-only reflection: writable field trees per adapter and any action's exact parameter schema.") },
+		{ TEXT("decision"),       TEXT("Architectural decision records harvested from the repository.") },
+		{ TEXT("risk"),           TEXT("Repository risk signals: hotspots, co-change, conditional gates, git mining status.") },
+		{ TEXT("cppreflect"),     TEXT("UHT reflection edges (UCLASS/UPROPERTY/UFUNCTION) cross-joined with the asset registry.") },
+		{ TEXT("network"),        TEXT("Replication inspection: replicated classes, RPCs, OnRep handlers, unbalanced-handler audits.") },
+		{ TEXT("pipeline"),       TEXT("Read-only composers for PR review and release readiness.") },
+		{ TEXT("reflect"),        TEXT("Reflection index maintenance: project-only rebuild of the reflection tables.") },
+		{ TEXT("monolith"),       TEXT("Server meta tools: discover, status, guide, update, reindex, coordination.") },
+	};
+	const TCHAR* const* Found = Descriptions.Find(Ns);
+	return Found ? *Found : nullptr;
+}
+
 static const TArray<FKnownOptionalModule>& GetKnownOptionalModules()
 {
 	static const TArray<FKnownOptionalModule> Modules = {
@@ -513,7 +550,10 @@ FMonolithActionResult FMonolithCoreTools::HandleDiscover(const TSharedPtr<FJsonO
 			TSharedPtr<FJsonObject> NsObj = MakeShared<FJsonObject>();
 			NsObj->SetStringField(TEXT("namespace"), Ns);
 			NsObj->SetNumberField(TEXT("action_count"), Actions.Num());
-			NsObj->SetStringField(TEXT("description"), FString::Printf(TEXT("Actions in the %s domain."), *Ns));
+			if (const TCHAR* Description = NamespaceDescription(Ns))
+			{
+				NsObj->SetStringField(TEXT("description"), Description);
+			}
 
 			TArray<TSharedPtr<FJsonValue>> ActionNames;
 			TArray<FString> Categories;
