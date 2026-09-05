@@ -61,14 +61,14 @@ using namespace MonolithNiagaraTimingLocal;
 void FMonolithNiagaraTimingActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
 	Registry.RegisterAction(TEXT("niagara"), TEXT("get_system_timing"),
-		TEXT("**Phase 0 stub.** Read system-level timing fields (warmup, fixed tick delta, require current frame data). Not yet implemented."),
+		TEXT("Read a Niagara system's warmup time, tick count and delta, fixed tick settings, and current-frame data requirement."),
 		FMonolithActionHandler::CreateStatic(&HandleGetSystemTiming),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("niagara"), TEXT("set_warmup_profile"),
-		TEXT("**Phase 0 stub.** Composite write of warmup_time + warmup_tick_delta on a Niagara system. Not yet implemented."),
+		TEXT("Set Niagara system warmup time and optional tick delta in an editor transaction, request compilation, and return the resolved warmup values."),
 		FMonolithActionHandler::CreateStatic(&HandleSetWarmupProfile),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset"))
@@ -77,16 +77,16 @@ void FMonolithNiagaraTimingActions::RegisterActions(FMonolithToolRegistry& Regis
 			.Build());
 
 	Registry.RegisterAction(TEXT("niagara"), TEXT("set_fixed_tick_delta"),
-		TEXT("**Phase 0 stub.** Set bFixedTickDelta + FixedTickDeltaTime on a Niagara system. Not yet implemented."),
+		TEXT("Enable or disable fixed-tick simulation and optionally set its delta time on a Niagara system; notify the editor and request compilation."),
 		FMonolithActionHandler::CreateStatic(&HandleSetFixedTickDelta),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset"))
 			.Required(TEXT("enabled"), TEXT("bool"), TEXT("Enable fixed-tick substepping"))
-			.Optional(TEXT("fixed_delta_time"), TEXT("number"), TEXT("Fixed delta time in seconds (only meaningful when enabled=true; default 1/60s if unset)"))
+			.Optional(TEXT("fixed_delta_time"), TEXT("number"), TEXT("Fixed delta time in seconds (used when enabled=true; existing value retained if unset)"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("niagara"), TEXT("set_require_current_frame_data"),
-		TEXT("**Phase 0 stub.** Toggle bRequireCurrentFrameData on a Niagara system. Not yet implemented."),
+		TEXT("Set a Niagara system's current-frame data requirement in an editor transaction, notify the editor, and request compilation."),
 		FMonolithActionHandler::CreateStatic(&HandleSetRequireCurrentFrameData),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset"))

@@ -2587,7 +2587,7 @@ void FMonolithNiagaraActions::RegisterActions(FMonolithToolRegistry& Registry)
 			.RequiredAssetPath(TEXT("save_path"), TEXT("Path to save the new system"))
 			.Optional(TEXT("template"), TEXT("string"), TEXT("Template system to base on"))
 			.Build());
-	Registry.RegisterAction(TEXT("niagara"), TEXT("create_stateless_emitter"), TEXT("**Phase 0 stub.** Create a standalone UNiagaraStatelessEmitter (Lightweight Emitter) asset. Not yet implemented."),
+	Registry.RegisterAction(TEXT("niagara"), TEXT("create_stateless_emitter"), TEXT("Create and register a standalone UNiagaraStatelessEmitter (Lightweight Emitter) asset at save_path, save its package, and return its object path."),
 		FMonolithActionHandler::CreateStatic(&HandleCreateStatelessEmitter),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("save_path"), TEXT("Path where the new Lightweight Emitter asset will be saved"))
