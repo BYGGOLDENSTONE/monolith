@@ -110,6 +110,7 @@ bool FMonolithHttpProtocolTest::RunTest(const FString& Parameters)
     MutableSettings->MaxRequestBodyMB = 1;
     FHttpServerRequest Oversized;
     Oversized.Body.Init(' ', 1024 * 1024 + 1);
+    Oversized.Body[0] = 0; // Size rejection must win before the NUL scan.
     Server.HandlePostMcp(Oversized, Complete);
     MutableSettings->MaxRequestBodyMB = OriginalBodyLimit;
     TestEqual(TEXT("Oversized body rejected"), Status, 413);

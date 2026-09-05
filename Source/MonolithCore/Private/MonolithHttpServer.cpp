@@ -214,6 +214,16 @@ bool FMonolithHttpServer::Restart(int32 Port)
 bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
 	if (RejectOrigin(Request, OnComplete)) return true;
+	const UMonolithSettings* Settings = UMonolithSettings::Get();
+	const int32 BodyLimit = FMath::Clamp(Settings ? Settings->MaxRequestBodyMB : 32, 1, 256) * 1024 * 1024;
+	if (Request.Body.Num() > BodyLimit)
+	{
+		auto Response = MakeRejectedResponse(TEXT("MCP request body exceeds configured limit"),
+			static_cast<EHttpServerResponseCodes>(413));
+		AddCorsHeaders(*Response, Request);
+		OnComplete(MoveTemp(Response));
+		return true;
+	}
 	if (Request.Body.Contains(0))
 	{
 		auto Error = FMonolithJsonUtils::ErrorResponse(nullptr, FMonolithJsonUtils::ErrParseError,
@@ -237,16 +247,6 @@ bool FMonolithHttpServer::HandlePostMcp(const FHttpServerRequest& Request, const
 				return true;
 			}
 		}
-	}
-	const UMonolithSettings* Settings = UMonolithSettings::Get();
-	const int32 BodyLimit = FMath::Clamp(Settings ? Settings->MaxRequestBodyMB : 32, 1, 256) * 1024 * 1024;
-	if (Request.Body.Num() > BodyLimit)
-	{
-		auto Response = MakeRejectedResponse(TEXT("MCP request body exceeds configured limit"),
-			static_cast<EHttpServerResponseCodes>(413));
-		AddCorsHeaders(*Response, Request);
-		OnComplete(MoveTemp(Response));
-		return true;
 	}
 	// Parse body as UTF-8 JSON (Body is NOT null-terminated — must add terminator)
 	TArray<uint8> NullTermBody(Request.Body);
