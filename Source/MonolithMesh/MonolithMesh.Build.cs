@@ -80,6 +80,7 @@ public class MonolithMesh : ModuleRules
 			"Slate",
 			"SlateCore",
 			"AssetRegistry",
+			"DirectoryWatcher",
 			"AssetTools",
 			"MeshReductionInterface",
 			"MeshMergeUtilities",

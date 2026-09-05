@@ -10,11 +10,36 @@
 
 ## MonolithMesh
 
-**Dependencies:** Core, CoreUObject, Engine, MonolithCore, MonolithIndex, SQLiteCore, UnrealEd, EditorSubsystem, MeshDescription, StaticMeshDescription, MeshConversion, PhysicsCore, NavigationSystem, RenderCore, RHI, EditorScriptingUtilities, Json, JsonUtilities, Slate, SlateCore, AssetRegistry, AssetTools, MeshReductionInterface, MeshMergeUtilities, LevelInstanceEditor, ImageCore. Optional: GeometryScriptingCore, GeometryFramework, GeometryCore (Tier 5 mesh ops, gates `WITH_GEOMETRYSCRIPT`)
+**Dependencies:** Core, CoreUObject, Engine, MonolithCore, MonolithIndex, SQLiteCore, UnrealEd, EditorSubsystem, MeshDescription, StaticMeshDescription, MeshConversion, PhysicsCore, NavigationSystem, RenderCore, RHI, EditorScriptingUtilities, Json, JsonUtilities, Slate, SlateCore, AssetRegistry, DirectoryWatcher, AssetTools, MeshReductionInterface, MeshMergeUtilities, LevelInstanceEditor, ImageCore. Optional: GeometryScriptingCore, GeometryFramework, GeometryCore (Tier 5 mesh ops, gates `WITH_GEOMETRYSCRIPT`)
 
-**Build.cs notes — conditional GeometryScripting (v0.14.1):** The Build.cs probes `Engine/Plugins/Runtime/GeometryScripting` and adds `GeometryScriptingCore`, `GeometryFramework`, `GeometryCore` + `WITH_GEOMETRYSCRIPT=1` only when found. **Release escape hatch:** setting `MONOLITH_RELEASE_BUILD=1` (env var) short-circuits detection so `WITH_GEOMETRYSCRIPT=0` regardless — the released DLL no longer carries a hard import on `UnrealEditor-GeometryScriptingCore.dll`. This fixes #26 / #30 where users without GeometryScripting enabled in their `.uproject` were hitting `GetLastError=126` at module load. Mirrors the canonical `MonolithBABridge.Build.cs` pattern (and matches the `MonolithUI` CommonUI detection). Source-tree users with GeometryScripting enabled still get full Tier 5 functionality.
+**Build.cs notes — conditional GeometryScripting (v0.14.1):** The Build.cs checks target overrides and explicit non-optional `.uproject` enablement, then adds `GeometryScriptingCore`, `GeometryFramework`, `GeometryCore` + `WITH_GEOMETRYSCRIPT=1` only when GeometryScripting is enabled. Disk presence or Monolith's optional plugin reference alone does not enable this implementation. **Release escape hatch:** setting `MONOLITH_RELEASE_BUILD=1` (env var) short-circuits detection so `WITH_GEOMETRYSCRIPT=0` regardless — the released DLL no longer carries a hard import on `UnrealEditor-GeometryScriptingCore.dll`. This fixes #26 / #30 where users without GeometryScripting enabled in their `.uproject` were hitting `GetLastError=126` at module load. Mirrors the canonical `MonolithBABridge.Build.cs` pattern (and matches the `MonolithUI` CommonUI detection). Source-tree users with GeometryScripting enabled still get full Tier 5 functionality.
 
 **Delay-loaded GeometryScripting dependency model (issue #70):** Even on a source tree *with* GeometryScripting present, the load-time hard import on the three GeometryScripting DLLs (`UnrealEditor-GeometryScriptingCore.dll`, `UnrealEditor-GeometryFramework.dll`, `UnrealEditor-GeometryCore.dll`) caused a `CouldNotBeLoadedByOS` (`GetLastError=126`) first-build/load race — `MonolithMesh.dll` failed to load on first editor launch, then loaded fine on subsequent launches. Fix: those three DLL names are added to `PublicDelayLoadDLLs` **inside the same `bHasGeometryScripting` block** as the `PrivateDependencyModuleNames` adds. The Windows loader now binds the import **lazily on first Tier-5 GeometryScript call** rather than at `LoadLibrary`, so `MonolithMesh.dll` loads even when the dependency is momentarily unresolvable at module-load time; the full `WITH_GEOMETRYSCRIPT=1` Tier-5 op surface is preserved (nothing compiled out, deps unchanged). **Release-strip interaction:** because the delay-load adds live inside the `bHasGeometryScripting` block, `MONOLITH_RELEASE_BUILD=1` (which forces `bHasGeometryScripting=false`) excludes BOTH the `PrivateDependencyModuleNames` adds and the `PublicDelayLoadDLLs` adds — the released DLL links nothing against GeometryScripting (delay-bound or otherwise) and there is no stray delay-load entry for an unlinked DLL. The `.uplugin` Plugins array is UNCHANGED by this fix, so no new mandatory end-user dependency is introduced (the rejected "drop `Optional:true`" alternative would have been an issue-#32-class release regression). Authoritative closure check: `dumpbin /imports UnrealEditor-MonolithMesh.dll` shows the three DLLs under the delay-load import section, not the normal import table.
+
+### Quality and collision availability
+
+`analyze_co_op_balance` remains discoverable with its existing `player_positions`
+and optional region inputs, but returns `NotImplemented("co_op_balance_scoring")`
+without tracing the world or emitting numeric scores. Its error has
+`class:not_implemented`, `implemented:false` and `executed:false`.
+
+`generate_collision` validates the mesh handle and legacy method, then returns
+`PreconditionFailed` with `next_action:"mesh.save_handle"`. It does not compute or
+store collision shapes. To generate persistent collision, call `save_handle`
+with `handle`, `target_path` and `collision` set to `auto`, `box`, `convex`,
+`complex_as_simple` or `none`; `max_hulls` applies to auto/convex generation.
+The legacy sphere/capsule method names do not promise equivalent save modes.
+
+### Planned integrations (unimplemented design only)
+
+The former `integration_hooks_stub` action is unregistered. These interface ideas
+are documentation, not callable implementations:
+
+| Proposed integration | Inputs | Proposed outputs | Missing dependency |
+|---|---|---|---|
+| AI Director spatial feed | Region bounds, player positions, optional tension override | Tension grid, ranked spawn zones, buildup/encounter/cooldown pacing state | AI Director subsystem |
+| GAS tension effects | Player actor, optional region | Applied effect tags, tension score, attribute modifiers such as movement speed or FOV | Tension attributes and effect definitions |
+| Spatial telemetry record/query | Event type, location, player state, metadata; region for query | Heatmap and hotspots for scare reaction, death, movement stall, resource pickup and monster encounters | Event collection and storage subsystem |
 
 ### Classes
 

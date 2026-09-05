@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Phase 1 domain honesty
+
+- Removed the executable Mesh integration design stub and placeholder co-op balance scores. Unpersisted collision generation now directs callers to `mesh.save_handle`. State-machine builds report `partial` and `deferred_rules` when transition logic remains deferred.
+
 ### Phase 1 optional-plugin availability
 
 - LogicDriver, ComboGraph, CommonUI and MetaSound actions keep their schemas registered without the optional plugin and return typed unavailable errors. Discovery reports compiled availability while retaining base UMG/audio functionality. Explicit Blueprint Assist requests use the same error taxonomy; automatic fallback still reports the formatter used.

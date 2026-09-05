@@ -16,7 +16,6 @@
 #include "GeometryScript/MeshRepairFunctions.h"
 #include "GeometryScript/MeshUVFunctions.h"
 #include "GeometryScript/MeshTransformFunctions.h"
-#include "GeometryScript/CollisionFunctions.h"
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -96,12 +95,12 @@ void FMonolithMeshOperationActions::RegisterActions(FMonolithToolRegistry& Regis
 			.Build());
 
 	Registry.RegisterAction(TEXT("mesh"), TEXT("generate_collision"),
-		TEXT("Generate collision shapes for a mesh handle"),
+		TEXT("Returns a precondition error: persist collision through save_handle with target_path and collision mode"),
 		FMonolithActionHandler::CreateStatic(&FMonolithMeshOperationActions::GenerateCollision),
 		FParamSchemaBuilder()
 			.Required(TEXT("handle"), TEXT("string"), TEXT("Handle to generate collision for"))
-			.Optional(TEXT("method"), TEXT("string"), TEXT("Collision method: convex_decomp, auto_box, auto_sphere, auto_capsule, simplified"), TEXT("convex_decomp"))
-			.Optional(TEXT("max_hulls"), TEXT("integer"), TEXT("Max convex hulls (for convex_decomp)"), TEXT("4"))
+			.Optional(TEXT("method"), TEXT("string"), TEXT("Legacy method validated before the precondition error: convex_decomp, auto_box, auto_sphere, auto_capsule, simplified"), TEXT("convex_decomp"))
+			.Optional(TEXT("max_hulls"), TEXT("integer"), TEXT("Legacy input; no shapes are computed. Supply max_hulls to save_handle for auto/convex modes."), TEXT("4"))
 			.Build());
 
 	Registry.RegisterAction(TEXT("mesh"), TEXT("generate_lods"),
@@ -443,86 +442,32 @@ FMonolithActionResult FMonolithMeshOperationActions::GenerateCollision(const TSh
 {
 	if (!Pool)
 	{
-		return FMonolithActionResult::Error(TEXT("Enable the GeometryScripting plugin in your .uproject to use mesh operations."));
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("GeometryScripting"));
 	}
 
-	FString HandleName = Params->GetStringField(TEXT("handle"));
+	const FString HandleName = Params->GetStringField(TEXT("handle"));
 	if (HandleName.IsEmpty())
 	{
-		return FMonolithActionResult::Error(TEXT("'handle' is required"));
+		return FMonolithActionResult::InvalidParam(TEXT("handle"), TEXT("A mesh handle is required"));
 	}
-
-	FString Method = Params->HasField(TEXT("method"))
-		? Params->GetStringField(TEXT("method")).ToLower()
-		: TEXT("convex_decomp");
-
-	int32 MaxHulls = Params->HasField(TEXT("max_hulls"))
-		? static_cast<int32>(Params->GetNumberField(TEXT("max_hulls")))
-		: 4;
-
 	FString Error;
-	UDynamicMesh* Mesh = Pool->GetHandle(HandleName, Error);
-	if (!Mesh) return FMonolithActionResult::Error(Error);
-
-	FGeometryScriptCollisionFromMeshOptions CollisionOpts;
-	CollisionOpts.bEmitTransaction = false;
-
-	if (Method == TEXT("convex_decomp"))
+	if (!Pool->GetHandle(HandleName, Error))
 	{
-		CollisionOpts.Method = EGeometryScriptCollisionGenerationMethod::ConvexHulls;
-		CollisionOpts.MaxConvexHullsPerMesh = MaxHulls;
-	}
-	else if (Method == TEXT("auto_box"))
-	{
-		CollisionOpts.Method = EGeometryScriptCollisionGenerationMethod::AlignedBoxes;
-	}
-	else if (Method == TEXT("auto_sphere"))
-	{
-		CollisionOpts.Method = EGeometryScriptCollisionGenerationMethod::MinimalSpheres;
-	}
-	else if (Method == TEXT("auto_capsule"))
-	{
-		CollisionOpts.Method = EGeometryScriptCollisionGenerationMethod::Capsules;
-	}
-	else if (Method == TEXT("simplified"))
-	{
-		CollisionOpts.Method = EGeometryScriptCollisionGenerationMethod::MinVolumeShapes;
-	}
-	else
-	{
-		return FMonolithActionResult::Error(FString::Printf(
-			TEXT("Unknown collision method '%s'. Valid: convex_decomp, auto_box, auto_sphere, auto_capsule, simplified"), *Method));
+		return FMonolithActionResult::NotFound(TEXT("handle"), HandleName).WithErrorMessage(Error);
 	}
 
-	FGeometryScriptSimpleCollision Collision = UGeometryScriptLibrary_CollisionFunctions::GenerateCollisionFromMesh(
-		Mesh, CollisionOpts);
+	const FString Method = Params->HasField(TEXT("method"))
+		? Params->GetStringField(TEXT("method")).ToLower() : TEXT("convex_decomp");
+	const TSet<FString> ValidMethods = {
+		TEXT("convex_decomp"), TEXT("auto_box"), TEXT("auto_sphere"), TEXT("auto_capsule"), TEXT("simplified") };
+	if (!ValidMethods.Contains(Method))
+	{
+		return FMonolithActionResult::InvalidParam(TEXT("method"), TEXT("Valid methods: convex_decomp, auto_box, auto_sphere, auto_capsule, simplified"));
+	}
 
-	// BUG (known): The collision data computed above is discarded after this function returns.
-	// It is NOT stored on the handle or applied to any StaticMesh.
-	// This is harmless in practice because save_handle now auto-generates collision
-	// (added in Task 4 of the proc-geo overhaul). Users wanting custom collision can
-	// use the collision/max_hulls params on save_handle instead.
-	// TODO: Phase 2 fix — store collision in a TMap<FString, FGeometryScriptSimpleCollision>
-	// on the pool so save_handle can use pre-generated collision instead of re-computing.
-
-	// Report collision shape counts so the user gets useful feedback
-	int32 ShapeCount = Collision.AggGeom.BoxElems.Num()
-		+ Collision.AggGeom.SphereElems.Num()
-		+ Collision.AggGeom.SphylElems.Num()
-		+ Collision.AggGeom.ConvexElems.Num();
-
-	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-	Result->SetStringField(TEXT("handle"), HandleName);
-	Result->SetStringField(TEXT("method"), Method);
-	Result->SetNumberField(TEXT("shape_count"), ShapeCount);
-	Result->SetNumberField(TEXT("box_elements"), Collision.AggGeom.BoxElems.Num());
-	Result->SetNumberField(TEXT("sphere_elements"), Collision.AggGeom.SphereElems.Num());
-	Result->SetNumberField(TEXT("capsule_elements"), Collision.AggGeom.SphylElems.Num());
-	Result->SetNumberField(TEXT("convex_elements"), Collision.AggGeom.ConvexElems.Num());
-	Result->SetStringField(TEXT("status"), TEXT("generated"));
-	Result->SetStringField(TEXT("note"), TEXT("Collision shapes computed but not stored. Use save_handle with collision param to persist collision on the saved StaticMesh."));
-
-	return FMonolithActionResult::Success(Result);
+	return FMonolithActionResult::PreconditionFailed(
+		TEXT("Mesh handles do not store collision. Generate and persist collision with mesh.save_handle using handle, target_path and collision (auto, box, convex, complex_as_simple or none)."),
+		TEXT("mesh.save_handle"));
 }
 
 FMonolithActionResult FMonolithMeshOperationActions::GenerateLods(const TSharedPtr<FJsonObject>& Params)

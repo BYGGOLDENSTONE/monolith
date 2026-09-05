@@ -8591,6 +8591,17 @@ FMonolithActionResult FMonolithAnimationActions::HandleBuildStateMachine(const T
 	Root->SetStringField(TEXT("state_machine_graph"), SMGraph->GetName());
 	Root->SetArrayField(TEXT("states_report"), StatesReport);
 	Root->SetArrayField(TEXT("transitions_report"), TransReport);
+	int32 DeferredRules = 0;
+	for (const TSharedPtr<FJsonValue>& Transition : TransReport)
+	{
+		const TSharedPtr<FJsonObject>* Report = nullptr;
+		if (Transition.IsValid() && Transition->TryGetObject(Report) && (*Report)->HasField(TEXT("rule_deferred")))
+		{
+			++DeferredRules;
+		}
+	}
+	Root->SetBoolField(TEXT("partial"), DeferredRules > 0);
+	Root->SetNumberField(TEXT("deferred_rules"), DeferredRules);
 	if (!EntryState.IsEmpty())
 	{
 		Root->SetStringField(TEXT("entry_state"), EntryState);

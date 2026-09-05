@@ -108,7 +108,8 @@ monolith_discover({ namespace: "mesh" })
 | `mesh_boolean` | `handle_a`, `handle_b`, `operation`, `result_handle` | Union/subtract/intersect |
 | `mesh_simplify` | `handle`, `target_triangles`? | Reduce tri count |
 | `mesh_remesh` | `handle`, `target_edge_length` | Isotropic remeshing |
-| `generate_collision` / `generate_lods` | `handle`, method/count | Convex decomp / LOD chain |
+| `generate_collision` | `handle`, `method` | Precondition error: use `save_handle` with `target_path` and `collision` to persist collision |
+| `generate_lods` | `handle`, `lod_count` | LOD chain |
 | `fill_holes` / `mirror_mesh` | `handle`, `axis`? | Auto hole fill / mirror X/Y/Z |
 | `compute_uvs` | `handle`, `method` | Auto-unwrap/box/planar/cylinder |
 
@@ -330,8 +331,7 @@ Layered pipeline: floor plans -> grid geometry -> facades -> roofs -> streets ->
 | `analyze_texture_budget` | -- | Streaming pool usage + top textures |
 | `analyze_framing` | `viewpoint` | Rule-of-thirds composition scoring |
 | `evaluate_monster_reveal` | `monster_location`, `player_location` | Silhouette/distance/backlight scoring |
-| `analyze_co_op_balance` | `player_positions` | Coverage blind spots (P3 placeholder) |
-| `integration_hooks_stub` | `hook_type` | AI Director/GAS/telemetry stubs |
+| `analyze_co_op_balance` | `player_positions` | Unavailable: typed not-implemented error for co-op balance scoring |
 
 ## Blockout Tag Convention
 

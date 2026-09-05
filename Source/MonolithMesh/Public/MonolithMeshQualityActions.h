@@ -4,15 +4,15 @@
 #include "MonolithToolRegistry.h"
 
 /**
- * Phase 22: Polish & Remaining (9 actions)
+ * Phase 22: Polish & Remaining (8 actions)
  * Quality-of-life, naming validation, proxy mesh generation, HLOD setup,
  * texture budget analysis, framing/composition scoring, monster reveal evaluation,
- * co-op balance placeholder, and integration hook stubs.
+ * and an explicit unavailable co-op scoring contract.
  */
 class FMonolithMeshQualityActions
 {
 public:
-	/** Register all 9 quality/polish actions with the tool registry */
+	/** Register all 8 quality/polish actions with the tool registry */
 	static void RegisterActions(FMonolithToolRegistry& Registry);
 
 private:
@@ -31,9 +31,8 @@ private:
 	static FMonolithActionResult AnalyzeFraming(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult EvaluateMonsterReveal(const TSharedPtr<FJsonObject>& Params);
 
-	// --- Co-op & Integration Stubs ---
+	// --- Co-op Scoring Availability ---
 	static FMonolithActionResult AnalyzeCoOpBalance(const TSharedPtr<FJsonObject>& Params);
-	static FMonolithActionResult IntegrationHooksStub(const TSharedPtr<FJsonObject>& Params);
 
 	// --- Helpers ---
 	static TArray<TSharedPtr<FJsonValue>> VectorToJsonArray(const FVector& V);

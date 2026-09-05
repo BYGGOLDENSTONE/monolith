@@ -416,6 +416,8 @@ Animation curves, bone tracks, sync markers, root motion, compression, blend spa
 - **AnimBP graph:** `configure_pose_history_node`, `configure_motion_matching_node`, `build_motion_matching_node` (composite, wires to the Output Pose), `add_evaluate_chooser_node`, `wire_chooser_to_motion_matching`, `build_foot_ik_pass`, `assign_post_process_anim_rig`, `bind_chooser_database_via_threadsafe`. `add_anim_graph_node` gained `pose_history` / `inertialization` aliases.
 - **Retarget:** `create_ik_rig`, `create_ik_retargeter`, `set_retargeter_rigs`, `batch_retarget_animations`.
 - **State machines + telemetry:** `create_state_machine`, `build_state_machine`, `sample_pie_anim_instance`, `get_anim_graph_choosers`, `get_transition_rule`, `get_anim_graph_output_connection`. `set_transition_rule` accepts a structured `kind=compare`; `get_nodes` gained `include_anim_graph`.
+- `build_state_machine` returns top-level `partial` and `deferred_rules` alongside per-transition reports: any deferred rule sets `partial:true`; complete rule handling reports `partial:false, deferred_rules:0`. The builder compiles and marks the Blueprint dirty; it does not save it.
+
 
 **New (Unreleased) — blend space baking + state-machine teardown + IK solver removal:**
 - **Blend spaces:** `bake_blend_space` (rebuild a blend space's `FBlendSpaceData` triangulation via `ResampleData()` + mark dirty — repairs blend spaces authored externally or before the auto-bake fix; returns `has_blendspace_data`, `sample_count`, `baked`, and a `warning` when a 2D blend space has fewer than 3 samples), `set_blend_space_interpolation` (set `bInterpolateUsingGrid` via `use_grid` + a `preferred_triangulation_direction` of `None`/`Tangential`/`Radial`, then resample). In grid mode the triangulation is intentionally empty, so `has_blendspace_data` is `false` — correct, not a failure. The four blend space mutators (`add_blendspace_sample`, `edit_blendspace_sample`, `delete_blendspace_sample`, `set_blend_space_axis`) now auto-bake the triangulation after each edit, so MCP-authored blend spaces no longer ship empty and evaluate to the bind/reference pose at runtime.
@@ -883,6 +885,8 @@ Unreal Engine C++ source code navigation. 1M+ symbols indexed. **12 actions** (1
 ---
 
 ## mesh
+
+**Execution honesty (Unreleased).** `integration_hooks_stub` is no longer registered; planned AI Director, tension-effect and telemetry interfaces live only in the Mesh spec. `analyze_co_op_balance` returns `-32004`, `class:"not_implemented"`, `part:"co_op_balance_scoring"` instead of placeholder scores. `generate_collision` validates the handle/method and returns `-32003`, `class:"precondition_failed"`, with `next_action:"mesh.save_handle"`; it does not compute and discard collision. Use the `save_handle` action with `handle`, `target_path`, and its `collision`/`max_hulls` options to persist collision on a StaticMesh. Its collision modes are `auto`, `box`, `convex`, `complex_as_simple`, and `none`.
 
 Mesh inspection, scene manipulation, spatial queries, level blockout, GeometryScript, procedural geometry, lighting, audio, performance, mesh import (incl. skeletal + animation, PR #58), and **experimental** procedural town generation. **194 actions** (always registered, in the public count) + 45 experimental town gen (gated on `bEnableProceduralTownGen=true`, default `false`) = 239 when town-gen is on.
 
