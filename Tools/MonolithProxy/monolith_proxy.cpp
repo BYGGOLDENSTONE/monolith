@@ -996,16 +996,68 @@ static std::optional<json> read_tools_cache()
     }
 }
 
+static std::string rewrite_tools_list(std::string resp)
+{
+        if (g_split_editor_query)
+        {
+            try
+            {
+                json payload = json::parse(resp);
+                auto result_it = payload.find("result");
+                if (result_it != payload.end() && result_it->is_object())
+                {
+                    auto tools_it = result_it->find("tools");
+                    if (tools_it != result_it->end() && tools_it->is_array())
+                    {
+                        json rewritten_tools = json::array();
+                        for (auto& tool : *tools_it)
+                        {
+                            if (tool.is_object() && tool.value("name", "") == "editor_query")
+                            {
+                                // Create read tool
+                                json read_tool = tool;
+                                read_tool["name"] = "editor_read_query";
+                                read_tool["description"] =
+                                    "Read-only Unreal editor diagnostics and log access. "
+                                    "Use for build status, build errors, build summary, compile output, crash context, "
+                                    "and recent log queries. Never use this tool to trigger a build.";
+
+                                // Create build tool
+                                json build_tool = tool;
+                                build_tool["name"] = "editor_build_query";
+                                build_tool["description"] =
+                                    "Mutating Unreal editor build actions only. "
+                                    "Use only when the user explicitly asks to trigger a full build or a Live Coding compile.";
+
+                                rewritten_tools.push_back(std::move(read_tool));
+                                rewritten_tools.push_back(std::move(build_tool));
+                                continue;
+                            }
+                            rewritten_tools.push_back(tool);
+                        }
+                        (*result_it)["tools"] = std::move(rewritten_tools);
+                        resp = payload.dump();
+                    }
+                }
+            }
+            catch (const std::exception& e)
+            {
+                log_msg(std::string("Failed to rewrite tools/list response: ") + e.what());
+            }
+        }
+    return resp;
+}
+
 static std::string make_fallback_tools_list_response(const json& msg)
 {
     if (auto cached = read_tools_cache())
     {
         log_msg("Monolith down during tools/list -- returning cached tools");
-        return make_result(msg.value("id", json()), {{"tools", cached.value()}});
+        return rewrite_tools_list(make_result(msg.value("id", json()), {{"tools", cached.value()}}));
     }
 
     log_msg("Monolith down during tools/list -- returning seed tools");
-    return make_result(msg.value("id", json()), {{"tools", make_seed_tools()}});
+    return rewrite_tools_list(make_result(msg.value("id", json()), {{"tools", make_seed_tools()}}));
 }
 
 // ============================================================================
@@ -1109,55 +1161,8 @@ static std::string handle_tools_list(const json& msg)
 
     if (!resp.empty())
     {
-        if (g_split_editor_query)
-        {
-            try
-            {
-                json payload = json::parse(resp);
-                auto result_it = payload.find("result");
-                if (result_it != payload.end() && result_it->is_object())
-                {
-                    auto tools_it = result_it->find("tools");
-                    if (tools_it != result_it->end() && tools_it->is_array())
-                    {
-                        json rewritten_tools = json::array();
-                        for (auto& tool : *tools_it)
-                        {
-                            if (tool.is_object() && tool.value("name", "") == "editor_query")
-                            {
-                                // Create read tool
-                                json read_tool = tool;
-                                read_tool["name"] = "editor_read_query";
-                                read_tool["description"] =
-                                    "Read-only Unreal editor diagnostics and log access. "
-                                    "Use for build status, build errors, build summary, compile output, crash context, "
-                                    "and recent log queries. Never use this tool to trigger a build.";
-
-                                // Create build tool
-                                json build_tool = tool;
-                                build_tool["name"] = "editor_build_query";
-                                build_tool["description"] =
-                                    "Mutating Unreal editor build actions only. "
-                                    "Use only when the user explicitly asks to trigger a full build or a Live Coding compile.";
-
-                                rewritten_tools.push_back(std::move(read_tool));
-                                rewritten_tools.push_back(std::move(build_tool));
-                                continue;
-                            }
-                            rewritten_tools.push_back(tool);
-                        }
-                        (*result_it)["tools"] = std::move(rewritten_tools);
-                        resp = payload.dump();
-                    }
-                }
-            }
-            catch (const std::exception& e)
-            {
-                log_msg(std::string("Failed to rewrite tools/list response: ") + e.what());
-            }
-        }
         write_tools_cache(resp);
-        return resp;
+        return rewrite_tools_list(resp);
     }
 
     return make_fallback_tools_list_response(msg);

@@ -76,6 +76,7 @@ class EditorFixture:
         self.received = []
         self.gates = {}
         self.offline = False
+        self.tools = TOOLS
         self.health_entered = threading.Event()
         self.health_gate = threading.Event()
         self.health_gate.set()
@@ -132,7 +133,7 @@ class EditorFixture:
                     self.reply(["not a JSON-RPC response"])
                     return
                 payload = {"jsonrpc": "2.0", "id": identifier,
-                           "result": {"tools": TOOLS} if msg["method"] == "tools/list"
+                           "result": {"tools": owner.tools} if msg["method"] == "tools/list"
                            else {"content": [{"type": "text", "text": str(identifier)}]}}
                 if mode == "both_result_error":
                     payload["error"] = {"code": -32603, "message": "contradictory"}
@@ -502,6 +503,25 @@ class PythonTransportTests(TransportContract, unittest.TestCase):
                      "Set MONOLITH_TEST_NATIVE_PROXY to run native transport parity")
 class NativeTransportTests(TransportContract, unittest.TestCase):
     command = [os.environ.get("MONOLITH_TEST_NATIVE_PROXY", "monolith_proxy.exe")]
+
+    def test_split_editor_cache_stays_raw_and_rewrites_on_read(self):
+        self.editor.tools = [{"name": "editor_query", "description": "editor fixture",
+                              "inputSchema": {"type": "object"}}]
+        split = self.proxy(MONOLITH_SPLIT_EDITOR_QUERY=1)
+        split.send(request("split", "tools/list"))
+        self.assertEqual({t["name"] for t in split.receive()["result"]["tools"]},
+                         {"editor_read_query", "editor_build_query"})
+        self.editor.offline = True
+        plain = self.proxy(MONOLITH_SPLIT_EDITOR_QUERY=0)
+        plain.send(request("plain", "tools/list"))
+        self.assertEqual(plain.receive()["result"]["tools"], self.editor.tools)
+        split.send(request("cached-split", "tools/list"))
+        self.assertEqual({t["name"] for t in split.receive()["result"]["tools"]},
+                         {"editor_read_query", "editor_build_query"})
+        python_proxy = ProxyProcess(PythonTransportTests.command, self.editor, self.directory.name)
+        self.proxies.append(python_proxy)
+        python_proxy.send(request("python-cache", "tools/list"))
+        self.assertEqual(python_proxy.receive()["result"]["tools"], self.editor.tools)
 
     @unittest.skipUnless(os.name == "nt", "Win32 DELETE sharing contract")
     def test_cache_can_be_read_while_rename_delete_handle_is_open(self):
