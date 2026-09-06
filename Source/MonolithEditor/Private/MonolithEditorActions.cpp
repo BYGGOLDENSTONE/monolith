@@ -3003,10 +3003,10 @@ FMonolithActionResult FMonolithEditorActions::HandleCaptureSequenceFrames(
 			CaptureComp->bCaptureOnMovement = false;
 			CaptureComp->bAlwaysPersistRenderingState = true;
 			CaptureComp->FOVAngle = FOV;
-			CaptureComp->SetRelativeLocation(CameraLocation);
-			CaptureComp->SetRelativeRotation(CameraRotation);
 
-			PreviewScene->AddComponent(CaptureComp, FTransform::Identity);
+			// AddComponent applies its supplied transform; pass the requested camera
+			// transform here instead of identity so the view is preserved.
+			PreviewScene->AddComponent(CaptureComp, FTransform(CameraRotation, CameraLocation));
 
 			FString FramePath = OutputDir / FString::Printf(TEXT("%s_%03d_t%.2f.png"),
 				*FilenamePrefix, i, TargetTime);
@@ -5442,17 +5442,23 @@ namespace MonolithEditorPieSmoke
 		}
 	}
 
-	// #11 derive the explicit lifecycle string from (Status, bPieActive, resident PIE
-	// world). Status alone conflates "capture done but PIE still open" with "running".
+	// #11 derive lifecycle from status and this session's resident PIE world.
+	// Status alone conflates "capture done but PIE still open" with "running".
 	//   running                   : session actively sampling, PIE world live.
 	//   capture-complete-pie-open : capture finished (Complete) but a PIE world lingers
 	//                               and teardown has not been driven yet.
 	//   teardown-started          : RequestEndPlayMap driven, PIE world not yet gone.
 	//   teardown-complete         : finished + no resident PIE world remains.
 	//   stopped-by-tool           : force-stopped via stop_pie_smoke.
+	static bool IsSessionPieResident(const FPieSmokeSession& S)
+	{
+		UWorld* SessionWorld = S.SessionWorld.Get();
+		return SessionWorld != nullptr && SessionWorld == FMonolithEditorActions::FindActivePieWorld();
+	}
+
 	static const TCHAR* DeriveLifecycle(const FPieSmokeSession& S)
 	{
-		const bool bPieResident = (FMonolithEditorActions::FindActivePieWorld() != nullptr);
+		const bool bPieResident = IsSessionPieResident(S);
 
 		if (S.bStoppedByTool)
 		{
@@ -5486,7 +5492,9 @@ namespace MonolithEditorPieSmoke
 		Root->SetStringField(TEXT("marker"), S.Marker);
 		Root->SetStringField(TEXT("map"), S.MapName);
 		Root->SetNumberField(TEXT("duration"), S.DurationSeconds);
-		Root->SetBoolField(TEXT("pie_active"), S.bPieActive);
+		// Query the session's own world rather than a cached activity flag or a
+		// later unrelated PIE run. Keep lifecycle and activity on the same source.
+		Root->SetBoolField(TEXT("pie_active"), IsSessionPieResident(S));
 		Root->SetBoolField(TEXT("pie_ready"), S.bReady);
 		Root->SetStringField(TEXT("lifecycle"), DeriveLifecycle(S)); // #11 explicit lifecycle
 		Root->SetNumberField(TEXT("sample_count"), S.Samples.Num());

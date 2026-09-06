@@ -880,6 +880,7 @@ FString FPieSmokeSessionManager::CreateSession(FPieSmokeSession&& Session)
 			*FDateTime::Now().ToString(TEXT("%H%M%S")));
 	}
 	const FString Id = Session.Id;
+	Session.SessionWorld = FindActivePieWorld();
 	Sessions.Add(Id, MoveTemp(Session));
 	EnsureObserver();
 	return Id;

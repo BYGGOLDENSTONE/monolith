@@ -273,14 +273,17 @@ struct FPieSmokeSession
 	TArray<FPieSmokeActorSetupResult> ActorSetupResults;
 	bool bActorSetupFired = false;
 
-	// #11 explicit lifecycle string, derived at report time from (Status, bPieActive,
-	// resident PIE world). One of: running | capture-complete-pie-open |
+	// #11 explicit lifecycle string, derived from status and SessionWorld residency.
+	// One of: running | capture-complete-pie-open |
 	// teardown-started | teardown-complete | stopped-by-tool.
 	bool bStoppedByTool = false;     // set by Stop() so lifecycle reports stopped-by-tool
 	bool bTeardownStarted = false;   // set when RequestEndPlayMap is driven for this set
 
 	// Resolved lazily on the first tick where the PIE pawn exists.
 	TWeakObjectPtr<APawn> TargetPawn;
+	// Identity of the PIE world this session belongs to; later PIE runs must not
+	// change terminal reports from an earlier session.
+	TWeakObjectPtr<UWorld> SessionWorld;
 	// Optional pawn-class name filter (resolves a pawn whose class name contains this).
 	FString PawnClassFilter;
 

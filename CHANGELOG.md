@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### RecycleCo validation follow-ups
+
+- Persistent Niagara sequence capture preserves the requested camera transform when registering its preview capture component.
+- PIE smoke activity and lifecycle reports track their own world identity, so closed sessions remain inactive when a later PIE session starts.
+- Cooked-build documentation distinguishes the verified `MonolithAudioRuntime` module/subsystem loading in RecycleCo Win64 Development from still-unverified binding and stimulus behavior.
+
 ### Phase 1 asset round trips
 
 - Niagara `set_system_property` accepts explicit `save:true` while retaining its dirty-only default. GameplayEffect and SoundCue lookup failures return typed not-found errors with asset suggestions. Real Niagara, GAS, Material and Audio Automation fixtures cover creation, mutation, readback, compilation and persistence.

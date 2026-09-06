@@ -9,6 +9,9 @@ game thread. Includes discoverable `SKILL.md` entrypoints and transport regressi
 coverage. See [multi-agent setup](Docs/MULTI_AGENT.md), [audit and production gates](Docs/AUDIT_UE57.md),
 and [validation results](Docs/VALIDATION_UE57.md).
 
+**Current local handoff (2026-09-06):** see [continuation status](Docs/DEVAM_DURUMU.md)
+for the RecycleCo validation, camera/PIE fixes, uncommitted changes and remaining coverage.
+
 Build the Windows proxy with `powershell -File Scripts/build_proxy.ps1`; rebuild
 the plugin against your engine before use. Update the host's MCP executable path
 and reconnect after replacing the binary. No host can expose tools to a subagent
