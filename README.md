@@ -1,13 +1,15 @@
 # Monolith
 
-**One plugin. Every Unreal domain. Zero dependencies.**
+**Personal Unreal development tool — UE 5.7.4 / Windows.**
+
+This checkout is for our own game-development workflows. We are not selling or marketing the plugin, building a general-purpose product, or trying to complete every existing action. Work follows the user's concrete needs. Other engine versions and platforms are outside this checkout's scope. Read [working instructions](AGENTS.md) and [current status](Docs/DEVAM_DURUMU.md) first. Upstream feature descriptions below are reference material, not a roadmap or a support commitment.
 
 **Development branch: multi-agent reliability for UE 5.7.4.** Native and Python
 proxies now accept concurrent requests with bounded queues. `monolith_coordination`
 provides editor-wide workflow leases across clients; Unreal actions remain on the
 game thread. Includes discoverable `SKILL.md` entrypoints and transport regression
-coverage. See [multi-agent setup](Docs/MULTI_AGENT.md), [audit and production gates](Docs/AUDIT_UE57.md),
-and [validation results](Docs/VALIDATION_UE57.md).
+coverage. See [multi-agent setup](Docs/MULTI_AGENT.md) and the
+[current UE 5.7.4 validation report](Docs/COMPLETION_2026_09_06.md).
 
 **Current local handoff (2026-09-06):** see [continuation status](Docs/DEVAM_DURUMU.md)
 for the personal game-development improvements, UE 5.7.4 validation and test-host cleanup.
@@ -18,7 +20,7 @@ the plugin against your engine before use. Update the host's MCP executable path
 and reconnect after replacing the binary. No host can expose tools to a subagent
 that its own tool permissions exclude; the setup guide covers this separately.
 
-[![UE 5.7 / 5.8](https://img.shields.io/badge/Unreal-5.7%20%2F%205.8-blue)](https://unrealengine.com)
+[![UE 5.7.4](https://img.shields.io/badge/Unreal-5.7.4-blue)](https://unrealengine.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/Protocol-MCP-purple)](https://modelcontextprotocol.io)
 
@@ -48,7 +50,7 @@ See the [changelog](CHANGELOG.md) for release history, feature additions and fix
 
 Full per-namespace breakdown: **[Tool Reference (wiki)](https://github.com/tumourlove/monolith/wiki/Tool-Reference)**.
 
-Works with **Claude Code**, **Cursor**, **Cline**, or any MCP-compatible client. Windows, macOS, Linux.
+Supports MCP-compatible clients. Our working and validation environment is **Windows / UE 5.7.4**.
 
 ---
 
@@ -61,7 +63,7 @@ cd YourProject/Plugins
 git clone https://github.com/tumourlove/monolith.git Monolith
 ```
 
-(Or grab the [latest release zip](https://github.com/tumourlove/monolith/releases) and extract to the same path. The release zip includes precompiled DLLs so Blueprint-only projects can open the editor immediately without rebuilding. Monolith builds on **UE 5.7 and 5.8** from a single source tree — but the precompiled DLLs are engine-locked, so Blueprint-only users grab the zip for their engine, `Monolith-vX.Y.Z-UE5.7.zip` or `-UE5.8.zip`. Building from source works on either.)
+For this checkout, build from the local source against **UE 5.7.4**. Upstream release packages and other engine versions are not the target of our workflow.
 
 **2. Create `.mcp.json`** in your project root (same directory as your `.uproject`):
 

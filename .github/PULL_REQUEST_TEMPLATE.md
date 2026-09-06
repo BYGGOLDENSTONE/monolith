@@ -5,9 +5,8 @@
 
 ## Checklist
 
-- [ ] Builds on **UE 5.7** (the compile floor)
-- [ ] Builds on **UE 5.8**
-- [ ] Any engine API newer than 5.7 sits behind an `ENGINE_MINOR_VERSION` gate, with a working 5.7 path
+- [ ] Addresses a concrete need in our own game-development workflow
+- [ ] For code changes, builds on **UE 5.7.4 / Win64**; documentation-only changes do not require an engine build
 - [ ] No unrelated whitespace, line-ending, or reformatting churn in the diff
 - [ ] Specs updated (`Docs/specs/SPEC_<Module>.md`) if the public surface changed
 - [ ] `CHANGELOG.md` updated under `## [Unreleased]`

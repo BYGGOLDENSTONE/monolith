@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Personal UE 5.7.4 workflow
+
+- Define this checkout as our personal UE 5.7.4 / Windows tool, driven by concrete game-development needs. Retire stale work orders and audit summaries; keep current scope and validation in the handoff documents.
+- Include `MonolithAbpWriteActions.h` first in its implementation file, fixing the include-order diagnostic exposed by the UnhallowedGround host build.
+
 ### Personal game-development completion
 
 - Move content-referenced GAS widget bindings, BT tasks and BT controller into `MonolithRuntime`, preserving old reflected paths with redirects. Repair synchronous ability completion, abort cleanup, late widget owners, game-thread tick registration during async loading, smoothing and runtime hearing delivery. Keep BehaviorTree runtime nodes owned by their asset so they survive cooking.

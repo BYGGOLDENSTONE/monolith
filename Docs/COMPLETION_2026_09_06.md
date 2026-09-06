@@ -4,7 +4,7 @@
 
 **Tamamlandı: kod, Editor/PIE ve paket doğrulaması geçti; RecycleCo başlangıç kaynak/ayarlarına döndürüldü ve temizlik doğrulandı.** Sonraki oturumun giriş belgesi [DEVAM_DURUMU.md](DEVAM_DURUMU.md).
 
-Monolith kişisel Unreal oyun geliştirme aracıdır; bu çalışma eklenti satışı/yayın hazırlığı değildir. Ticari hedef geliştirilecek oyun içindir. Bütün kalıcı sonuçlar bu depodadır; RecycleCo yalnız geçici test host'udur.
+Monolith kendi oyun geliştirme işlerimizde kullandığımız kişisel Unreal aracıdır. Satış, gelir veya pazarlama hedefi yoktur. Yalnız UE 5.7.4 / Windows ortamında, kullanıcının somut ihtiyaçları için çalışıyoruz; genel amaçlı bir ürün veya bütün aksiyonları tamamlama hedefi yoktur. Bütün kalıcı sonuçlar bu depodadır; RecycleCo yalnız geçici test host'udur.
 
 - Repo: `D:/UnrealProjects/monolith`, branch `fix/phase1-safety-honesty`; başlangıç commit'i `0cd50f0`.
 - Host: `D:/UnrealProjects/RecycleCo/RecycleCo.uproject`. `Plugins/Monolith` junction'ı aynı kaynak depoya gider.
@@ -78,7 +78,7 @@ Dosya envanteri 391'den 387'ye indi: Unreal çalışırken eski bir CEF log'u ve
 - Menü `kind` başlangıç düzeni/focus/navigation/stack sağlar. Oyuna özgü Start/Settings/Quit davranışı ve stil proje tarafından bağlanır.
 - GIF encoding arka plandadır; frame capture hâlâ senkron ve boyut/frame sınırlarına tabidir.
 - Node property yazma; editable scalar ve dotted struct leaf ile sınırlıdır, bütün container/struct değiştirme aracı değildir.
-- Marketplace LogicDriver/ComboGraph sağlayıcıları, multiplayer/dedicated server, Linux/macOS ve UE 5.8 bu çalışmanın gerçek runtime test matrisinde yoktur.
+- Marketplace LogicDriver/ComboGraph sağlayıcıları ve multiplayer/dedicated server bu çalışmanın gerçek runtime test matrisinde yoktur; ancak somut ihtiyaç oluşursa ele alınır. Linux/macOS ve UE 5.8 proje kapsamı dışındadır, bekleyen iş değildir.
 - C++ kodu taşınan runtime sınıflarını kullanıyorsa `MonolithRuntime` modülüne bağımlılık eklemelidir. Kalıcı asset'lerde eski reflected yollar için redirect vardır.
 
 ## Tekrarlanabilirlik ve kanıt

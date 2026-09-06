@@ -1,5 +1,7 @@
 # Phase 0 report
 
+> Historical evidence from 2026-09-05, not the current status or a work order. Later fixes and final results supersede the limitations recorded here. Read [current status](DEVAM_DURUMU.md) and [the 2026-09-06 completion report](COMPLETION_2026_09_06.md). Our only target is UE 5.7.4 / Windows; additional platforms and general feature completion are not pending tasks.
+
 Validated on 2026-09-05 on Windows, branch `fix/phase0-quick-wins`, created from `feat/multi-agent-reliability` at `9956227`. The 22 numbered fixes are separate commits in order; the last is `d511d2e`. No merge or push was performed. The user-provided, initially untracked analysis and work-order files were preserved outside the commits.
 
 The configured plugin builds successfully against UE **5.7.4** (CL 51494982, `D:/UE_5.7`). Final Python verification on **3.12.10** passed **91/91**, with **zero failures and zero skips**, using the rebuilt native proxy and a disposable live editor. Local repository lint passed. Remote CI was not run.

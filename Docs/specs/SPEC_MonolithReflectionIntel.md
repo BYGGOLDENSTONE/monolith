@@ -1154,6 +1154,6 @@ Editing **any** Risk-category property invalidates the live risk snapshot throug
 - **Parent spec:** [`SPEC_CORE.md`](../SPEC_CORE.md) — see §3 Module Reference and §12 Action Count Summary
 - **MCP reference:** [API_REFERENCE.md](../API_REFERENCE.md) — `decision_query` row + `risk_query` row + `cppreflect_query` row + `network_query` row + `pipeline_query` row + `source_query("audit_module_dep_reality")` entry + the 4 Phase 4a audit actions on existing namespaces
 - **C++ conventions:** [CONTRIBUTING.md](../../CONTRIBUTING.md#coding-conventions) — public coding conventions; module-specific dependency and database constraints are documented above
-- **UE 5.7 validation evidence:** [AUDIT_UE57.md](../AUDIT_UE57.md)
+- **UE 5.7.4 validation evidence:** [completion report](../COMPLETION_2026_09_06.md)
 - **Bug class motivating the module-dep audit:** the `UPROPERTY` referencing a foreign-module type without that module being in `Build.cs` — surfaces as a confusing LNK2019 against UHT-generated `Z_Construct_*_NoRegister` symbols.
 - **Release-readiness composer reference:** [pipeline API reference](../API_REFERENCE.md#pipeline_queryrelease_readiness) — the sentinel-list audit + CHANGELOG completeness audit `pipeline_query("release_readiness")` invokes.

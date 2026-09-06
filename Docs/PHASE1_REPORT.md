@@ -1,5 +1,7 @@
 # Phase 1 safety and honesty report
 
+> Historical evidence from 2026-09-05, not the current status or a work order. Later fixes and final results supersede the limitations recorded here. Read [current status](DEVAM_DURUMU.md) and [the 2026-09-06 completion report](COMPLETION_2026_09_06.md). Our only target is UE 5.7.4 / Windows; additional platforms and general feature completion are not pending tasks.
+
 **Completed 2026-09-05. All thirteen numbered items are done and verified on UE 5.7.4.**
 
 Work was performed in `D:/UnrealProjects/monolith` on `fix/phase1-safety-honesty`, continuing the Phase 0 base on `feat/multi-agent-reliability`. The thirteen numbered implementation commits below are in order. No merge or push was performed. `git worktree list` at completion reports only the main checkout. The disposable validation project's plugin junction points into this checkout; it is not a second repository copy.

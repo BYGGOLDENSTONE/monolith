@@ -894,7 +894,7 @@ Both proxies now emit a one-line-per-call JSONL log to `Saved/Logs/MonolithCalls
 
 **Pull-only, zero per-call cost.** No success response anywhere in Monolith carries guide content; the only breadcrumb is the single `guide_hint` string on the no-filter `monolith_discover()` response. Editorial content is fetched on demand, never pushed.
 
-**No duplication.** The guide deliberately omits a pipelines section — cross-module pipeline chains live in [§13 Pipelines](#pipelines) and are cross-linked, not re-authored. It also omits a per-namespace action table (see §12 and the [API reference](API_REFERENCE.md)). `skills_map` points at `Skills/<topic>/SKILL.md` rather than inlining skill bodies; versioned validation evidence is documented in the [UE 5.7 audit](AUDIT_UE57.md).
+**No duplication.** The guide deliberately omits a pipelines section — cross-module pipeline chains live in [§13 Pipelines](#pipelines) and are cross-linked, not re-authored. It also omits a per-namespace action table (see §12 and the [API reference](API_REFERENCE.md)). `skills_map` points at `Skills/<topic>/SKILL.md` rather than inlining skill bodies; versioned validation evidence is documented in the [UE 5.7.4 completion report](COMPLETION_2026_09_06.md).
 
 **Offline parity.** `monolith_query.exe monolith guide` serves the same section-keyed surface from the standalone CLI.
 

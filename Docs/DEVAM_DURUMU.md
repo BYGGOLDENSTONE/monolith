@@ -4,11 +4,20 @@ Son güncelleme: **6 Eylül 2026**. İstenen eksik tamamlama, test ve RecycleCo 
 
 ## Amaç ve çalışma yerleri
 
-- Monolith **kişisel Unreal oyun geliştirme aracıdır**. Eklentiden gelir beklentisi yok; ticari hedef geliştirilecek oyun içindir.
+- Monolith **kendi oyun geliştirme işlerimizde kullandığımız kişisel araçtır**. Satış, gelir veya pazarlama hedefi yok; kullanıcıya ticari hedef atfedilmez. Kalıcı çalışma kapsamı [AGENTS.md](../AGENTS.md) içindedir.
+- Tek hedef **UE 5.7.4 / Windows**. Diğer sürümler/platformlar için uyumluluk çalışması hedef değildir. Yeni işler yalnız kullanıcının somut ihtiyacına göre seçilir; tüm mevcut aksiyonları düzeltmek veya genel amaçlı bir ürün yapmak hedef değildir.
 - Repo ve kalıcı sonuçlar: `D:/UnrealProjects/monolith`. Yeni durum/test belgelerini burada tut; RecycleCo'daki eski raporlar tarihsel kayıttır.
 - Branch: `fix/phase1-safety-honesty`; push hedefi `fork` (`BYGGOLDENSTONE/monolith`). Önceki kamera/PIE düzeltmeleri `0cd50f0` içinde; bu belgeyle birlikte kaydedilen değişiklikler onu tamamlar. Canlı commit/çalışma ağacı için `git log -1` ve `git status` kontrol edilir.
 - Test host'u: `D:/UnrealProjects/RecycleCo/RecycleCo.uproject`. `Plugins/Monolith` junction'ı kaynak depoya gider; ayrı plugin kopyası değildir.
 - Engine: `D:/UE_5.7`, **UE 5.7.4, CL 51494982**, Win64/D3D12.
+
+## UnhallowedGround kurulumu — 6 Eylül 2026
+
+- Aktif oyun: `D:/UnrealProjects/UnhallowedGround/UnhallowedGround.uproject`. `Plugins/Monolith` artık `D:/UnrealProjects/monolith` deposuna junction; bağımsız plugin kopyası yok. `.mcp.json` içindeki mevcut native proxy yolu aynı bağlantı üzerinden çalışır.
+- Önceki kopya oyun projesinin `Saved/PluginBackups/Monolith-before-local-20260906-140149` dizinine taşındı. Plugin değişiklikleri yalnız Monolith deposunda commit/push edilir.
+- `UnhallowedGroundEditor Win64 Development`, UE 5.7.4 ile derlendi. İlk derlemede görülen `MonolithAbpWriteActions.cpp` başlık sırası teşhisi düzeltildi; son derleme kontrolü başarılı. Tek pipeline, `-MaxParallelActions=2` kullanıldı.
+- Editör açıldı; native proxy ile proje kimliği, tool listesi ve workflow lease desteği doğrulandı. Aynı anda gönderilen **24 salt okunur status çağrısının 24'ü geçti** (yaklaşık 5,4 saniye). Bu host'ta 31 MCP tool / 26 namespace / 1.486 aktif aksiyon görüldü; repo schema taramasının 1.585 kaydıyla aynı ölçüm değildir.
+- Bu kurulumda oyun asset'lerine yazma veya yeni gameplay testi yapılmadı. Editör açık bırakıldı; sonraki işlem öncesi canlı süreç/proje durumu yeniden kontrol edilir. Kanıtlar `Saved/unhallowed-local-monolith-build-final.log`, `Saved/unhallowed-local-monolith-editor.log` ve `Saved/unhallowed-local-monolith-proxy.json` altında.
 
 ## Tamamlanan geliştirmeler
 
@@ -27,7 +36,7 @@ GAS widget binding, dört BT task ve controller yeni **MonolithRuntime** modül�
 | Jobs / indeks | Python/Pillow ve ffmpeg encoding, çalışan işi iptal, gerçek undo/redo geçti. GAS/MetaSound/AI tam indeks fixture'ları doğrulandı. |
 | Repo | Lint başarılı; **1.585 kayıt, 0 schema drift**, 1.074 skill action referansı. |
 
-Bu kapsam bütün tool'ların tek tek doğrulandığı anlamına gelmez. Gerçek Tokenforge sağlayıcısı, Marketplace LogicDriver/ComboGraph, multiplayer/dedicated server, diğer platformlar ve UE 5.8 sınanmadı. Menüye oyuna özgü davranış/stil bağlamak hâlâ oyun geliştirme işidir. GIF frame capture senkron, encoder arka plandadır. Detaylı sınırlar ana raporda.
+Bu kapsam bütün tool'ların tek tek doğrulandığı anlamına gelmez; bütün tool'ları doğrulama hedefi de yoktur. Gerçek Tokenforge sağlayıcısı, Marketplace LogicDriver/ComboGraph ve multiplayer/dedicated server bu çalışmada sınanmadı; yalnız ihtiyaç duyulursa ele alınır. Diğer platformlar ve UE 5.8 kapsam dışıdır. Menüye oyuna özgü davranış/stil bağlamak oyun geliştirme işidir. GIF frame capture senkron, encoder arka plandadır. Detaylı sınırlar ana raporda.
 
 ## RecycleCo son durumu
 
@@ -39,7 +48,7 @@ Bu kapsam bütün tool'ların tek tek doğrulandığı anlamına gelmez. Gerçek
 
 ## Sonraki oturum için
 
-Önce güncel repo/süreç durumunu kontrol et ve kullanıcının yeni oyun geliştirme ihtiyacını takip et. Genel eklenti kapsamını genişletmek başlı başına hedef değil. Bu tamamlanmış rapor tek başına yeni test/derleme veya proje değişikliği talimatı değildir.
+Önce güncel repo/süreç durumunu kontrol et ve kullanıcının yeni oyun geliştirme ihtiyacını takip et. Genel eklenti kapsamını genişletmek başlı başına hedef değil. Bu tamamlanmış rapor tek başına yeni test/derleme veya proje değişikliği talimatı değildir. Eski Phase 0/1 iş emirleri, genel iyileştirme analizi ve ilk audit/validation belgeleri kaldırıldı; geçmiş içerikleri Git geçmişindedir. Phase 0/1 sonuç raporları yalnız tarihsel kanıttır, güncel görev listesi değildir.
 
 UE işlerinde [derleme skill'ini](../Skills/unreal-build/SKILL.md) izle: tek UE pipeline, `-MaxParallelActions=2`; ortak DLL'ler nedeniyle açık editörü kontrol et. MCP yazmalarından önce proje kimliğini doğrula ve lease kullan. Test host'una yeni geçici değişiklik yapılırsa kendi başlangıç snapshot'ını al; eski snapshot restore betiğini yeni kullanıcı değişikliklerinin üstüne uygulama.
 

@@ -1,13 +1,13 @@
 # Contributing to Monolith
 
-Thanks for your interest in contributing. This guide covers everything you need to get started.
+This checkout is a personal game-development tool targeting **UE 5.7.4 / Windows**. Changes serve the user's concrete needs; plugin sales, general product development, exhaustive feature completion and additional platform support are not goals. Read [AGENTS.md](AGENTS.md) and [current status](Docs/DEVAM_DURUMU.md) first.
 
 ## Dev Environment Setup
 
 ### Prerequisites
 
-- **Unreal Engine 5.7** (source or launcher build) is the compile floor. Contributions must build on **both UE 5.7 and UE 5.8** -- both are shipped and supported. Any engine API newer than 5.7 must sit behind an `ENGINE_MINOR_VERSION` gate, e.g. `#if ENGINE_MINOR_VERSION >= 8`, with a 5.7 code path alongside it. A change that only compiles on 5.8 will be sent back.
-- **Windows, macOS, or Linux** — see [README Installation](README.md#installation) for per-platform proxy setup
+- **Unreal Engine 5.7.4**, installed at `D:/UE_5.7`. This is the only engine target; no UE 5.8 compatibility gate is required.
+- **Windows / Win64** — the current development and validation platform.
 - **Python 3.10+** (only needed for engine source indexing and for the cross-platform MCP proxy on macOS/Linux)
 - **Git**
 
@@ -22,7 +22,7 @@ git clone https://github.com/tumourlove/monolith.git Monolith
 git clone https://github.com/tumourlove/monolith.git C:\Projects\Monolith
 ```
 
-Generate project files and build from your UE project as usual. Monolith is an editor-facing plugin: every module is `Type: "Editor"` except the small `MonolithAudioRuntime` helper, which is `Type: "Runtime"`.
+Generate project files and build from your UE project as usual. Monolith is an editor-facing plugin: game-facing helper classes live in `MonolithRuntime` and `MonolithAudioRuntime`; authoring modules stay editor-only. See [runtime support](Docs/COOKED_BUILD_TODO.md).
 
 ### Development Workflow
 
