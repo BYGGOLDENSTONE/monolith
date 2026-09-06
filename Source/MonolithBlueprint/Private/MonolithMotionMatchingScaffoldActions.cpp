@@ -48,7 +48,7 @@ void FMonolithMotionMatchingScaffoldActions::RegisterActions(FMonolithToolRegist
 			 "graph contains no Motion Matching node. Marks the Blueprint modified."),
 		FMonolithActionHandler::CreateStatic(&HandleSetAnimClass),
 		FParamSchemaBuilder()
-			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character/actor Blueprint asset path"))
+			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character/actor Blueprint asset path"), { TEXT("asset_path") })
 			.Required(TEXT("component"), TEXT("string"), TEXT("Skeletal mesh component variable name (e.g. 'Mesh' on a Character BP)"))
 			.RequiredAssetPath(TEXT("anim_bp_path"), TEXT("Animation Blueprint asset path whose generated class becomes the AnimClass"))
 			.Build());
@@ -60,7 +60,7 @@ void FMonolithMotionMatchingScaffoldActions::RegisterActions(FMonolithToolRegist
 			 "Marks the Blueprint modified."),
 		FMonolithActionHandler::CreateStatic(&HandleApplyMovementPreset),
 		FParamSchemaBuilder()
-			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character Blueprint asset path"))
+			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character Blueprint asset path"), { TEXT("asset_path") })
 			.Required(TEXT("preset"), TEXT("string"), TEXT("Preset name: 'orient_to_movement' | 'strafe_controller_desired'"))
 			.Build());
 
@@ -71,7 +71,7 @@ void FMonolithMotionMatchingScaffoldActions::RegisterActions(FMonolithToolRegist
 			 "(Pose History node bGenerateTrajectory)."),
 		FMonolithActionHandler::CreateStatic(&HandleAddEngineComponentTyped),
 		FParamSchemaBuilder()
-			.RequiredAssetPath(TEXT("bp_path"), TEXT("Blueprint asset path"))
+			.RequiredAssetPath(TEXT("bp_path"), TEXT("Blueprint asset path"), { TEXT("asset_path") })
 			.Required(TEXT("component_type"), TEXT("string"), TEXT("UActorComponent subclass friendly name (e.g. 'SpringArmComponent')"))
 			.Required(TEXT("component_name"), TEXT("string"), TEXT("Variable name for the new component"))
 			.Build());
@@ -82,7 +82,7 @@ void FMonolithMotionMatchingScaffoldActions::RegisterActions(FMonolithToolRegist
 			 "/ connect_pins_bulk. Marks the Blueprint modified."),
 		FMonolithActionHandler::CreateStatic(&HandleScaffoldLocomotionInput),
 		FParamSchemaBuilder()
-			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character Blueprint asset path"))
+			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character Blueprint asset path"), { TEXT("asset_path") })
 			.RequiredAssetPath(TEXT("imc_path"), TEXT("Asset path for the new InputMappingContext"))
 			.Required(TEXT("actions"), TEXT("array"), TEXT("Array of {name, value_type} — value_type one of Digital(bool)/Axis1D/Axis2D/Axis3D. One UInputAction asset created per entry."))
 			.Build());
@@ -94,7 +94,7 @@ void FMonolithMotionMatchingScaffoldActions::RegisterActions(FMonolithToolRegist
 		FMonolithActionHandler::CreateStatic(&HandleValidateAnimBpVariableContract),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("abp_path"), TEXT("Animation Blueprint asset path"))
-			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character Blueprint asset path"))
+			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character Blueprint asset path"), { TEXT("asset_path") })
 			.Build());
 
 	Registry.RegisterAction(TEXT("blueprint"), TEXT("scaffold_motion_matching_character"),
@@ -104,7 +104,7 @@ void FMonolithMotionMatchingScaffoldActions::RegisterActions(FMonolithToolRegist
 			 "Trajectory is AnimBP-side (bGenerateTrajectory) — no trajectory component is added. Compiles the BP."),
 		FMonolithActionHandler::CreateStatic(&HandleScaffoldMotionMatchingCharacter),
 		FParamSchemaBuilder()
-			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character Blueprint asset path (created if absent, reparented if present)"))
+			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character Blueprint asset path (created if absent, reparented if present)"), { TEXT("asset_path") })
 			.Optional(TEXT("parent_class"), TEXT("string"), TEXT("Parent class for a newly-created BP (default 'Character')"), TEXT("Character"))
 			.RequiredAssetPath(TEXT("anim_bp_path"), TEXT("Animation Blueprint asset path"))
 			.OptionalAssetPath(TEXT("mesh"), TEXT("Skeletal mesh asset to assign to the mesh component (optional)"))
@@ -123,7 +123,7 @@ void FMonolithMotionMatchingScaffoldActions::RegisterActions(FMonolithToolRegist
 		FMonolithActionHandler::CreateStatic(&HandleGetInheritedComponentOverride),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("bp_path"), TEXT("Child Blueprint asset path"), { TEXT("asset_path") })
-			.Required(TEXT("component"), TEXT("string"), TEXT("Component variable name or alias (Mesh/SkeletalMesh, StaticMesh, CharacterMovement/Movement, Capsule/CapsuleComponent, Root/RootComponent)"))
+			.Required(TEXT("component"), TEXT("string"), TEXT("Component variable name or alias (Mesh/SkeletalMesh, StaticMesh, CharacterMovement/Movement, Capsule/CapsuleComponent, Root/RootComponent)"), { TEXT("component_name") })
 			.Optional(TEXT("property_name"), TEXT("string"), TEXT("Single property to read; if omitted, a default set is reported (AnimClass, SkeletalMesh, AnimationMode)"))
 			.Build());
 
@@ -195,7 +195,7 @@ void FMonolithMotionMatchingScaffoldActions::RegisterActions(FMonolithToolRegist
 			 "modify -> compile for the inherited native CMC). Returns the applied values + the band echo."),
 		FMonolithActionHandler::CreateStatic(&HandleApplyLocomotionSpeedBand),
 		FParamSchemaBuilder()
-			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character Blueprint asset path"))
+			.RequiredAssetPath(TEXT("bp_path"), TEXT("Character Blueprint asset path"), { TEXT("asset_path") })
 			.Required(TEXT("walk_speed"),  TEXT("number"), TEXT("Walk band speed (documented; BT picks within the cap)"))
 			.Required(TEXT("run_speed"),   TEXT("number"), TEXT("Run band speed; becomes the MaxWalkSpeed cap unless max_walk_speed overrides"))
 			.Required(TEXT("crouch_speed"),TEXT("number"), TEXT("Crouch band speed; written to MaxWalkSpeedCrouched"))
@@ -835,11 +835,11 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleScaffoldMoti
 	//     MarkBlueprintAsModified alone reverts it on reload. ---
 	if (!Mesh.IsEmpty())
 	{
+		USkeletalMesh* MeshAsset = FMonolithAssetUtils::LoadAssetByPath<USkeletalMesh>(Mesh);
 		const MonolithBlueprintComponentResolver::FResult MeshResolved =
 			MonolithBlueprintComponentResolver::Resolve(
-				BP, TEXT("Mesh"), USkeletalMeshComponent::StaticClass(), /*bCreateIchOverride=*/true);
+				BP, TEXT("Mesh"), USkeletalMeshComponent::StaticClass(), /*bCreateIchOverride=*/MeshAsset != nullptr);
 		USkeletalMeshComponent* MeshSMC = Cast<USkeletalMeshComponent>(MeshResolved.Template);
-		USkeletalMesh* MeshAsset = FMonolithAssetUtils::LoadAssetByPath<USkeletalMesh>(Mesh);
 		if (!MeshSMC)
 		{
 			NoteStep(TEXT("set_mesh"), false, MeshResolved.Error.IsEmpty()
@@ -926,8 +926,10 @@ FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleScaffoldMoti
 
 FMonolithActionResult FMonolithMotionMatchingScaffoldActions::HandleGetInheritedComponentOverride(const TSharedPtr<FJsonObject>& Params)
 {
-	const FString BpPath = Params->GetStringField(TEXT("bp_path"));
-	const FString CompName = Params->GetStringField(TEXT("component"));
+	FString BpPath;
+	if (!Params->TryGetStringField(TEXT("asset_path"), BpPath) || BpPath.IsEmpty()) Params->TryGetStringField(TEXT("bp_path"), BpPath);
+	FString CompName;
+	if (!Params->TryGetStringField(TEXT("component_name"), CompName) || CompName.IsEmpty()) Params->TryGetStringField(TEXT("component"), CompName);
 	FString SingleProp;
 	Params->TryGetStringField(TEXT("property_name"), SingleProp);
 

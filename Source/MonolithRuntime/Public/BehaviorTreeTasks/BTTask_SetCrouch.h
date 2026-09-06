@@ -18,8 +18,8 @@ class UBehaviorTreeComponent;
  * otherwise. The actual crouch state change replicates via the standard
  * Character/CharacterMovementComponent path.
  */
-UCLASS(MinimalAPI, meta = (DisplayName = "Set Crouch"))
-class UBTTask_SetCrouch : public UBTTaskNode
+UCLASS(meta = (DisplayName = "Set Crouch"))
+class MONOLITHRUNTIME_API UBTTask_SetCrouch : public UBTTaskNode
 {
 	GENERATED_UCLASS_BODY()
 

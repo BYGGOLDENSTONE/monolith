@@ -1,4 +1,5 @@
 #include "MonolithEditorActions.h"
+#include "MonolithEditorJobs.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
 #include "EditorAssetLibrary.h"
@@ -792,7 +793,7 @@ void FMonolithEditorActions::RegisterActions(FMonolithLogCapture* LogCapture)
 		MakeShared<FJsonObject>());
 
 	Registry.RegisterAction(TEXT("editor"), TEXT("capture_system_gif"),
-		TEXT("Capture a Niagara system as a sequence of PNG frames with optional GIF encoding via ffmpeg or python"),
+		TEXT("Capture Niagara PNG frames synchronously; ffmpeg/python encoding runs asynchronously and returns job_id for get_job_status/cancel_job/get_job_result"),
 		FMonolithActionHandler::CreateStatic(&HandleCaptureSystemGif),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Niagara system asset path"))
@@ -4018,9 +4019,15 @@ FMonolithActionResult FMonolithEditorActions::HandleCaptureSystemGif(
 	int32 Resolution = Params->HasField(TEXT("resolution")) ? static_cast<int32>(Params->GetNumberField(TEXT("resolution"))) : 256;
 	FString Encoder = Params->HasField(TEXT("encoder")) ? Params->GetStringField(TEXT("encoder")).ToLower() : TEXT("frames_only");
 
+	if (Encoder != TEXT("frames_only") && Encoder != TEXT("ffmpeg") && Encoder != TEXT("python"))
+		return FMonolithActionResult::Error(TEXT("Unknown encoder. Valid: frames_only, ffmpeg, python"));
+
 	if (FPS <= 0) FPS = 15;
 	if (Resolution <= 0) Resolution = 256;
 	if (DurationSeconds <= 0) DurationSeconds = 2.0;
+
+	if (!FMath::IsFinite(DurationSeconds) || DurationSeconds * FPS > 600 || Resolution > 2048)
+		return FMonolithActionResult::Error(TEXT("Capture is limited to 600 frames and 2048 pixels per side; reduce duration/fps/resolution"));
 
 	// Output directory
 	FString OutputDir;
@@ -4037,8 +4044,10 @@ FMonolithActionResult FMonolithEditorActions::HandleCaptureSystemGif(
 		FString Timestamp = FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"));
 		FString SafeName = FPaths::GetBaseFilename(AssetPath);
 		OutputDir = FPaths::ProjectDir() / TEXT("Saved/Screenshots/Monolith") /
-			FString::Printf(TEXT("GIF_%s_%s"), *Timestamp, *SafeName);
+			FString::Printf(TEXT("GIF_%s_%s_%s"), *Timestamp, *SafeName, *FGuid::NewGuid().ToString(EGuidFormats::Digits));
 	}
+	// Isolate the input PNGs while a background encoder is consuming them.
+	if (Encoder != TEXT("frames_only")) OutputDir /= TEXT("encode_") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
 	IFileManager::Get().MakeDirectory(*OutputDir, true);
 
 	// Load system
@@ -4091,6 +4100,8 @@ FMonolithActionResult FMonolithEditorActions::HandleCaptureSystemGif(
 			if (FrameObj.IsValid())
 			{
 				FString FilePath = FrameObj->GetStringField(TEXT("file"));
+				if (!FrameObj->GetBoolField(TEXT("success")))
+					return FMonolithActionResult::Error(FString::Printf(TEXT("Frame capture failed: %s"), *FilePath)).WithErrorData(CaptureResult.Result);
 				if (!FilePath.IsEmpty())
 					FramePaths.Add(FilePath);
 			}
@@ -4112,79 +4123,15 @@ FMonolithActionResult FMonolithEditorActions::HandleCaptureSystemGif(
 		PathArr.Add(MakeShared<FJsonValueString>(P));
 	Result->SetArrayField(TEXT("frame_paths"), PathArr);
 
-	// Optional GIF encoding
-	if (Encoder != TEXT("frames_only") && FramePaths.Num() > 0)
+	// Simulation/capture above remains on the game thread. External encoding is
+	// an asynchronous process; poll/cancel/result actions keep the editor responsive.
+	if (Encoder != TEXT("frames_only"))
 	{
-		FString GifPath = OutputDir / TEXT("output.gif");
-
-		if (Encoder == TEXT("ffmpeg"))
-		{
-			FString InputPattern = OutputDir / TEXT("gif_frame_%04d.png");
-			FString FFmpegArgs = FString::Printf(
-				TEXT("-y -framerate %d -i \"%s\" -vf \"scale=%d:-1:flags=lanczos\" -loop 0 \"%s\""),
-				FPS, *InputPattern, Resolution, *GifPath);
-
-			FString FFmpegPath = TEXT("ffmpeg");
-			int32 ReturnCode = -1;
-			FString StdOut, StdErr;
-
-			// Try to run ffmpeg
-			bool bLaunched = FPlatformProcess::ExecProcess(*FFmpegPath, *FFmpegArgs, &ReturnCode, &StdOut, &StdErr);
-
-			if (bLaunched && ReturnCode == 0 && IFileManager::Get().FileExists(*GifPath))
-			{
-				Result->SetStringField(TEXT("gif_path"), GifPath);
-				Result->SetStringField(TEXT("encoder_used"), TEXT("ffmpeg"));
-			}
-			else
-			{
-				Result->SetStringField(TEXT("encoder_error"),
-					FString::Printf(TEXT("ffmpeg failed (code %d). Ensure ffmpeg is in PATH. stderr: %s"),
-						ReturnCode, *StdErr.Left(500)));
-			}
-		}
-		else if (Encoder == TEXT("python"))
-		{
-			// Build a quick python one-liner using imageio
-			FString FrameListStr;
-			for (const FString& P : FramePaths)
-			{
-				if (!FrameListStr.IsEmpty()) FrameListStr += TEXT(",");
-				FString Escaped = P;
-				Escaped.ReplaceInline(TEXT("\\"), TEXT("/"));
-				FrameListStr += FString::Printf(TEXT("'%s'"), *Escaped);
-			}
-
-			FString PyScript = FString::Printf(
-				TEXT("import imageio; frames=[imageio.imread(p) for p in [%s]]; imageio.mimsave('%s',frames,duration=%f,loop=0)"),
-				*FrameListStr,
-				*GifPath.Replace(TEXT("\\"), TEXT("/")),
-				1.0 / FPS);
-
-			FString PythonPath = TEXT("python");
-			FString PythonArgs = FString::Printf(TEXT("-c \"%s\""), *PyScript);
-
-			int32 ReturnCode = -1;
-			FString StdOut, StdErr;
-			bool bLaunched = FPlatformProcess::ExecProcess(*PythonPath, *PythonArgs, &ReturnCode, &StdOut, &StdErr);
-
-			if (bLaunched && ReturnCode == 0 && IFileManager::Get().FileExists(*GifPath))
-			{
-				Result->SetStringField(TEXT("gif_path"), GifPath);
-				Result->SetStringField(TEXT("encoder_used"), TEXT("python"));
-			}
-			else
-			{
-				Result->SetStringField(TEXT("encoder_error"),
-					FString::Printf(TEXT("python imageio failed (code %d). Ensure python + imageio are installed. stderr: %s"),
-						ReturnCode, *StdErr.Left(500)));
-			}
-		}
-		else
-		{
-			Result->SetStringField(TEXT("encoder_error"),
-				FString::Printf(TEXT("Unknown encoder '%s'. Valid: frames_only, ffmpeg, python"), *Encoder));
-		}
+		FMonolithActionResult Job = FMonolithEditorJobs::StartEncoder(Encoder, OutputDir, FramePaths, FPS, Resolution, Result);
+		if (!Job.bSuccess) return Job.WithErrorData(Result);
+		Result->SetObjectField(TEXT("encoding_job"), Job.Result);
+		Result->SetStringField(TEXT("job_id"), Job.Result->GetStringField(TEXT("job_id")));
+		Result->SetStringField(TEXT("encoding_state"), TEXT("running"));
 	}
 
 	return FMonolithActionResult::Success(Result);

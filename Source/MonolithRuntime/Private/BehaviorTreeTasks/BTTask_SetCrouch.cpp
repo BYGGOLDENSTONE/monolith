@@ -3,7 +3,7 @@
 // Reusable BT task: crouch / uncrouch the possessed ACharacter pawn.
 
 #include "BehaviorTreeTasks/BTTask_SetCrouch.h"
-#include "MonolithAIInternal.h"
+#include "MonolithRuntimeModule.h"
 
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "AIController.h"
@@ -27,7 +27,7 @@ EBTNodeResult::Type UBTTask_SetCrouch::ExecuteTask(UBehaviorTreeComponent& Owner
 	ACharacter* Character = Cast<ACharacter>(AIOwner->GetPawn());
 	if (!Character)
 	{
-		UE_LOG(LogMonolithAI, Verbose,
+		UE_LOG(LogMonolithRuntime, Verbose,
 			TEXT("BTTask_SetCrouch[%s]: AI pawn is not an ACharacter"),
 			*GetNodeName());
 		return EBTNodeResult::Failed;

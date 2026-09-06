@@ -25,8 +25,8 @@ class UBehaviorTreeComponent;
  * Returns Succeeded whenever a CharacterMovementComponent is found; Failed
  * only when the pawn (or its movement component) is missing.
  */
-UCLASS(MinimalAPI, meta = (DisplayName = "Set Max Walk Speed"))
-class UBTTask_SetMaxWalkSpeed : public UBTTaskNode
+UCLASS(meta = (DisplayName = "Set Max Walk Speed"))
+class MONOLITHRUNTIME_API UBTTask_SetMaxWalkSpeed : public UBTTaskNode
 {
 	GENERATED_UCLASS_BODY()
 

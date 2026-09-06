@@ -104,6 +104,8 @@ namespace
 
 bool FMetaSoundIndexer::IndexAsset(const FAssetData& AssetData, UObject* LoadedAsset, FMonolithIndexDatabase& DB, int64 AssetId)
 {
+	if (!DB.ClearMetaSoundIndexRows()) return false;
+
 	IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
 
 	// Enumerate both MetaSound asset variants — Sources (playable assets) and Patches (graph templates).

@@ -20,8 +20,8 @@ class UBehaviorTreeComponent;
  * Pairs with UBTTask_SetMaxWalkSpeed's Blackboard-key mode to randomize gait:
  * RandomizeFloat -> SetMaxWalkSpeed(SpeedKey = same key).
  */
-UCLASS(MinimalAPI, meta = (DisplayName = "Randomize Float"))
-class UBTTask_RandomizeFloat : public UBTTask_BlackboardBase
+UCLASS(meta = (DisplayName = "Randomize Float"))
+class MONOLITHRUNTIME_API UBTTask_RandomizeFloat : public UBTTask_BlackboardBase
 {
 	GENERATED_UCLASS_BODY()
 

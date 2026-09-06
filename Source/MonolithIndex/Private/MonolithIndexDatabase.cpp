@@ -1830,3 +1830,17 @@ bool FMonolithIndexDatabase::ExecuteSQL(const FString& SQL)
 	}
 	return true;
 }
+
+
+bool FMonolithIndexDatabase::ClearGASIndexRows()
+{
+	return ExecuteSQL(TEXT("DELETE FROM nodes WHERE node_type IN ('GameplayAbility','GameplayEffect','AttributeSet','GameplayCue');"));
+}
+
+bool FMonolithIndexDatabase::ClearMetaSoundIndexRows()
+{
+	// This indexer exclusively owns graph nodes for these asset classes. Generic
+	// metadata/asset rows and the per-asset content checkpoints remain intact.
+	return ExecuteSQL(TEXT("DELETE FROM nodes WHERE asset_id IN (SELECT id FROM assets WHERE asset_class IN ('MetaSoundSource','MetaSoundPatch')) AND node_type IN ('Asset','Page','Node','Dependency');"))
+		&& ExecuteSQL(TEXT("DELETE FROM variables WHERE category = 'MetaSound' AND asset_id IN (SELECT id FROM assets WHERE asset_class IN ('MetaSoundSource','MetaSoundPatch'));"));
+}

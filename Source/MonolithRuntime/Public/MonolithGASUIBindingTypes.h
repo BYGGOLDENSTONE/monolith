@@ -12,7 +12,10 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
+#include "UObject/SoftObjectPtr.h"
 #include "MonolithGASUIBindingTypes.generated.h"
+
+class UAttributeSet;
 
 /** How the binding resolves the AbilitySystemComponent owner at runtime. */
 UENUM(BlueprintType)
@@ -68,7 +71,7 @@ enum class EMonolithAttrBindUpdate : uint8
  * and Blueprint generated-class paths (e.g. "/Game/.../BP_AS_Vitals.BP_AS_Vitals_C").
  */
 USTRUCT(BlueprintType)
-struct MONOLITHGAS_API FMonolithGASAttributeBindingSpec
+struct MONOLITHRUNTIME_API FMonolithGASAttributeBindingSpec
 {
     GENERATED_BODY()
 
@@ -84,6 +87,10 @@ struct MONOLITHGAS_API FMonolithGASAttributeBindingSpec
     UPROPERTY(EditAnywhere, Category = "GAS Binding")
     FString AttributeSetClassPath;
 
+    /** Cook-visible class dependency, populated by the authoring compiler. */
+    UPROPERTY()
+    TSoftClassPtr<UAttributeSet> AttributeSetClass;
+
     /** Attribute property name (e.g. "Health"). */
     UPROPERTY(EditAnywhere, Category = "GAS Binding")
     FName AttributePropertyName;
@@ -91,6 +98,9 @@ struct MONOLITHGAS_API FMonolithGASAttributeBindingSpec
     /** Optional second-attribute denominator for ratio formats. NAME_None if unused. */
     UPROPERTY(EditAnywhere, Category = "GAS Binding")
     FString MaxAttributeSetClassPath;
+
+    UPROPERTY()
+    TSoftClassPtr<UAttributeSet> MaxAttributeSetClass;
 
     UPROPERTY(EditAnywhere, Category = "GAS Binding")
     FName MaxAttributePropertyName;

@@ -8,7 +8,7 @@
 
 ## MonolithGAS
 
-**Dependencies:** Core, CoreUObject, Engine, MonolithCore, GameplayAbilities, GameplayTags
+**Dependencies:** Core, CoreUObject, Engine, MonolithCore, MonolithRuntime, GameplayAbilities, GameplayTags
 **Namespace:** `gas` (135 actions) + 4 cross-namespace aliases into `ui` | **Tool:** `gas_query(action, params)` | **Actions:** 135 (Phase J F8: +`grant_ability_to_pawn`)
 **Conditional:** GBA (Blueprint Attributes) features wrapped in `#if WITH_GBA`. Core GAS engine modules (GameplayAbilities, GameplayTags, GameplayTasks) are always available. When GBA is absent, Blueprint AttributeSet creation is disabled but all 135 actions still register and compile cleanly. When `bEnableGAS` is disabled in settings, 0 actions registered.
 **Settings toggle:** `bEnableGAS` (default: True)
@@ -54,6 +54,24 @@ Creation actions (`create_attribute_set`, effect templates/specs, and duplicates
 
 **Total:** 28 + 20 + 26 + 14 + 10 + 10 + 5 + 5 + 6 + 7 + 4 = **135**.
 
+### Attribute binding runtime behavior (2026-09-06)
+
+The compiler copies bindings onto the generated widget class extension and records `TSoftClassPtr<UAttributeSet>` dependencies for primary and maximum attributes. Runtime resolution prefers these cook-visible, rename-aware class references, then falls back to the legacy class-path strings. The optional maximum attribute uses the primary class when neither a maximum class reference nor path is supplied.
+
+| Owner resolver | Runtime association |
+|---|---|
+| `owning_player_pawn` | Owning player's possessed pawn ASC. |
+| `owning_player_state` | Owning player's PlayerState ASC. |
+| `owning_player_controller` | Owning player controller ASC. |
+| `self_actor` | Actor outer when available; otherwise the actor whose `UWidgetComponent::GetUserWidgetObject()` matches this widget in its local world. This covers normal WidgetComponent widgets, which have a world outer. |
+| `named_socket:<Tag>` | First actor in the widget's world carrying that actor tag and an ASC. |
+
+Subscriptions push an initial value when present. `update_policy:"on_change"` reacts to attribute delegates; `"tick"` also polls values each frame; `"on_change_smoothed:<lerp_speed>"` interpolates toward received targets each frame. Owner lookup/retry runs at 0.25-second intervals so possession/late-spawn changes can rebind without scanning the world every frame. Invalid target/attribute rows do not produce a per-frame warning flood; missing values do not replace valid tick-polled values with zero. Construct replaces old subscriptions; Destruct, dead-widget cleanup, and extension destruction remove delegates.
+
+Generated-class extensions can be constructed by the cooked async package loader. Tick registration therefore belongs to a separate helper created by widget `Construct` on the game thread, with a weak reference to the extension. Final widget `Destruct` and extension destruction release it; merely loading a class does not register a tickable object.
+
+These are implementation contracts. The editor build/automation result is recorded in [the completion report](../testing/2026-09-06-blueprint-animation.md); its editor pass alone does not establish a packaged runtime pass.
+
 ### Phase J fixes touching this module
 
 - **F2 (2026-04-26)** — `gas::bind_widget_to_attribute` rejects unknown `owner_resolver` (`ParseOwner` no longer silently coerces to `OwningPlayerPawn`).
@@ -71,7 +89,7 @@ See [SPEC_CORE.md §11 Recent Fixes](../SPEC_CORE.md#recent-fixes-phase-j--shipp
 >
 > **GBA conditional support:** The `WITH_GBA` define is set automatically by the module's `Build.cs` when GameplayAbilities is found. Projects without GAS get zero compile overhead — the entire module compiles to an empty stub.
 >
-> **UI Binding cooked-build caveat.** `UMonolithGASAttributeBindingClassExtension` is an editor-only class — content WBPs that reference it will fail to apply bindings in cooked Steam builds. See [COOKED_BUILD_TODO.md](../COOKED_BUILD_TODO.md) for the resolution path (Option A/B/C deferred to pre-Steam-launch checkpoint).
+> **UI Binding module split (2026-09-06).** `UMonolithGASAttributeBindingClassExtension`, `FMonolithGASAttributeBindingSpec`, and their enums now live in `MonolithRuntime`; authoring/compiler actions remain in editor-only `MonolithGAS`. Runtime class/struct/enum redirects preserve references from the old module. Recompile and save authored widgets to serialize the new class dependencies. Module migration is implemented; packaged behavior must be checked against the current validation report rather than inferred from the module type.
 >
 > **Unity-safe file-local helpers (#68).** Internal-linkage helpers (anonymous-namespace functions/types, file-`static`s) must carry file-unique names or live in per-file named namespaces — matching the MonolithUI model — so they don't collide when adaptive/full unity concatenates same-module `.cpp`s into one translation unit.
 

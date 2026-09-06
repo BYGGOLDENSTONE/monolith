@@ -3,7 +3,7 @@
 // Reusable BT task: write a random float in [Min, Max] to a Blackboard float key.
 
 #include "BehaviorTreeTasks/BTTask_RandomizeFloat.h"
-#include "MonolithAIInternal.h"
+#include "MonolithRuntimeModule.h"
 
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -30,7 +30,7 @@ EBTNodeResult::Type UBTTask_RandomizeFloat::ExecuteTask(UBehaviorTreeComponent& 
 	UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
 	if (!BB || !BlackboardKey.IsSet())
 	{
-		UE_LOG(LogMonolithAI, Verbose,
+		UE_LOG(LogMonolithRuntime, Verbose,
 			TEXT("BTTask_RandomizeFloat[%s]: no Blackboard component or unset key"),
 			*GetNodeName());
 		return EBTNodeResult::Failed;

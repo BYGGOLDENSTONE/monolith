@@ -237,6 +237,10 @@ public:
 	int64 GetAssetId(const FString& PackagePath);
 	bool DeleteAssetAndRelated(int64 AssetId);
 
+	/** Replace sentinel-owned rows inside the caller's transaction, preserving other indexers. */
+	bool ClearGASIndexRows();
+	bool ClearMetaSoundIndexRows();
+
 	// --- Node CRUD ---
 	int64 InsertNode(const FIndexedNode& Node);
 	TArray<FIndexedNode> GetNodesForAsset(int64 AssetId);

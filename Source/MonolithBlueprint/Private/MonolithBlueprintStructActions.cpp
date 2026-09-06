@@ -150,6 +150,26 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateUserDefinedSt
 			TEXT("Asset already exists in memory at '%s'. Delete it first."), *SavePath));
 	}
 
+	// Resolve the entire field schema before creating the package. A typo must not create
+	// an asset with fallback bool fields or leave a partially authored struct behind.
+	TArray<FEdGraphPinType> ValidatedTypes;
+	TSet<FName> FieldNames;
+	for (const auto& Field : *FieldsArray)
+	{
+		if (!Field.IsValid() || Field->Type != EJson::Object)
+			return FMonolithActionResult::InvalidParam(TEXT("fields"), TEXT("Every field must be an object with name and type"));
+		FString Name, TypeString, TypeError;
+		Field->AsObject()->TryGetStringField(TEXT("name"), Name);
+		Field->AsObject()->TryGetStringField(TEXT("type"), TypeString);
+		if (FName(*Name).IsNone() || FieldNames.Contains(FName(*Name)))
+			return FMonolithActionResult::InvalidParam(TEXT("fields"), TEXT("Field names must be non-empty and unique"));
+		FEdGraphPinType Type;
+		if (!MonolithPinTypeGrammar::TryParsePinType(TypeString, Type, TypeError))
+			return FMonolithActionResult::InvalidParam(TEXT("type"), TypeError);
+		FieldNames.Add(FName(*Name));
+		ValidatedTypes.Add(Type);
+	}
+
 	// Create package
 	{
 		FString WritableError;
@@ -198,7 +218,7 @@ FMonolithActionResult FMonolithBlueprintStructActions::HandleCreateUserDefinedSt
 		}
 
 		// Parse the type string to FEdGraphPinType
-		FEdGraphPinType PinType = MonolithPinTypeGrammar::ParsePinTypeFromString(TypeStr);
+		const FEdGraphPinType& PinType = ValidatedTypes[FieldIndex];
 
 		// The first field replaces the default member created by CreateUserDefinedStruct.
 		// Subsequent fields need AddVariable.

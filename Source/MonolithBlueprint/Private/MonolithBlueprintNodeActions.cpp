@@ -589,6 +589,24 @@ bool MonolithBlueprintInternal::HasCustomEventNamed(UBlueprint* BP, FName EventN
 
 void FMonolithBlueprintNodeActions::RegisterActions(FMonolithToolRegistry& Registry)
 {
+	Registry.RegisterAction(TEXT("blueprint"), TEXT("get_graph_node_properties"),
+		TEXT("Read editable reflected properties of a node anchored to a Blueprint asset and graph. Values use Unreal text syntax; struct fields can be edited through dotted property paths."),
+		FMonolithActionHandler::CreateStatic(&HandleGetGraphNodeProperties),
+		FParamSchemaBuilder().RequiredAssetPath(TEXT("asset_path"), TEXT("Blueprint asset path"))
+		.Required(TEXT("graph_name"), TEXT("string"), TEXT("Graph name"))
+		.Required(TEXT("node_id"), TEXT("string"), TEXT("Node GUID or exact name"))
+		.Build());
+	Registry.RegisterAction(TEXT("blueprint"), TEXT("set_graph_node_property"),
+		TEXT("Set an editable node property, validating text before mutation. Dotted struct paths supported; object traversal and container elements are refused. Reconstructs node pins and returns their current names/types. Does not compile. save defaults false."),
+		FMonolithActionHandler::CreateStatic(&HandleSetGraphNodeProperty),
+		FParamSchemaBuilder().RequiredAssetPath(TEXT("asset_path"), TEXT("Blueprint asset path"))
+		.Required(TEXT("graph_name"), TEXT("string"), TEXT("Graph name"))
+		.Required(TEXT("node_id"), TEXT("string"), TEXT("Node GUID or exact name"))
+		.Required(TEXT("property_name"), TEXT("string"), TEXT("Editable property or dotted struct path"))
+		.Required(TEXT("value"), TEXT("string"), TEXT("Unreal property text"))
+		.Optional(TEXT("save"), TEXT("bool"), TEXT("Save the changed Blueprint (default false)"), TEXT("false"))
+		.Build());
+
 	Registry.RegisterAction(TEXT("blueprint"), TEXT("add_node"),
 		TEXT("Add a new node to a Blueprint graph. Supports CallFunction, VariableGet, VariableSet, CustomEvent, Branch, Sequence, MacroInstance, SpawnActorFromClass, DynamicCast, Self, Return, MakeStruct, BreakStruct, SwitchOnEnum, SwitchOnInt, SwitchOnString, FormatText, MakeArray, Select node types. Also supports shorthand aliases: ForEachLoop, ForLoop, ForLoopWithBreak, DoOnce, FlipFlop, Gate (macro shortcuts), IsValid, Delay, RetriggerableDelay (function shortcuts), make_struct, break_struct, switch_enum, switch_int, switch_string, format_text, make_array, select. ComponentBoundEvent (binds an event entry node to a component's BlueprintAssignable multicast delegate; requires component_name + delegate_property_name), AddDelegate (binds an event to a BlueprintAssignable multicast delegate; \"Bind Event to ...\" node), RemoveDelegate (\"Unbind Event from ...\" — removes one previously bound event), ClearDelegate (\"Unbind all Events from ...\" — clears every bound listener), CallDelegate (\"Call ...\" — broadcasts a BP-resident multicast delegate to all listeners)"),
 		FMonolithActionHandler::CreateStatic(&HandleAddNode),

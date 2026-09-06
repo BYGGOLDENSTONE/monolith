@@ -78,6 +78,11 @@ void UMonolithGASUIBindingBlueprintExtension::HandleFinishCompilingClass(UWidget
     // mint a fresh runtime extension and install via the official compiler API.
     UMonolithGASAttributeBindingClassExtension* RuntimeExt = NewObject<UMonolithGASAttributeBindingClassExtension>(Class);
     RuntimeExt->Bindings = Bindings;
+    for (FMonolithGASAttributeBindingSpec& Spec : RuntimeExt->Bindings)
+    {
+        Spec.AttributeSetClass = FSoftObjectPath(Spec.AttributeSetClassPath);
+        Spec.MaxAttributeSetClass = FSoftObjectPath(Spec.MaxAttributeSetClassPath);
+    }
 
     if (CachedCompilerContext)
     {

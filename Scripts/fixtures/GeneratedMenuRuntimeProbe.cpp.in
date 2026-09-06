@@ -1,0 +1,45 @@
+// Root-owned runtime test actor can include this in its .cpp. No editor APIs.
+// MenuClass UPROPERTY must point to WBP_MenuHost_C so cooking retains the dependency.
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetNavigation.h"
+#include "CommonActivatableWidget.h"
+#include "Widgets/CommonActivatableWidgetContainer.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
+
+static FString TestGeneratedMenuRuntime(UWorld* World, TSubclassOf<UUserWidget> MenuClass)
+{
+    APlayerController* Player = World ? World->GetFirstPlayerController() : nullptr;
+    if (!Player || !MenuClass) return TEXT("menu probe needs player and cooked MenuClass");
+    UUserWidget* Menu = CreateWidget<UUserWidget>(Player, MenuClass);
+    if (!Menu) return TEXT("could not create generated host");
+    UCommonActivatableWidgetStack* Stack = Cast<UCommonActivatableWidgetStack>(Menu->GetWidgetFromName(TEXT("MainStack")));
+    if (!Stack) return TEXT("generated MainStack missing");
+    // Set before AddToViewport/TakeWidget: the first Construct push then has no asynchronous transition.
+    Stack->SetTransitionDuration(0.f);
+    Menu->AddToViewport(500);
+    Menu->TakeWidget();
+    FString Result = TEXT("ok");
+    UCommonActivatableWidget* Active = Stack->GetActiveWidget();
+    if (Stack->GetNumWidgets() != 1 || !Active || !Active->IsActivated())
+        Result = TEXT("Construct did not create and activate exactly one stacked screen");
+    else
+    {
+        UWidget* Start = Active->GetWidgetFromName(TEXT("StartButton"));
+        UWidget* Settings = Active->GetWidgetFromName(TEXT("SettingsButton"));
+        if (!Start || !Settings) Result = TEXT("generated screen buttons missing at runtime");
+        else if (Active->GetDesiredFocusTarget() != Start) Result = TEXT("compiled desired-focus override did not return StartButton");
+        else if (!Start->Navigation || Start->Navigation->Down.Rule != EUINavigationRule::Explicit
+            || Start->Navigation->Down.WidgetToFocus != TEXT("SettingsButton")
+            || Start->Navigation->Down.Widget.Get() != Settings)
+            Result = TEXT("saved Down navigation failed to resolve SettingsButton in runtime instance");
+        else if (!Settings->Navigation || Settings->Navigation->Up.Rule != EUINavigationRule::Explicit
+            || Settings->Navigation->Up.Widget.Get() != Start)
+            Result = TEXT("saved Up navigation failed to resolve StartButton in runtime instance");
+        else if (!Start->GetCachedWidget().IsValid()) Result = TEXT("active screen did not build a real Slate widget");
+    }
+    Menu->RemoveFromParent();
+    Menu->ReleaseSlateResources(true);
+    return Result;
+}

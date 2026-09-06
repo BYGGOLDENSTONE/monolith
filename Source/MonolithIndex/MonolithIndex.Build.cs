@@ -78,6 +78,7 @@ public class MonolithIndex : ModuleRules
 			"Niagara",
 			"GameplayTags",
 			"GameplayAbilities",
+			"AIModule",
 			"EnhancedInput",
 			"Projects"
 		});

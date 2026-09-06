@@ -13,24 +13,13 @@ class UAudioComponent;
 enum class EAudioComponentPlayState : uint8;
 
 /**
- * UMonolithAudioPerceptionSubsystem
- *
- * UWorldSubsystem that auto-fires AActor::MakeNoise whenever a UAudioComponent starts playing
- * a USoundBase carrying a UMonolithSoundPerceptionUserData payload.
- *
- * Hook point: UAudioComponent::OnAudioPlayStateChangedNative (cheap, native, multicast).
- * The audio engine marshals state notifications back to the game thread, so this delegate
- * fires on the game thread — confirmed empirically by existing engine broadcasts in
- * UAudioComponent::SetPlayState. We additionally guard with IsInGameThread() ensure for safety
- * (header doesn't enforce it; per H3 plan trap #1 — never call MakeNoise on the audio thread).
- *
- * Coverage:
- *  - YES: UAudioComponent::Play, SpawnSoundAtLocation, SpawnSoundAttached, CreateSound2D
- *  - NO:  UGameplayStatics::PlaySoundAtLocation (no UAudioComponent spawned). Use
- *         UMonolithAudioPerceptionStatics::PlaySoundAndReportNoise as the replacement.
- *
- * Authority gating: AActor::MakeNoise is BlueprintAuthorityOnly. We test
- * Owner->HasAuthority() before calling — silent no-op on clients in networked games.
+ * Reports AI hearing events when registered audio components play a sound carrying
+ * UMonolithSoundPerceptionUserData. Notifications are handled on the game thread.
+ * Placed components and components present at actor spawn are registered automatically.
+ * Components created later (including gameplay-spawned sounds) must be registered
+ * before Play via RegisterAudioComponent. Fire-and-forget sounds can use
+ * UMonolithAudioPerceptionStatics::PlaySoundAndReportNoise instead.
+ * Reports are authority-only and support non-pawn sound owners.
  */
 UCLASS(MinimalAPI)
 class UMonolithAudioPerceptionSubsystem : public UWorldSubsystem
@@ -42,7 +31,11 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 	virtual void PostInitialize() override;
+	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
+	/** Register dynamic components; catches existing playback. Prefer registering before Play. Idempotent. */
+	UFUNCTION(BlueprintCallable, Category="Monolith|Audio|Perception")
+	MONOLITHAUDIORUNTIME_API void RegisterAudioComponent(UAudioComponent* Component);
 	//~ End UWorldSubsystem
 
 private:
@@ -55,7 +48,7 @@ private:
 	/** Inspects a single component and binds the native delegate if it carries a perception-bound sound. */
 	void TryHookAudioComponent(UAudioComponent* AudioComp);
 
-	/** Native multicast handler: dispatches MakeNoise on Playing (and optionally FadingIn). */
+	/** Native multicast handler: dispatches hearing on Playing (and optionally FadingIn). */
 	void OnAudioPlayStateChanged(const UAudioComponent* AudioComp, EAudioComponentPlayState NewState);
 
 	/** Walks all existing actors once on PostInitialize / OnWorldBeginPlay (catches placed AudioComponents). */

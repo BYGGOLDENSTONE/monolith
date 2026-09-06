@@ -5,6 +5,7 @@
 #include "MonolithJsonUtils.h"
 
 #include "Misc/Optional.h"
+#include "UObject/UObjectHash.h"
 
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardData.h"
@@ -172,6 +173,29 @@ namespace
 		}
 
 		return NodeObj;
+	}
+
+	/**
+	 * Repair runtime instances authored by older versions under editor graph nodes.
+	 * Called only by write/rebuild paths. UBehaviorTreeGraph::CreateBTFromGraph
+	 * reparents children but does not reparent RootNode, so that root is otherwise
+	 * stripped along with its editor-only outer during cook.
+	 */
+	bool RepairBTRuntimeOwnership(UBehaviorTree* BT)
+	{
+		if (!BT) return false;
+		TArray<UObject*> Objects;
+		GetObjectsWithOuter(BT, Objects, true);
+		for (UObject* Object : Objects)
+		{
+			UBTNode* Node = Cast<UBTNode>(Object);
+			if (!Node || (!Node->GetTypedOuter<UEdGraph>() && !Node->GetTypedOuter<UEdGraphNode>())) continue;
+			Node->Modify();
+			const FName Name = MakeUniqueObjectName(BT, Node->GetClass(), Node->GetFName());
+			if (!Node->Rename(*Name.ToString(), BT, REN_DontCreateRedirectors)) return false;
+			Node->SetFlags(RF_Transactional);
+		}
+		return true;
 	}
 
 	/** Load a BT and its editor graph, returning both. Sets OutError on failure. */
@@ -1145,8 +1169,8 @@ namespace
 		NewGraphNode->CreateNewGuid();
 		NewGraphNode->AllocateDefaultPins();
 
-		// Create the BT node instance
-		UBTNode* NewBTNode = NewObject<UBTNode>(NewGraphNode, BTNodeClass);
+		// Runtime instances belong to the BT asset, never its editor-only graph nodes.
+		UBTNode* NewBTNode = NewObject<UBTNode>(Ctx.BT, BTNodeClass, NAME_None, RF_Transactional);
 		NewGraphNode->NodeInstance = NewBTNode;
 
 		// Set custom name if provided
@@ -1214,7 +1238,7 @@ namespace
 				}
 
 				UBehaviorTreeGraphNode_Decorator* DecGraphNode = NewObject<UBehaviorTreeGraphNode_Decorator>(Ctx.BTGraph);
-				UBTDecorator* DecInstance = NewObject<UBTDecorator>(DecGraphNode, DecClass);
+				UBTDecorator* DecInstance = NewObject<UBTDecorator>(Ctx.BT, DecClass, NAME_None, RF_Transactional);
 				DecGraphNode->NodeInstance = DecInstance;
 				NewGraphNode->AddSubNode(DecGraphNode, Ctx.BTGraph);
 
@@ -1255,7 +1279,7 @@ namespace
 				}
 
 				UBehaviorTreeGraphNode_Service* SvcGraphNode = NewObject<UBehaviorTreeGraphNode_Service>(Ctx.BTGraph);
-				UBTService* SvcInstance = NewObject<UBTService>(SvcGraphNode, SvcClass);
+				UBTService* SvcInstance = NewObject<UBTService>(Ctx.BT, SvcClass, NAME_None, RF_Transactional);
 				SvcGraphNode->NodeInstance = SvcInstance;
 				NewGraphNode->AddSubNode(SvcGraphNode, Ctx.BTGraph);
 
@@ -2108,6 +2132,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleDuplicateBehaviorTre
 		return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to duplicate '%s' to '%s'"), *SourcePath, *DestPath));
 	}
 
+	if (!RepairBTRuntimeOwnership(NewBT)) return FMonolithActionResult::Error(TEXT("Could not repair duplicated BehaviorTree runtime node ownership"));
 	NewBT->SetFlags(RF_Public | RF_Standalone);
 	FAssetRegistryModule::AssetCreated(NewBT);
 	NewBT->MarkPackageDirty();
@@ -2296,8 +2321,8 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTNode(const TSha
 	NewGraphNode->CreateNewGuid();
 	NewGraphNode->AllocateDefaultPins();
 
-	// Create the BT node instance
-	UBTNode* NewBTNode = NewObject<UBTNode>(NewGraphNode, BTNodeClass);
+	// Runtime instances belong to the BT asset, never its editor-only graph nodes.
+	UBTNode* NewBTNode = NewObject<UBTNode>(BT, BTNodeClass, NAME_None, RF_Transactional);
 	NewGraphNode->NodeInstance = NewBTNode;
 
 	// Set a default position offset from parent so they don't stack
@@ -2317,6 +2342,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTNode(const TSha
 
 	// Init and sync
 	NewGraphNode->InitializeInstance();
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset();
 	BT->MarkPackageDirty();
 
@@ -2380,6 +2406,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleRemoveBTNode(const T
 	// Destroy the node from the graph
 	TargetNode->DestroyNode();
 
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset();
 	BT->MarkPackageDirty();
 
@@ -2461,6 +2488,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleMoveBTNode(const TSh
 	TargetNode->NodePosX = NewParent->NodePosX + 200;
 	TargetNode->NodePosY = NewParent->NodePosY + 150;
 
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset();
 	BT->MarkPackageDirty();
 
@@ -2524,10 +2552,11 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTDecorator(const
 	UBehaviorTreeGraphNode_Decorator* DecGraphNode = NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph);
 
 	// Create the decorator instance
-	UBTDecorator* DecInstance = NewObject<UBTDecorator>(DecGraphNode, DecClass);
+	UBTDecorator* DecInstance = NewObject<UBTDecorator>(BT, DecClass, NAME_None, RF_Transactional);
 	DecGraphNode->NodeInstance = DecInstance;
 
 	// AddSubNode handles: guid, pins, parent linkage, OnSubNodeAdded → Decorators[], UpdateAsset
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	TargetNode->AddSubNode(DecGraphNode, BTGraph);
 
 	// Apply optional properties
@@ -2593,6 +2622,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleRemoveBTDecorator(co
 	UBehaviorTreeGraphNode* DecNode = TargetNode->Decorators[DecoratorIndex];
 	TargetNode->RemoveSubNode(DecNode);
 
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset();
 	BT->MarkPackageDirty();
 
@@ -2657,10 +2687,11 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTService(const T
 	UBehaviorTreeGraphNode_Service* SvcGraphNode = NewObject<UBehaviorTreeGraphNode_Service>(BTGraph);
 
 	// Create the service instance
-	UBTService* SvcInstance = NewObject<UBTService>(SvcGraphNode, SvcClass);
+	UBTService* SvcInstance = NewObject<UBTService>(BT, SvcClass, NAME_None, RF_Transactional);
 	SvcGraphNode->NodeInstance = SvcInstance;
 
 	// AddSubNode handles everything (guid, pins, parent linkage, OnSubNodeAdded → Services[], UpdateAsset)
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	TargetNode->AddSubNode(SvcGraphNode, BTGraph);
 
 	// Apply optional properties
@@ -2726,6 +2757,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleRemoveBTService(cons
 	UBehaviorTreeGraphNode* SvcNode = TargetNode->Services[ServiceIndex];
 	TargetNode->RemoveSubNode(SvcNode);
 
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset();
 	BT->MarkPackageDirty();
 
@@ -2793,6 +2825,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleSetBTNodeProperty(co
 		return FMonolithActionResult::Error(PropError);
 	}
 
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset();
 	BT->MarkPackageDirty();
 
@@ -2959,6 +2992,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleReorderBTChildren(co
 	// RebuildChildOrder re-sorts LinkedTo by the now-updated X positions, then UpdateAsset
 	// rebuilds UBTCompositeNode::Children in that order and re-links execution indices.
 	BTGraph->RebuildChildOrder(ParentNode);
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset();
 	BTGraph->MarkPackageDirty();
 	BT->Modify();
@@ -3065,7 +3099,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTRunEQSTask(cons
 	TaskGraphNode->AllocateDefaultPins();
 
 	// Create task instance
-	UBTNode* TaskNode = NewObject<UBTNode>(TaskGraphNode, RunEQSClass);
+	UBTNode* TaskNode = NewObject<UBTNode>(BT, RunEQSClass, NAME_None, RF_Transactional);
 	TaskGraphNode->NodeInstance = TaskNode;
 
 	// Position
@@ -3093,6 +3127,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTRunEQSTask(cons
 	}
 
 	TaskGraphNode->InitializeInstance();
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset();
 	BT->MarkPackageDirty();
 
@@ -3208,7 +3243,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTSmartObjectTask
 	TaskGraphNode->AllocateDefaultPins();
 
 	// Create task instance
-	UBTNode* TaskNode = NewObject<UBTNode>(TaskGraphNode, SOTaskClass);
+	UBTNode* TaskNode = NewObject<UBTNode>(BT, SOTaskClass, NAME_None, RF_Transactional);
 	TaskGraphNode->NodeInstance = TaskNode;
 
 	// Position
@@ -3242,6 +3277,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTSmartObjectTask
 	SetPropertyValue(TaskNode, TEXT("Radius"), RadiusVal, BT, PropError);
 
 	TaskGraphNode->InitializeInstance();
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset();
 	BT->MarkPackageDirty();
 
@@ -3448,7 +3484,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTUseAbilityTask(
 	TaskGraphNode->AllocateDefaultPins();
 
 	UBTTask_TryActivateAbility* TaskNode = NewObject<UBTTask_TryActivateAbility>(
-		TaskGraphNode, UBTTask_TryActivateAbility::StaticClass());
+		BT, UBTTask_TryActivateAbility::StaticClass(), NAME_None, RF_Transactional);
 	TaskGraphNode->NodeInstance = TaskNode;
 
 	// Position
@@ -3489,6 +3525,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleAddBTUseAbilityTask(
 	}
 
 	TaskGraphNode->InitializeInstance();
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset();
 	BT->MarkPackageDirty();
 
@@ -3790,6 +3827,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleBuildBTFromSpec(cons
 	}
 
 	// Update the runtime tree from the editor graph
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset(0);
 	BT->MarkPackageDirty();
 
@@ -3960,6 +3998,7 @@ FMonolithActionResult FMonolithAIBehaviorTreeActions::HandleImportBTSpec(const T
 
 	BuildNodeFromSpec(*RootObjPtr, RootGraphNode, 0, 0, Ctx);
 
+	if (!RepairBTRuntimeOwnership(BT)) return FMonolithActionResult::Error(TEXT("Could not repair BehaviorTree runtime node ownership"));
 	BTGraph->UpdateAsset(0);
 	BT->MarkPackageDirty();
 

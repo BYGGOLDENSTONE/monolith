@@ -3,7 +3,7 @@
 // Generic AIController that auto-starts an assigned BehaviorTree in OnPossess().
 
 #include "Controllers/MonolithBehaviorTreeAIController.h"
-#include "MonolithAIInternal.h"
+#include "MonolithRuntimeModule.h"
 
 #include "BehaviorTree/BehaviorTree.h"
 
@@ -21,7 +21,7 @@ bool AMonolithBehaviorTreeAIController::StartBehaviorTree()
 {
 	if (!BehaviorTreeToRun)
 	{
-		UE_LOG(LogMonolithAI, Verbose,
+		UE_LOG(LogMonolithRuntime, Verbose,
 			TEXT("MonolithBehaviorTreeAIController[%s]: no BehaviorTreeToRun assigned"),
 			*GetName());
 		return false;
@@ -30,7 +30,7 @@ bool AMonolithBehaviorTreeAIController::StartBehaviorTree()
 	const bool bStarted = RunBehaviorTree(BehaviorTreeToRun);
 	if (!bStarted)
 	{
-		UE_LOG(LogMonolithAI, Warning,
+		UE_LOG(LogMonolithRuntime, Warning,
 			TEXT("MonolithBehaviorTreeAIController[%s]: RunBehaviorTree failed for %s"),
 			*GetName(), *BehaviorTreeToRun->GetName());
 	}

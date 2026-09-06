@@ -1,3 +1,4 @@
+#include "MonolithPinTypeGrammar.h"
 #include "MonolithAbpWriteActions.h"
 #include "MonolithJsonUtils.h"
 #include "MonolithAssetUtils.h"
@@ -437,12 +438,12 @@ void FMonolithAbpWriteActions::RegisterActions(FMonolithToolRegistry& Registry)
 
 	// --- add_anim_layer_graph (ABP-native anim layer authoring) ---
 	Registry.RegisterAction(TEXT("animation"), TEXT("add_anim_layer_graph"),
-		TEXT("Create an ABP-NATIVE animation layer graph: a UAnimationGraph in the Animation Blueprint's own FunctionGraphs, which is exactly what the editor's My Blueprint -> + -> Animation Layer button produces. No UAnimLayerInterface asset is needed — the layer belongs to this ABP, so ABP variants do not have to share a layer signature. The graph is created with the animation graph schema (so the anim compiler emits a real FAnimBlueprintFunction for it, unlike blueprint add_function, which produces an inert K2 graph), and its Output Pose root node is created automatically. Optional input_poses adds Input Pose nodes; pose NAMES only — non-pose parameter pins are not supported yet. Populate the layer with the existing anim-graph authoring actions, then place a node for it with add_linked_anim_layer, which auto-detects native layers. Refuses: a duplicate graph name (it never renames or replaces an existing graph), the reserved name 'AnimGraph', a child Animation Blueprint (layers belong to the root ABP), macro libraries, and interface Blueprints."),
+		TEXT("Create an ABP-NATIVE animation layer graph: a UAnimationGraph in the Animation Blueprint's own FunctionGraphs, which is exactly what the editor's My Blueprint -> + -> Animation Layer button produces. No UAnimLayerInterface asset is needed — the layer belongs to this ABP, so ABP variants do not have to share a layer signature. The graph is created with the animation graph schema (so the anim compiler emits a real FAnimBlueprintFunction for it, unlike blueprint add_function, which produces an inert K2 graph), and its Output Pose root node is created automatically. Optional input_poses adds Input Pose nodes; each object may include inputs:[{name,type}] for typed parameters. Populate the layer with the existing anim-graph authoring actions, then place a node for it with add_linked_anim_layer, which auto-detects native layers. Refuses: a duplicate graph name (it never renames or replaces an existing graph), the reserved name 'AnimGraph', a child Animation Blueprint (layers belong to the root ABP), macro libraries, and interface Blueprints."),
 		FMonolithActionHandler::CreateStatic(&FMonolithAbpWriteActions::HandleAddAnimLayerGraph),
 		FParamSchemaBuilder()
 			.RequiredAssetPath(TEXT("asset_path"), TEXT("Animation Blueprint asset path — must be a ROOT ABP, not a child ABP"))
 			.Required(TEXT("layer_name"), TEXT("string"), TEXT("Layer graph name. Must not collide with any existing graph on the ABP (function, ubergraph, macro, delegate signature, or implemented-interface graph) and must not be 'AnimGraph'"))
-			.Optional(TEXT("input_poses"), TEXT("array"), TEXT("Input pose names to add, e.g. [\"InPose\"] or [{\"name\": \"InPose\"}] — both forms accepted. Pose names only; non-pose parameter pins are not supported yet. Capped at 16. Names must be unique within the layer."))
+			.Optional(TEXT("input_poses"), TEXT("array"), TEXT("Input pose names to add, e.g. [\"InPose\"] or [{\"name\": \"InPose\"}] — both forms accepted. Object entries may include inputs:[{name,type}] using Blueprint pin type syntax. Capped at 16. Names must be unique within the layer."))
 			.Optional(TEXT("compile"), TEXT("bool"), TEXT("Compile the ABP after creating the graph (default: true). Pass false to defer the compile while an intentionally-empty layer graph is being populated — a layer whose Output Pose is unconnected can draw compiler warnings."), TEXT("true"))
 			.Build());
 }
@@ -4645,17 +4646,37 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddLinkedAnimLayer(const T
 	// CreateOutputPins resolves the FunctionReference written above against GetTargetSkeletonClass() and
 	// makes one pose pin per pose parameter of the layer function; CreateCustomPins then adds the
 	// non-pose input properties. Both read the fields set above, so this call comes last.
+	// UE's linked-layer CreateCustomPins discovers typed parameters but hides them by
+	// default (bShowPin=false). Expose the discovered inputs so this authoring action
+	// returns usable parameter pins as well as pose pins. Never invent pin types here.
+	auto ExposeLayerInputs = [LayerNode]()
+	{
+		FArrayProperty* PinsProperty = FindFProperty<FArrayProperty>(LayerNode->GetClass(), TEXT("CustomPinProperties"));
+		if (!PinsProperty) return;
+		FScriptArrayHelper Pins(PinsProperty, PinsProperty->ContainerPtrToValuePtr<void>(LayerNode));
+		bool bChanged = false;
+		for (int32 Index = 0; Index < Pins.Num(); ++Index)
+		{
+			auto* Pin = reinterpret_cast<FOptionalPinFromProperty*>(Pins.GetRawPtr(Index));
+			if (!Pin->bShowPin) { Pin->bShowPin = true; bChanged = true; }
+		}
+		if (bChanged) LayerNode->ReconstructNode();
+	};
 	LayerNode->ReconstructNode();
+	ExposeLayerInputs();
 	GEditor->EndTransaction();
 
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(ABP);
 	FKismetEditorUtilities::CompileBlueprint(ABP);
+	LayerNode->ReconstructNode();
+	ExposeLayerInputs();
 	ABP->MarkPackageDirty();
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("asset_path"), AssetPath);
 	Root->SetStringField(TEXT("node_name"), LayerNode->GetName());
 	Root->SetStringField(TEXT("layer_name"), LayerName);
+	Root->SetStringField(TEXT("layer_kind"), ResolvedInterfaceClass ? TEXT("interface") : TEXT("native"));
 	Root->SetStringField(TEXT("interface_class"), ResolvedInterfaceClass ? ResolvedInterfaceClass->GetPathName() : FString(TEXT("<self>")));
 	Root->SetStringField(TEXT("interface_guid"), ResolvedGuid.ToString());
 	Root->SetBoolField(TEXT("guid_resolved"), ResolvedGuid.IsValid());
@@ -4786,6 +4807,8 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimLayerGraph(const TS
 	//     with a "name" field — the object form is the extension point for the non-pose parameter
 	//     pins this action does not support yet.
 	TArray<FString> RequestedPoseNames;
+	TMap<FName, TArray<FAnimBlueprintFunctionPinInfo>> RequestedPoseInputs;
+	TSet<FName> ParameterNames;
 	const TArray<TSharedPtr<FJsonValue>>* PoseArray = nullptr;
 	const bool bHasPoseArray = Params->TryGetArrayField(TEXT("input_poses"), PoseArray) && PoseArray;
 	if (!bHasPoseArray && Params->HasField(TEXT("input_poses")))
@@ -4875,8 +4898,40 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimLayerGraph(const TS
 					*PoseName, *AssetPath));
 			}
 
+			TArray<FAnimBlueprintFunctionPinInfo> Inputs;
+			if (Entry->Type == EJson::Object && Entry->AsObject()->HasField(TEXT("inputs")))
+			{
+				const TArray<TSharedPtr<FJsonValue>>* InputArray = nullptr;
+				if (!Entry->AsObject()->TryGetArrayField(TEXT("inputs"), InputArray) || InputArray->Num() > 32)
+					return FMonolithActionResult::InvalidParam(TEXT("inputs"), TEXT("inputs must be an array of at most 32 {name,type} entries"));
+				for (const auto& Input : *InputArray)
+				{
+					if (!Input.IsValid() || Input->Type != EJson::Object)
+						return FMonolithActionResult::InvalidParam(TEXT("inputs"), TEXT("Each input must be {name,type}"));
+					FString InputName, TypeString, TypeError;
+					Input->AsObject()->TryGetStringField(TEXT("name"), InputName);
+					Input->AsObject()->TryGetStringField(TEXT("type"), TypeString);
+					const FName InputFName(*InputName);
+					FEdGraphPinType Type;
+					if (InputFName.IsNone() || ParameterNames.Contains(InputFName))
+						return FMonolithActionResult::InvalidParam(TEXT("inputs"), TEXT("Input names must be non-empty and unique across the layer"));
+					if (!MonolithPinTypeGrammar::TryParsePinType(TypeString, Type, TypeError))
+						return FMonolithActionResult::InvalidParam(TEXT("type"), TypeError);
+					if (Type.PinCategory == UEdGraphSchema_K2::PC_Exec || Type.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+						return FMonolithActionResult::InvalidParam(TEXT("type"), TEXT("Layer inputs require concrete data types"));
+					Inputs.Emplace(InputFName, Type);
+					ParameterNames.Add(InputFName);
+				}
+			}
+			RequestedPoseInputs.Add(FName(*PoseName), MoveTemp(Inputs));
 			RequestedPoseNames.Add(PoseName);
 		}
+	}
+
+	for (const FString& PoseName : RequestedPoseNames)
+	{
+		if (ParameterNames.Contains(FName(*PoseName)))
+			return FMonolithActionResult::InvalidParam(TEXT("inputs"), TEXT("Parameter names must not collide with input pose names"));
 	}
 
 	// --- Create. The two-call pair from CGT_NewAnimationLayer.
@@ -4944,6 +4999,8 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimLayerGraph(const TS
 		// graph's outer stays the ABP.
 		PoseNode->Modify();
 		PoseNode->Node.Name = FName(*PoseName);
+		PoseNode->Inputs = RequestedPoseInputs.FindChecked(FName(*PoseName));
+		PoseNode->ReconstructNode();
 		CreatedPoseNames.Add(PoseName);
 	}
 
@@ -4967,14 +5024,22 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimLayerGraph(const TS
 		}
 	}
 
-	// No MarkBlueprintAsStructurallyModified call here — AddDomainSpecificGraph already did it, and the
-	// engine's own add-input-pose path does not re-mark either.
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(ABP);
 	GEditor->EndTransaction();
 
 	if (bCompile)
 	{
 		FKismetEditorUtilities::CompileBlueprint(ABP);
+		// The compiled signature is authoritative. Refresh calls after the skeleton function
+		// exists, otherwise a layer call created before compilation can retain stale pins.
+		TArray<UAnimGraphNode_LinkedAnimLayer*> Calls;
+		FBlueprintEditorUtils::GetAllNodesOfClass<UAnimGraphNode_LinkedAnimLayer>(ABP, Calls);
+		for (UAnimGraphNode_LinkedAnimLayer* Call : Calls)
+		{
+			if (Call && !Call->Node.Interface && Call->Node.Layer == LayerFName) Call->ReconstructNode();
+		}
 	}
+
 	ABP->MarkPackageDirty();
 
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
@@ -4993,6 +5058,8 @@ FMonolithActionResult FMonolithAbpWriteActions::HandleAddAnimLayerGraph(const TS
 		PoseJson.Add(MakeShared<FJsonValueString>(PoseName));
 	}
 	Root->SetArrayField(TEXT("input_poses"), PoseJson);
+	Root->SetNumberField(TEXT("parameter_count"), ParameterNames.Num());
+	Root->SetStringField(TEXT("layer_kind"), TEXT("native"));
 	Root->SetBoolField(TEXT("compiled"), bCompile);
 	Root->SetBoolField(TEXT("saved"), false);
 	return FMonolithActionResult::Success(Root);

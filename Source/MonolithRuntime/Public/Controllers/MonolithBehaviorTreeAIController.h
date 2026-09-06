@@ -28,7 +28,7 @@ class UBehaviorTree;
  * unlike BeginPlay. Use StartBehaviorTree() to (re)start it manually at runtime.
  */
 UCLASS(Blueprintable, meta = (DisplayName = "Monolith Behavior Tree AI Controller"))
-class MONOLITHAI_API AMonolithBehaviorTreeAIController : public AAIController
+class MONOLITHRUNTIME_API AMonolithBehaviorTreeAIController : public AAIController
 {
 	GENERATED_BODY()
 

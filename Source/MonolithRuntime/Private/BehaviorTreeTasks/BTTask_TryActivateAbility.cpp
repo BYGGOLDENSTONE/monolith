@@ -1,19 +1,5 @@
-// Copyright Monolith. All Rights Reserved.
-//
-// MonolithAI Phase I2: BT-to-GAS direct ability activation task — implementation.
-// Plan: Docs/plans/2026-04-26-bt-gas-ability-task.md
-//
-// The reflection surface (UCLASS + UPROPERTY) lives unconditionally in the
-// header (UHT 5.7 forbids preprocessor-gating those markers). All linkage
-// against the GameplayAbilities module is contained here, behind
-// WITH_GAMEPLAYABILITIES. When GAS is absent, the class still links (UE will
-// expect ctor + virtual override symbols) but every method is a defensive
-// no-op that returns Failed; the action handler also refuses to register a
-// node of this class in that build, so the no-op path is unreachable in
-// production.
-
 #include "BehaviorTreeTasks/BTTask_TryActivateAbility.h"
-#include "MonolithAIInternal.h"
+#include "MonolithRuntimeModule.h"
 
 UBTTask_TryActivateAbility::UBTTask_TryActivateAbility(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -29,14 +15,9 @@ UBTTask_TryActivateAbility::UBTTask_TryActivateAbility(const FObjectInitializer&
 
 uint16 UBTTask_TryActivateAbility::GetInstanceMemorySize() const
 {
-#if WITH_GAMEPLAYABILITIES
 	return sizeof(FBTTaskTryActivateAbilityMemory);
-#else
-	return 0;
-#endif
 }
 
-#if WITH_GAMEPLAYABILITIES
 
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "AIController.h"
@@ -93,6 +74,8 @@ EBTNodeResult::Type UBTTask_TryActivateAbility::ExecuteTask(UBehaviorTreeCompone
 	Mem->EndedHandle.Reset();
 	Mem->bAwaitingEnd = false;
 	Mem->bWasCancelled = false;
+	Mem->bInsideExecute = false;
+	Mem->bEndedDuringExecute = false;
 
 	// 1. Validate config (also validated at design-time but defend at runtime).
 	//    AbilityClass is type-erased to TSubclassOf<UObject> in the header for
@@ -105,7 +88,7 @@ EBTNodeResult::Type UBTTask_TryActivateAbility::ExecuteTask(UBehaviorTreeCompone
 	else if (AbilityClass)
 	{
 		// Type-erased pointer set to a non-GameplayAbility class — config error.
-		UE_LOG(LogMonolithAI, Warning,
+		UE_LOG(LogMonolithRuntime, Warning,
 			TEXT("BTTask_TryActivateAbility[%s]: AbilityClass '%s' is not a UGameplayAbility subclass"),
 			*GetNodeName(), *AbilityClass->GetName());
 		return bSucceedOnBlocked ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
@@ -113,7 +96,7 @@ EBTNodeResult::Type UBTTask_TryActivateAbility::ExecuteTask(UBehaviorTreeCompone
 
 	if (!ResolvedAbilityClass && AbilityTags.IsEmpty())
 	{
-		UE_LOG(LogMonolithAI, Warning,
+		UE_LOG(LogMonolithRuntime, Warning,
 			TEXT("BTTask_TryActivateAbility[%s]: no AbilityClass or AbilityTags configured"),
 			*GetNodeName());
 		return bSucceedOnBlocked ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
@@ -123,7 +106,7 @@ EBTNodeResult::Type UBTTask_TryActivateAbility::ExecuteTask(UBehaviorTreeCompone
 	UAbilitySystemComponent* ASC = ResolveASC(OwnerComp);
 	if (!ASC)
 	{
-		UE_LOG(LogMonolithAI, Verbose,
+		UE_LOG(LogMonolithRuntime, Verbose,
 			TEXT("BTTask_TryActivateAbility[%s]: AI pawn has no AbilitySystemComponent"),
 			*GetNodeName());
 		return bSucceedOnBlocked ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
@@ -157,23 +140,36 @@ EBTNodeResult::Type UBTTask_TryActivateAbility::ExecuteTask(UBehaviorTreeCompone
 
 	if (TargetSpec)
 	{
+		// Ownership is one granted spec. Do not attach to an already-running
+		// activation whose completion/cancellation belongs to another caller.
+		if (TargetSpec->IsActive())
+		{
+			return bSucceedOnBlocked ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
+		}
 		Mem->ActivatedSpec = TargetSpec->Handle;
 	}
 
-	// 4. Try activation
-	bool bActivated = false;
-	if (ResolvedAbilityClass)
+	// Select one granted spec in tag mode too. Activating every match while only
+	// tracking one handle leaves unowned abilities running after an abort.
+	if (!Mem->ActivatedSpec.IsValid())
 	{
-		bActivated = ASC->TryActivateAbilityByClass(ResolvedAbilityClass, /*bAllowRemoteActivation=*/true);
+		return bSucceedOnBlocked ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
 	}
-	else
+	if (bWaitForEnd)
 	{
-		bActivated = ASC->TryActivateAbilitiesByTag(AbilityTags, /*bAllowRemoteActivation=*/true);
+		Mem->bAwaitingEnd = true;
+		Mem->bInsideExecute = true;
+		Mem->EndedHandle = ASC->OnAbilityEnded.AddUObject(
+			this, &UBTTask_TryActivateAbility::HandleAbilityEnded,
+			TWeakObjectPtr<UBehaviorTreeComponent>(&OwnerComp), NodeMemory);
 	}
+	const bool bActivated = ASC->TryActivateAbility(Mem->ActivatedSpec, true);
 
 	if (!bActivated)
 	{
-		UE_LOG(LogMonolithAI, Verbose,
+		Mem->bInsideExecute = false;
+		UnbindEnded(*Mem);
+		UE_LOG(LogMonolithRuntime, Verbose,
 			TEXT("BTTask_TryActivateAbility[%s]: activation blocked (cooldown/tags/CanActivate failed)"),
 			*GetNodeName());
 		return bSucceedOnBlocked ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
@@ -200,18 +196,15 @@ EBTNodeResult::Type UBTTask_TryActivateAbility::ExecuteTask(UBehaviorTreeCompone
 	//    NodeMemory pointer is stable for the lifetime of the running instance,
 	//    so capturing it raw in the delegate is safe; OwnerComp is captured as
 	//    a weak pointer to defend against pawn despawn during the ability.
-	Mem->bAwaitingEnd = true;
-	Mem->bWasCancelled = false;
-
-	TWeakObjectPtr<UBehaviorTreeComponent> OwnerCompWeak(&OwnerComp);
+	Mem->bInsideExecute = false;
+	if (Mem->bEndedDuringExecute)
+	{
+		return !Mem->bWasCancelled || bSucceedOnBlocked ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
+	}
 	// UE 5.7: ASC->OnAbilityEnded is the multicast that fires on every ability
 	// end with full FAbilityEndedData (AbilityThatEnded, AbilitySpecHandle,
 	// bWasCancelled). Filtering by spec handle inside HandleAbilityEnded keeps
 	// this scoped to OUR activation.
-	Mem->EndedHandle = ASC->OnAbilityEnded.AddUObject(
-		this, &UBTTask_TryActivateAbility::HandleAbilityEnded,
-		OwnerCompWeak, NodeMemory);
-
 	return EBTNodeResult::InProgress;
 }
 
@@ -267,6 +260,11 @@ void UBTTask_TryActivateAbility::HandleAbilityEnded(
 
 	// Detach from delegate FIRST to avoid re-entry on multicast iteration.
 	UnbindEnded(*Mem);
+	if (Mem->bInsideExecute)
+	{
+		Mem->bEndedDuringExecute = true;
+		return;
+	}
 
 	const EBTNodeResult::Type Result = !Mem->bWasCancelled
 		? EBTNodeResult::Succeeded
@@ -289,6 +287,9 @@ EBTNodeResult::Type UBTTask_TryActivateAbility::AbortTask(UBehaviorTreeComponent
 
 	if (Mem->ASC.IsValid())
 	{
+		// Cancellation broadcasts synchronously; detach before it can complete
+		// a task that is already being aborted.
+		UnbindEnded(*Mem);
 		// Cancel the in-flight ability so we don't leak a running instance.
 		// Prefer the spec-handle path (precise, instance-targeted). If we never
 		// captured a spec handle, fall back to a tag-container cancel — but
@@ -309,7 +310,7 @@ EBTNodeResult::Type UBTTask_TryActivateAbility::AbortTask(UBehaviorTreeComponent
 		// activations; missing means the spec wasn't granted.
 		else if (AbilityClass)
 		{
-			UE_LOG(LogMonolithAI, Verbose,
+			UE_LOG(LogMonolithRuntime, Verbose,
 				TEXT("BTTask_TryActivateAbility[%s]: AbortTask had no captured spec handle; ability not granted at activation time"),
 				*GetNodeName());
 		}
@@ -360,34 +361,3 @@ FString UBTTask_TryActivateAbility::GetStaticDescription() const
 			? *FString::Printf(TEXT(" | Event=%s"), *EventTagOnActivate.ToString())
 			: TEXT(""));
 }
-
-#else // WITH_GAMEPLAYABILITIES == 0
-
-// Stub implementations for projects without the GameplayAbilities plugin.
-// The action handler refuses to register a node of this class in that build,
-// so these paths are unreachable at runtime — but the symbols must exist for
-// the UCLASS vtable to link.
-
-EBTNodeResult::Type UBTTask_TryActivateAbility::ExecuteTask(UBehaviorTreeComponent& /*OwnerComp*/, uint8* /*NodeMemory*/)
-{
-	UE_LOG(LogMonolithAI, Warning,
-		TEXT("BTTask_TryActivateAbility::ExecuteTask called in a build without GameplayAbilities — this should be unreachable"));
-	return EBTNodeResult::Failed;
-}
-
-EBTNodeResult::Type UBTTask_TryActivateAbility::AbortTask(UBehaviorTreeComponent& /*OwnerComp*/, uint8* /*NodeMemory*/)
-{
-	return EBTNodeResult::Aborted;
-}
-
-void UBTTask_TryActivateAbility::OnTaskFinished(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, EBTNodeResult::Type TaskResult)
-{
-	Super::OnTaskFinished(OwnerComp, NodeMemory, TaskResult);
-}
-
-FString UBTTask_TryActivateAbility::GetStaticDescription() const
-{
-	return Super::GetStaticDescription() + TEXT("\n[GameplayAbilities plugin disabled]");
-}
-
-#endif // WITH_GAMEPLAYABILITIES

@@ -212,6 +212,11 @@
 			"LoadingPhase": "Default"
 		},
 		{
+			"Name": "MonolithRuntime",
+			"Type": "Runtime",
+			"LoadingPhase": "PreDefault"
+		},
+		{
 			"Name": "MonolithAudioRuntime",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"

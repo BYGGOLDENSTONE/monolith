@@ -103,6 +103,10 @@ namespace
 
 bool FGASIndexer::IndexAsset(const FAssetData& AssetData, UObject* LoadedAsset, FMonolithIndexDatabase& DB, int64 AssetId)
 {
+	// A resumed full pass revisits sentinels. Replace only GAS-owned nodes;
+	// Blueprint graphs on these same assets must survive. Connections cascade.
+	if (!DB.ClearGASIndexRows()) return false;
+
 	// Collected cross-reference data
 	TArray<FAbilityRef> AbilityRefs;
 	TArray<FEffectRef> EffectRefs;
@@ -283,8 +287,16 @@ bool FGASIndexer::IndexAsset(const FAssetData& AssetData, UObject* LoadedAsset, 
 			// Skip Blueprint-generated classes (already handled above)
 			if (Class->ClassGeneratedBy) continue;
 
-			// For native classes, use -1 as AssetId (no package in project content)
-			int64 NodeId = IndexAttributeSet(Class, DB, -1);
+			// Nodes require a real asset FK, including native AttributeSets.
+			FIndexedAsset NativeAsset;
+			NativeAsset.PackagePath = Class->GetPathName();
+			NativeAsset.AssetName = Class->GetName();
+			NativeAsset.AssetClass = TEXT("NativeAttributeSet");
+			NativeAsset.ModuleName = Class->GetOutermost()->GetName();
+			int64 NativeId = DB.GetAssetId(NativeAsset.PackagePath);
+			if (NativeId < 0) NativeId = DB.InsertAsset(NativeAsset);
+			if (NativeId < 0) return false;
+			int64 NodeId = IndexAttributeSet(Class, DB, NativeId);
 			if (NodeId >= 0)
 			{
 				FAttributeSetRef Ref;

@@ -49,6 +49,11 @@
 #include "Components/TextBlock.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Input/CommonBoundActionBar.h"
+#include "K2Node_CallFunction.h"
+#include "K2Node_Event.h"
+#include "K2Node_ExecutionSequence.h"
+#include "K2Node_VariableGet.h"
+#include "EdGraphSchema_K2.h"
 
 #endif // WITH_COMMONUI includes
 
@@ -821,7 +826,9 @@ namespace MonolithCommonUIButton
 	static FMonolithActionResult ApplyTokenBindingWithProvider(
 		const TSharedPtr<FJsonObject>& Params, bool bTokenforgeAvailable, const FString& ProviderVersion)
 	{
-		if (!bTokenforgeAvailable)
+		FString ResolverPath;
+		if (Params) Params->TryGetStringField(TEXT("resolver_function"), ResolverPath);
+		if (!bTokenforgeAvailable && ResolverPath.IsEmpty())
 		{
 			// Same shape as MakeOptionalDepUnavailableError but using -32011 so
 			// the LLM can branch on "missing provider == Tokenforge" without
@@ -860,29 +867,122 @@ namespace MonolithCommonUIButton
 		FMonolithActionResult Loaded = MonolithCommonUI::LoadWidgetForMutation(WbpPath, FName(*WidgetName), Wbp, Target);
 		if (!Loaded.bSuccess) return Loaded;
 
-		// Preserve target validation even though graph binding is not implemented.
-		if (!FindFProperty<FProperty>(Target->GetClass(), FName(*TargetProperty)))
+		FProperty* Property = FindFProperty<FProperty>(Target->GetClass(), FName(*TargetProperty));
+		if (!Property || TokenKey.IsEmpty())
+			return FMonolithActionResult::Error(TEXT("Unknown target property or empty token_key"), -32602);
+		UFunction* Resolver = ResolverPath.IsEmpty() ? nullptr : LoadObject<UFunction>(nullptr, *ResolverPath);
+		if (!Resolver || !Resolver->HasAllFunctionFlags(FUNC_Static | FUNC_BlueprintPure))
+			return FMonolithActionResult::Error(TEXT("resolver_function must name a static BlueprintPure function with one string/name input and one matching return value"), -32602);
+		FProperty* ResolverInput = nullptr;
+		FProperty* ResolverOutput = Resolver->GetReturnProperty();
+		for (TFieldIterator<FProperty> It(Resolver); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
 		{
-			return FMonolithActionResult::Error(
-				FString::Printf(TEXT("Property '%s' not found on widget class '%s'"),
-					*TargetProperty, *Target->GetClass()->GetName()),
-				-32602);
+			if (It->HasAnyPropertyFlags(CPF_ReturnParm)) continue;
+			if (ResolverInput || (It->HasAnyPropertyFlags(CPF_OutParm) && !It->HasAnyPropertyFlags(CPF_ConstParm)) || (!CastField<FStrProperty>(*It) && !CastField<FNameProperty>(*It)))
+				return FMonolithActionResult::Error(TEXT("Resolver must accept exactly one string/name input"), -32602);
+			ResolverInput = *It;
 		}
+		FString SetterName = Property->GetMetaData(TEXT("BlueprintSetter"));
+		if (SetterName.IsEmpty()) SetterName = TEXT("Set") + TargetProperty;
+		UFunction* Setter = Target->GetClass()->FindFunctionByName(FName(*SetterName));
+		FProperty* SetterInput = nullptr;
+		if (Setter && Setter->HasAnyFunctionFlags(FUNC_BlueprintCallable))
+		{
+			for (TFieldIterator<FProperty> It(Setter); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
+			{
+				if (SetterInput || It->HasAnyPropertyFlags(CPF_ReturnParm) || (It->HasAnyPropertyFlags(CPF_OutParm) && !It->HasAnyPropertyFlags(CPF_ConstParm)))
+					return FMonolithActionResult::Error(TEXT("Target setter must have exactly one value input"), -32602);
+				SetterInput = *It;
+			}
+		}
+		if (!ResolverInput || !ResolverOutput || !SetterInput || !ResolverOutput->SameType(SetterInput))
+			return FMonolithActionResult::Error(TEXT("Resolver return type must match a callable single-input widget property setter"), -32602);
 
-		// Validation and provider availability do not mean a graph was written.
-		TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+		const FString Marker = TEXT("Monolith.TokenBinding:") + WidgetName + TEXT(".") + TargetProperty;
+		UEdGraph* Graph = nullptr;
+		UK2Node_Event* Construct = nullptr;
+		TArray<UEdGraph*> Graphs;
+		Wbp->GetAllGraphs(Graphs);
+		for (UEdGraph* Candidate : Graphs)
+		{
+			for (UEdGraphNode* N : Candidate->Nodes)
+			{
+				if (N->NodeComment == Marker)
+					return FMonolithActionResult::Error(TEXT("A token binding already exists for this widget property; remove its marked graph nodes before replacing it"), -32602);
+				if (auto* Event = Cast<UK2Node_Event>(N))
+					if (Event->EventReference.GetMemberName() == TEXT("Construct")) { Graph = Candidate; Construct = Event; }
+			}
+		}
+		const bool bWasDirty = Wbp->GetPackage()->IsDirty();
+		const bool bWasVariable = Target->bIsVariable;
+		const bool bNewGraph = !Graph;
+		Wbp->Modify(); Target->Modify(); Target->bIsVariable = true;
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Wbp);
+		if (!Graph)
+		{
+			Graph = FBlueprintEditorUtils::CreateNewGraph(Wbp, *FString::Printf(TEXT("MonolithTokenBinding_%s_%s"), *WidgetName, *TargetProperty), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+			FBlueprintEditorUtils::AddUbergraphPage(Wbp, Graph);
+		}
+		TArray<UEdGraphNode*> Added;
+		auto AddNode = [&Added, Graph, &Marker](UClass* Class)
+		{
+			UEdGraphNode* N = NewObject<UEdGraphNode>(Graph, Class);
+			Graph->AddNode(N, false, false); N->CreateNewGuid(); N->NodeComment = Marker; Added.Add(N); return N;
+		};
+		if (!Construct)
+		{
+			Construct = CastChecked<UK2Node_Event>(AddNode(UK2Node_Event::StaticClass()));
+			Construct->EventReference.SetExternalMember(TEXT("Construct"), UUserWidget::StaticClass());
+			Construct->bOverrideFunction = true; Construct->AllocateDefaultPins();
+		}
+		UEdGraphPin* EventThen = Construct->FindPin(UEdGraphSchema_K2::PN_Then);
+		const TArray<UEdGraphPin*> PreviousLinks = EventThen ? EventThen->LinkedTo : TArray<UEdGraphPin*>();
+		auto Rollback = [&]()
+		{
+			for (UEdGraphNode* N : Added) { N->BreakAllNodeLinks(); Graph->RemoveNode(N); }
+			if (bNewGraph) Wbp->UbergraphPages.Remove(Graph);
+			else if (EventThen) for (UEdGraphPin* Link : PreviousLinks) EventThen->MakeLinkTo(Link);
+			Target->bIsVariable = bWasVariable;
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Wbp);
+			FKismetEditorUtilities::CompileBlueprint(Wbp);
+			Wbp->GetPackage()->SetDirtyFlag(bWasDirty);
+		};
+		auto* Sequence = CastChecked<UK2Node_ExecutionSequence>(AddNode(UK2Node_ExecutionSequence::StaticClass()));
+		Sequence->AllocateDefaultPins();
+		auto* GetTarget = CastChecked<UK2Node_VariableGet>(AddNode(UK2Node_VariableGet::StaticClass()));
+		GetTarget->VariableReference.SetSelfMember(Target->GetFName()); GetTarget->AllocateDefaultPins();
+		UEdGraphPin* TargetPin = GetTarget->GetValuePin();
+		if (TargetPin) { TargetPin->PinType.PinCategory = UEdGraphSchema_K2::PC_Object; TargetPin->PinType.PinSubCategoryObject = Target->GetClass(); }
+		auto* Resolve = CastChecked<UK2Node_CallFunction>(AddNode(UK2Node_CallFunction::StaticClass()));
+		Resolve->SetFromFunction(Resolver); Resolve->AllocateDefaultPins();
+		auto* Set = CastChecked<UK2Node_CallFunction>(AddNode(UK2Node_CallFunction::StaticClass()));
+		Set->SetFromFunction(Setter); Set->AllocateDefaultPins();
+		UEdGraphPin* TokenPin = Resolve->FindPin(ResolverInput->GetFName());
+		if (TokenPin) TokenPin->DefaultValue = TokenKey;
+		const auto* Schema = GetDefault<UEdGraphSchema_K2>();
+		auto Connect = [Schema](UEdGraphPin* A, UEdGraphPin* B) { return A && B && Schema->TryCreateConnection(A, B); };
+		if (EventThen) EventThen->BreakAllPinLinks();
+		bool bConnected = TokenPin && Connect(EventThen, Sequence->GetExecPin())
+			&& Connect(Sequence->GetThenPinGivenIndex(1), Set->GetExecPin())
+			&& Connect(TargetPin, Set->FindPin(UEdGraphSchema_K2::PN_Self))
+			&& Connect(Resolve->GetReturnValuePin(), Set->FindPin(SetterInput->GetFName()));
+		for (UEdGraphPin* Link : PreviousLinks) bConnected &= Connect(Sequence->GetThenPinGivenIndex(0), Link);
+		if (!bConnected) { Rollback(); return FMonolithActionResult::Error(TEXT("Token graph connection failed; original graph restored"), -32603); }
+		MonolithUI::ReconcileWidgetVariableGuids(Wbp);
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Wbp);
+		FKismetEditorUtilities::CompileBlueprint(Wbp);
+		if (Wbp->Status == BS_Error) { Rollback(); return FMonolithActionResult::Error(TEXT("Token graph failed compilation; original graph restored"), -32603); }
+		auto Result = MakeShared<FJsonObject>();
 		Result->SetStringField(TEXT("wbp_path"), WbpPath);
 		Result->SetStringField(TEXT("widget_name"), WidgetName);
 		Result->SetStringField(TEXT("target_property"), TargetProperty);
 		Result->SetStringField(TEXT("token_key"), TokenKey);
-		Result->SetBoolField(TEXT("tokenforge_available"), true);
-		Result->SetStringField(TEXT("tokenforge_version"), ProviderVersion);
-		Result->SetStringField(TEXT("reason"), TEXT("not_implemented"));
-		Result->SetBoolField(TEXT("implemented"), false);
-		Result->SetStringField(TEXT("part"), TEXT("apply_token_binding.NativeConstruct_graph"));
-		return FMonolithActionResult::Error(
-			TEXT("Token binding graph construction in NativeConstruct is not implemented; no binding was applied."),
-			FMonolithJsonUtils::ErrNotImplemented).WithErrorData(Result);
+		Result->SetStringField(TEXT("resolver_function"), ResolverPath);
+		Result->SetBoolField(TEXT("implemented"), true);
+		Result->SetBoolField(TEXT("compiled"), true);
+		Result->SetBoolField(TEXT("saved"), false);
+		Result->SetStringField(TEXT("lifecycle"), TEXT("Construct"));
+		return FMonolithActionResult::Success(Result);
 	}
 
 	static FMonolithActionResult HandleApplyTokenBinding(const TSharedPtr<FJsonObject>& Params)
@@ -1530,16 +1630,18 @@ namespace MonolithCommonUIButton
 
 		Registry.RegisterAction(
 			TEXT("ui"), TEXT("apply_token_binding"),
-			TEXT("Validate a widget property and TokenforgeRuntime availability. Returns -32011 when the "
-				 "provider is absent. Graph binding in NativeConstruct is not implemented: otherwise returns "
-				 "an error with reason='not_implemented', implemented=false and the unimplemented part."),
+			TEXT("Author and compile a Construct graph calling a static pure token resolver then the target widget property's setter. "
+				 "Preserves existing Construct execution through a sequence. resolver_function accepts one string/name and "
+				 "returns the setter value type. Supply an explicit resolver from any runtime module; otherwise Tokenforge "
+				 "availability is probed. Changes remain dirty until explicitly saved."),
 			FMonolithActionHandler::CreateStatic(&HandleApplyTokenBinding),
 			FParamSchemaBuilder()
 				.OptionalAssetPath(TEXT("wbp_path"), TEXT("Widget Blueprint path; wbp_path or asset_path is required; supplied string wbp_path takes precedence"))
 				.Optional(TEXT("asset_path"), TEXT("string"), TEXT("Fallback Widget Blueprint path when wbp_path is absent or not a string"))
 				.Required(TEXT("widget_name"), TEXT("string"), TEXT("Target widget FName"))
 				.Required(TEXT("target_property"), TEXT("string"), TEXT("UPROPERTY name on the widget to drive from the token"))
-				.Required(TEXT("token_key"), TEXT("string"), TEXT("Tokenforge token identifier (e.g. 'color.surface.default')"))
+				.Required(TEXT("token_key"), TEXT("string"), TEXT("Design token identifier passed to resolver"))
+				.Optional(TEXT("resolver_function"), TEXT("string"), TEXT("Static BlueprintPure UFunction path, e.g. /Script/MyRuntime.MyTokenLibrary:ResolveColor; one string/name input, return matching property setter type"))
 				.Build(),
 			Cat);
 
@@ -1652,17 +1754,11 @@ bool FMonolithUITokenBindingProviderStateTest::RunTest(const FString& Parameters
 	Params->SetStringField(TEXT("target_property"), TEXT("RenderOpacity"));
 	Params->SetStringField(TEXT("token_key"), TEXT("color.surface.default"));
 
-	// Stub only the provider probe result. Real widget loading and property
-	// validation execute; this does not claim integration with Tokenforge.
-	const auto Data = CheckNotImplemented(*this,
-		MonolithCommonUIButton::ApplyTokenBindingWithProvider(Params, true, TEXT("controlled-test-provider")));
-	if (Data.IsValid())
-	{
-		TestEqual(TEXT("Unimplemented graph part is named"), Data->GetStringField(TEXT("part")),
-			FString(TEXT("apply_token_binding.NativeConstruct_graph")));
-		TestTrue(TEXT("Controlled provider state reaches binding branch"), Data->GetBoolField(TEXT("tokenforge_available")));
-	}
-	TestEqual(TEXT("No graph binding nodes were added"), CountNodes(), Before);
+	// An enabled provider alone is insufficient: the exact resolver signature must validate.
+	const auto Missing = MonolithCommonUIButton::ApplyTokenBindingWithProvider(Params, true, TEXT("controlled-test-provider"));
+	TestFalse(TEXT("Missing resolver is rejected"), Missing.bSuccess);
+	TestEqual(TEXT("Missing resolver is invalid params"), Missing.ErrorCode, -32602);
+	TestEqual(TEXT("Invalid resolver adds no graph nodes"), CountNodes(), Before);
 
 	// Invalid properties must still fail validation before the capability result.
 	Params->SetStringField(TEXT("target_property"), TEXT("Phase0DoesNotExist"));
@@ -1670,6 +1766,41 @@ bool FMonolithUITokenBindingProviderStateTest::RunTest(const FString& Parameters
 	TestFalse(TEXT("Invalid property is rejected"), Invalid.bSuccess);
 	TestEqual(TEXT("Invalid property retains invalid-params code"), Invalid.ErrorCode, -32602);
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithUITokenBindingGraphTest,
+    "Monolith.UI.Menu.TokenBindingGraph", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMonolithUITokenBindingGraphTest::RunTest(const FString& Parameters)
+{
+    using namespace MonolithUI::HonestyTests;
+    FScopedWidget Widget(*this);
+    auto BuildParams = MakeShared<FJsonObject>();
+    BuildParams->SetStringField(TEXT("asset_path"), Widget.Path);
+    BuildParams->SetObjectField(TEXT("spec"), FMonolithJsonUtils::Parse(TEXT("{\"name\":\"TokenBinding\",\"parentClass\":\"UserWidget\",\"rootWidget\":{\"type\":\"TextBlock\",\"id\":\"TokenLabel\"}}")));
+    auto Built = FMonolithToolRegistry::Get().ExecuteAction(TEXT("ui"), TEXT("build_ui_from_spec"), BuildParams);
+    if (!TestTrue(TEXT("Binding fixture built"), Built.bSuccess && Built.Result->GetBoolField(TEXT("bSuccess")))) return false;
+    UWidgetBlueprint* WBP = Widget.Load();
+    auto Params = MakeShared<FJsonObject>();
+    Params->SetStringField(TEXT("wbp_path"), Widget.Path);
+    Params->SetStringField(TEXT("widget_name"), TEXT("TokenLabel"));
+    Params->SetStringField(TEXT("target_property"), TEXT("Text"));
+    Params->SetStringField(TEXT("token_key"), TEXT("Bound token text"));
+    Params->SetStringField(TEXT("resolver_function"), TEXT("/Script/Engine.KismetTextLibrary:Conv_StringToText"));
+    const auto Result = MonolithCommonUIButton::ApplyTokenBindingWithProvider(Params, false, FString());
+    if (!TestTrue(TEXT("Explicit resolver authors graph without Tokenforge dependency"), Result.bSuccess)) { AddError(Result.ErrorMessage); return false; }
+    TestTrue(TEXT("Result compiled"), Result.Result->GetBoolField(TEXT("compiled")));
+    TestTrue(TEXT("Blueprint compile succeeds"), WBP->Status != BS_Error);
+    // Execute the compiled Construct event against an initialized instance to verify the setter runs.
+    UUserWidget* Instance = NewObject<UUserWidget>(GetTransientPackage(), WBP->GeneratedClass);
+    Instance->Initialize();
+    Instance->ProcessEvent(Instance->FindFunction(TEXT("Construct")), nullptr);
+    UTextBlock* Label = Cast<UTextBlock>(Instance->WidgetTree->FindWidget(TEXT("TokenLabel")));
+    if (TestNotNull(TEXT("Runtime label exists"), Label))
+        TestEqual(TEXT("Construct resolved and applied token value"), Label->GetText().ToString(), FString(TEXT("Bound token text")));
+    const int32 GraphCount = WBP->UbergraphPages.Num();
+    TestFalse(TEXT("Duplicate binding rejected without duplicate execution"), MonolithCommonUIButton::ApplyTokenBindingWithProvider(Params, false, FString()).bSuccess);
+    TestEqual(TEXT("Duplicate rejection adds no graph"), WBP->UbergraphPages.Num(), GraphCount);
+    return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithUITokenBindingLiveProbeTest,

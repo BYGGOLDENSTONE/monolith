@@ -1,0 +1,123 @@
+// Temporary RecycleCo integration probe. Include after scaffolding UCompletionKeySettings.
+// Call TestGeneratedKeyPersistence(GetWorld()) from the root-owned ACompletionRuntimeProbe.
+// Return "ok" means a real E -> save -> F -> load -> E roundtrip AND restoration passed.
+// Setup: EnhancedInput dependency in target module; PIE must use UEnhancedPlayerInput.
+// This probe enables bEnableUserSettings in memory only and restores it before returning.
+#include "CompletionKeySettings.h"
+#include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
+#include "EnhancedInputSubsystems.h"
+#include "EnhancedPlayerInput.h"
+#include "UObject/UnrealType.h"
+#include "EnhancedInputDeveloperSettings.h"
+#include "UserSettings/EnhancedInputUserSettings.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
+#include "PlayerMappableKeySettings.h"
+#include "Kismet/GameplayStatics.h"
+#include "Serialization/MemoryReader.h"
+#include "Serialization/MemoryWriter.h"
+#include "Serialization/ObjectAndNameAsStringProxyArchive.h"
+
+static FString TestGeneratedKeyPersistence(UWorld* World)
+{
+    UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
+    ULocalPlayer* Player = GI ? GI->GetFirstGamePlayer() : nullptr;
+    auto* Subsystem = Player ? Player->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
+    if (!Subsystem || !Subsystem->GetPlayerInput()) return TEXT("missing PIE EnhancedPlayerInput/local-player subsystem");
+    UEnhancedInputDeveloperSettings* Developer = GetMutableDefault<UEnhancedInputDeveloperSettings>();
+    const bool bPreviousEnable = Developer->bEnableUserSettings;
+    Developer->bEnableUserSettings = true;
+    Subsystem->InitalizeUserSettings();
+    Developer->bEnableUserSettings = bPreviousEnable;
+    UEnhancedInputUserSettings* Active = Subsystem->GetUserSettings();
+    if (!Active) return TEXT("could not initialize EnhancedInputUserSettings");
+
+    const FString SaveSlot = Subsystem->GetPlayerInput()->GetUserSettingsSaveFileName();
+    const int32 SaveIndex = Player->GetLocalPlayerIndex();
+    const bool bHadSave = UGameplayStatics::DoesSaveGameExist(SaveSlot, SaveIndex);
+    TArray<uint8> OriginalSave;
+    if (bHadSave && !UGameplayStatics::LoadDataFromSlot(OriginalSave, SaveSlot, SaveIndex))
+        return TEXT("could not back up existing input save; probe did not modify it");
+    TArray<uint8> OriginalActive;
+    {
+        FMemoryWriter Writer(OriginalActive);
+        FObjectAndNameAsStringProxyArchive Archive(Writer, false);
+        Archive.ArIsSaveGame = true;
+        Active->Serialize(Archive);
+        if (Archive.IsError()) return TEXT("could not snapshot active input settings");
+    }
+
+    FString Result = TEXT("ok");
+    UInputMappingContext* IMC = NewObject<UInputMappingContext>(GetTransientPackage());
+    UInputAction* Action = NewObject<UInputAction>(IMC);
+    // UInputAction exposes this as BlueprintReadWrite/EditAnywhere but provides no C++ setter.
+    // Author the fixture through its reflected property; the mapping uses its public
+    // default InheritSettingsFromAction behavior, without accessing protected mapping members.
+    FObjectPropertyBase* SettingsProperty = FindFProperty<FObjectPropertyBase>(UInputAction::StaticClass(), TEXT("PlayerMappableKeySettings"));
+    if (!SettingsProperty) return TEXT("InputAction player-mappable settings property missing");
+    UPlayerMappableKeySettings* KeySettings = NewObject<UPlayerMappableKeySettings>(Action);
+    const FName MappingName(*(TEXT("MonolithCompletion_") + FGuid::NewGuid().ToString(EGuidFormats::Digits)));
+    KeySettings->Name = MappingName;
+    KeySettings->DisplayName = FText::FromString(TEXT("Temporary persistence probe"));
+    SettingsProperty->SetObjectPropertyValue_InContainer(Action, KeySettings);
+    IMC->MapKey(Action, EKeys::Q);
+    UCompletionKeySettings* Generated = NewObject<UCompletionKeySettings>();
+    auto Check = [&Result](bool bCondition, const TCHAR* Failure)
+    {
+        if (!bCondition && Result == TEXT("ok")) Result = Failure;
+        return bCondition;
+    };
+    auto MapTo = [&](const FKey& Key)
+    {
+        FMapPlayerKeyArgs Args;
+        Args.MappingName = MappingName;
+        Args.Slot = EPlayerMappableKeySlot::First;
+        Args.NewKey = Key;
+        FGameplayTagContainer Failures;
+        Active->MapPlayerKey(Args, Failures);
+        const FPlayerKeyMapping* Value = Active->FindCurrentMappingForSlot(MappingName, EPlayerMappableKeySlot::First);
+        return Failures.IsEmpty() && Value && Value->GetCurrentKey() == Key;
+    };
+    [&]()
+    {
+        if (!Check(Active->RegisterInputMappingContext(IMC), TEXT("register IMC failed"))) return;
+        if (!Check(MapTo(EKeys::E), TEXT("initial Q -> E remap failed"))) return;
+        if (!Check(Generated->SaveKeyBindings(Player), TEXT("generated SaveKeyBindings failed"))) return;
+        if (!Check(MapTo(EKeys::F), TEXT("active E -> F remap failed"))) return;
+        if (!Check(Generated->LoadKeyBindings(Player), TEXT("generated LoadKeyBindings failed"))) return;
+        if (!Check(Subsystem->GetUserSettings() == Active, TEXT("load replaced active settings instance"))) return;
+        const FPlayerKeyMapping* Reloaded = Active->FindCurrentMappingForSlot(MappingName, EPlayerMappableKeySlot::First);
+        if (!Check(Reloaded && Reloaded->GetCurrentKey() == EKeys::E, TEXT("saved E mapping was not restored"))) return;
+        Check(Active->GetRegisteredInputMappingContexts().Contains(IMC), TEXT("load lost registered mapping context"));
+        Check(!Generated->SaveKeyBindings(nullptr) && !Generated->LoadKeyBindings(nullptr), TEXT("null local player guard failed"));
+    }();
+
+    // Restore both active settings and the exact original on-disk save (including absent state).
+    Active->UnregisterInputMappingContext(IMC);
+    {
+        FMemoryReader Reader(OriginalActive);
+        FObjectAndNameAsStringProxyArchive Archive(Reader, true);
+        Archive.ArIsSaveGame = true;
+        Active->Serialize(Archive);
+        Check(!Archive.IsError(), TEXT("failed to restore active settings snapshot"));
+    }
+    Active->Initialize(Player);
+    Active->ApplySettings();
+    FModifyContextOptions Options;
+    Options.bForceImmediately = true;
+    Subsystem->RequestRebuildControlMappings(Options, EInputMappingRebuildType::RebuildWithFlush);
+    if (bHadSave)
+    {
+        Check(UGameplayStatics::SaveDataToSlot(OriginalSave, SaveSlot, SaveIndex), TEXT("failed to restore original input save bytes"));
+        TArray<uint8> Restored;
+        Check(UGameplayStatics::LoadDataFromSlot(Restored, SaveSlot, SaveIndex) && Restored == OriginalSave,
+            TEXT("restored input save differs from original"));
+    }
+    else if (UGameplayStatics::DoesSaveGameExist(SaveSlot, SaveIndex))
+    {
+        Check(UGameplayStatics::DeleteGameInSlot(SaveSlot, SaveIndex), TEXT("failed to remove temporary input save"));
+    }
+    return Result;
+}

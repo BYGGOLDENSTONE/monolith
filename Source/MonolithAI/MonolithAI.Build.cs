@@ -56,7 +56,7 @@ public class MonolithAI : ModuleRules
 		// Always-available engine AI modules
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
-			"Core", "CoreUObject", "Engine",
+			"Core", "CoreUObject", "Engine", "MonolithRuntime",
 			"AIModule", "GameplayTasks", "GameplayTags", "NavigationSystem"
 		});
 
@@ -139,7 +139,7 @@ public class MonolithAI : ModuleRules
 		// so it is force-enabled when the user enables Monolith. Issue #71: gate on ENABLEMENT
 		// rather than disk presence — correct for the normal case and also handles a user who
 		// explicitly disables GameplayAbilities in their .uproject.
-		bool bHasGameplayAbilities = !bReleaseBuild && IsPluginEnabled(Target, "GameplayAbilities");
+		bool bHasGameplayAbilities = true; // Required by MonolithRuntime and Monolith.uplugin.
 
 		if (bHasGameplayAbilities)
 		{

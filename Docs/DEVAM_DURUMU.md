@@ -1,69 +1,51 @@
-# Monolith — sonraki oturum için mevcut durum
+# Monolith — güncel devir durumu
 
-Son güncelleme: **6 Eylül 2026**. Bu belge mevcut yerel çalışma durumudur; önceki faz raporlarını tarihsel kayıt olarak tamamlar.
+Son güncelleme: **6 Eylül 2026**. İstenen eksik tamamlama, test ve RecycleCo temizliği tamamlandı. Bu belge sonraki oturumun giriş noktasıdır; ayrıntılı sonuç ve sınırlar [tamamlama raporunda](COMPLETION_2026_09_06.md).
 
 ## Amaç ve çalışma yerleri
 
-- Monolith kullanıcının **kişisel Unreal geliştirme aracı**. Eklentiden gelir beklentisi yok; ticari hedef geliştirilecek oyun için.
-- Kaynak repo ve bu oturumun çalışma klasörü: `D:\UnrealProjects\monolith`.
-- Test projesi: `D:\UnrealProjects\RecycleCo\RecycleCo.uproject`.
-- `RecycleCo\Plugins\Monolith`, bu kaynak depoya giden Windows junction'ıdır. Kaynak/DLL değişiklikleri ortaktır; bağımsız kopya değildir.
-- Engine: `D:\UE_5.7`, UE **5.7.4**, CL **51494982**.
-- Son kontrol: branch `fix/phase1-safety-honesty`, HEAD **`45283ac`**. Aşağıdaki düzeltmeler **commit edilmemiş çalışma ağacı değişiklikleridir**. Commit, merge veya push yapılmadı; değişiklikleri koru.
-- Sonraki oturumda önce güncel `git status` ve süreçleri kontrol et. Bu kayıt, ileride değişmiş olabilecek canlı durumu varsaymak için kullanılmamalı.
+- Monolith **kişisel Unreal oyun geliştirme aracıdır**. Eklentiden gelir beklentisi yok; ticari hedef geliştirilecek oyun içindir.
+- Repo ve kalıcı sonuçlar: `D:/UnrealProjects/monolith`. Yeni durum/test belgelerini burada tut; RecycleCo'daki eski raporlar tarihsel kayıttır.
+- Branch: `fix/phase1-safety-honesty`; push hedefi `fork` (`BYGGOLDENSTONE/monolith`). Önceki kamera/PIE düzeltmeleri `0cd50f0` içinde; bu belgeyle birlikte kaydedilen değişiklikler onu tamamlar. Canlı commit/çalışma ağacı için `git log -1` ve `git status` kontrol edilir.
+- Test host'u: `D:/UnrealProjects/RecycleCo/RecycleCo.uproject`. `Plugins/Monolith` junction'ı kaynak depoya gider; ayrı plugin kopyası değildir.
+- Engine: `D:/UE_5.7`, **UE 5.7.4, CL 51494982**, Win64/D3D12.
 
-## Tamamlanan işler
+## Tamamlanan geliştirmeler
 
-Phase 0 ve Phase 1 için [Phase 0 raporu](PHASE0_REPORT.md) ve [Phase 1 raporu](PHASE1_REPORT.md) geçerli tarihsel kayıtlardır. Sonrasında RecycleCo'ya eklenti bağlandı, derlendi ve kullanıcı tarafından ayrı oturumda gerçek proje testleri yapıldı.
+Blueprint yazma ön doğrulaması ve GUID/node property işlemleri; typed anim-layer input ve transition graph authoring; GAS/MetaSound/AI indeks dispatch, transaction ve recovery; native AI discovery; GIF encoder job lifecycle ve undo/redo; CommonUI focus/navigation/stack, token resolver graph ve gerçek Enhanced Input save/load scaffold tamamlandı.
 
-RecycleCo ilk test sonuçları:
+GAS widget binding, dört BT task ve controller yeni **MonolithRuntime** modülüne taşındı. Eski reflected class yolları için redirect var. Ability delegate/abort, cook sırasında BT node sahipliği, async yüklemede tick kaydı, widget owner retry/smoothing ve Audio→AI hearing sorunları gerçek paket testleriyle giderildi. Taşınan sınıfları doğrudan kullanan C++ modülleri `MonolithRuntime` bağımlılığı eklemelidir.
 
-- MCP sözleşmesi: **10/10**, atlama yok.
-- Tam `Monolith.` Automation / NullRHI: **144 temiz + 17 uyarılı başarı**, 0 hata, toplamın içinde **14 self-skip**.
-- D3D12 Material.RoundTrip: **1 temiz başarı**.
-- Blueprint `AgentValue=42`: kaydetme, editörü yeniden açma, PIE ve paket içindeki değer doğrulandı.
-- Materyal, Niagara, widget ve motor ses çıkışı için seçilen canlı davranışlar doğrulandı.
-- Win64 **Development** build/cook/stage/archive başarılı; küçük sahne paketlenmiş oyunda açılıp görüntülendi. İlk açılıştaki CommonUI hatası geçici viewport override ile giderildi.
-- Bu sonuçlar tüm aksiyonların/entegrasyonların kapsandığı veya Shipping build'in doğrulandığı anlamına gelmez.
+## Son doğrulama
 
-Kalıcı ayrıntılı rapor: `D:\UnrealProjects\RecycleCo\Docs\MONOLITH_TEST_SONUCLARI.md`. İlk testlerin kapsamı/atlamaları orada; **10. bölüm son düzeltme ve regresyon sonuçlarıdır**.
+| Kontrol | Sonuç |
+|---|---|
+| Python | **178 benzersiz test, 0 hata**; ortam nedeniyle ilk atlanan testler native query ve canlı MCP ile ayrıca çalıştırıldı. |
+| Editor | Genişletilmiş test host'u ve geri yüklenen başlangıç host ayarlarıyla derleme başarılı. Her iki son otomasyon: **173 test, 154 temiz + 19 uyarılı başarı, 0 hata, 0 notRun, self-skip yok**. |
+| PIE | **24/24**, 3 gerçek hearing olayı; normal stop ve temiz kapanış. |
+| Development ve Shipping | Her iki build/cook/stage/archive başarılı; cook 0 hata/0 uyarı. Her iki gerçek paket **24/24**, 3 hearing olayı, exit 0. Final Development log'unda async ensure yok. |
+| Jobs / indeks | Python/Pillow ve ffmpeg encoding, çalışan işi iptal, gerçek undo/redo geçti. GAS/MetaSound/AI tam indeks fixture'ları doğrulandı. |
+| Repo | Lint başarılı; **1.585 kayıt, 0 schema drift**, 1.074 skill action referansı. |
 
-## Son uygulanan düzeltmeler
+Bu kapsam bütün tool'ların tek tek doğrulandığı anlamına gelmez. Gerçek Tokenforge sağlayıcısı, Marketplace LogicDriver/ComboGraph, multiplayer/dedicated server, diğer platformlar ve UE 5.8 sınanmadı. Menüye oyuna özgü davranış/stil bağlamak hâlâ oyun geliştirme işidir. GIF frame capture senkron, encoder arka plandadır. Detaylı sınırlar ana raporda.
 
-1. **Persistent Niagara kamera:** `Source/MonolithEditor/Private/MonolithEditorActions.cpp` içindeki `HandleCaptureSequenceFrames`, `PreviewScene->AddComponent` çağrısına `FTransform(CameraRotation, CameraLocation)` veriyor. Önceki identity transform kamera ayarını eziyordu.
-2. **PIE durum/lifecycle:** `MonolithPieSmokeSession.h` içindeki session yapısı kendi PIE dünyasını `TWeakObjectPtr<UWorld> SessionWorld` ile tutuyor; `CreateSession` bunu başlatıyor. `MonolithEditorActions.cpp` içindeki raporlama hem `pie_active` hem `lifecycle` için aynı oturumun dünyasını kontrol ediyor. Önceki session'ın raporu yeni PIE oturumundan etkilenmiyor. **Final çözüm sadece `bPieActive=false` ataması değildir**; ara çözüm yerine dünya kimliği kullanıldı.
-3. **CommonUI proje ayarı:** `D:\UnrealProjects\RecycleCo\Config\DefaultEngine.ini`, `[/Script/Engine.Engine]` bölümünde `GameViewportClientClassName=/Script/CommonUI.CommonGameViewportClient` kalıcı olarak ayarlandı. Bu dosya Monolith reposunun dışındadır.
-4. **Doküman düzeltmesi:** [COOKED_BUILD_TODO](COOKED_BUILD_TODO.md) ve [SPEC_CORE](SPEC_CORE.md) artık `MonolithAudioRuntime` modülünün RecycleCo Development paketinde yüklendiğini kabul ediyor. UI–GAS, BT–GAS ve Audio–AI stimulus davranışları için açık kapsam korunuyor. [CHANGELOG](../CHANGELOG.md) güncellendi.
+## RecycleCo son durumu
 
-## Düzeltmelerin doğrulaması
+- Geçici host C++ sınıfları, descriptor/config değişiklikleri, fixture asset'leri ve test çıktıları kaldırıldı. **22/22 yedek dosya başlangıç SHA-256 değeriyle eşleşiyor**; Source yalnız başlangıçtaki 5 dosya.
+- Final dosya audit'inde **yeni dosya 0, Content dosyası 0**. Engine içinden `/Game` ve fixture sınıf listesi boş doğrulandı. Başlangıçtaki bazı CEF log/cache dosyalarının doğal rotasyonu ayrıntılı temizlik raporunda kayıtlıdır.
+- Başlangıç ayarlarıyla son derleme/testten sonra host binary/ayar yedekleri tekrar geri yüklendi. Monolith plugin kodu/DLL'leri güncel; test editörü/oyunu kapalı.
+- Monolith proje indeksi temiz host için yeniden üretildi: **1 engine native AttributeSet asset / 1 node**, test fixture kaydı yok.
+- Ham loglar, paketler ve backup Git dışında `Monolith/Saved/Completion20260906/` altında. Kalıcı bulgular `Docs`, tekrar kullanılabilir fixture/runner'lar `Scripts` altında.
 
-- Son işlevsel kodla `RecycleCoEditor Win64 Development` derlemesi geçti: **5 adım, 9,06 saniye, exit 0**. Daha sonra yalnız kaynak yorumları ve dokümanlar düzenlendi.
-- Python **3.12** ile repository lint geçti: **1.578 kayıt, sıfır şema hatası**. Sistem varsayılanındaki eski Python `tomllib` içermediğinden onu kullanma.
-- Niagara persistent/single aynı açık kamera ve 0,2 / 0,8 / 1,5 saniye zamanlarıyla üçer kare üretti. 1,5 saniye görüntüleri incelendi: görünür parçacıklar ve uyumlu kadraj. Parçacık dağılımlarının birebir eşitliği iddia edilmedi.
-- İlk ve ikinci PIE doğal tamamlanmada `complete`, `pie_active:false`, `teardown-complete`, `ok:true` döndürdü.
-- İkinci PIE gerçekten çalışırken ilk session **inactive ve teardown-complete** kaldı.
-- Üçüncü PIE `stop_pie_smoke` ile durduruldu: `stopped`, `pie_active:false`, `stopped-by-tool`. Erken durdurma için `ok:false`, doğal tamamlama başarısı gibi sunulmadı.
-- Kalıcı CommonUI ayarıyla Editor/PIE'de önceki viewport hatası görülmedi. **Son düzeltmelerden sonra tam Automation suite veya paketleme tekrarlanmadı; gerçek CommonUI input davranışı ayrıca sınanmadı.**
+## Sonraki oturum için
 
-Final kanıtlar: `D:\UnrealProjects\RecycleCo\Saved\MonolithFixValidation\` altında `build-final.log`, `calls-final.jsonl`, `results-final.json`, `editor-final.log`, `validate_final.py`, `persistent/`, `single/`.
+Önce güncel repo/süreç durumunu kontrol et ve kullanıcının yeni oyun geliştirme ihtiyacını takip et. Genel eklenti kapsamını genişletmek başlı başına hedef değil. Bu tamamlanmış rapor tek başına yeni test/derleme veya proje değişikliği talimatı değildir.
 
-`calls.jsonl` ve `RecycleCo-runtime.log` ara uygulama denemelerini de içerir; final sonuçlar için `*-final` kayıtlarını kullan. `validate_final.py` test sonunda fixture'ları siler; yeniden çalıştırmak için önce yeni Niagara/map fixture'ları hazırlamak gerekir. Tam yeniden çalıştırma gerekmiyorsa mevcut kanıtı incelemek yeterlidir.
+UE işlerinde [derleme skill'ini](../Skills/unreal-build/SKILL.md) izle: tek UE pipeline, `-MaxParallelActions=2`; ortak DLL'ler nedeniyle açık editörü kontrol et. MCP yazmalarından önce proje kimliğini doğrula ve lease kullan. Test host'una yeni geçici değişiklik yapılırsa kendi başlangıç snapshot'ını al; eski snapshot restore betiğini yeni kullanıcı değişikliklerinin üstüne uygulama.
 
-## Temizlik ve kalan işler
+Python 3.12: `C:/Users/PC/AppData/Local/Programs/Python/Python312/python.exe`; Windows metin işlemlerinde UTF-8 kullan. GIF smoke doğrulayıcısı Pillow gerektirir; bu oturumda PATH Python 3.10/Pillow 12.1 kullanıldı.
 
-- Düzeltme testi için oluşturulan `L_Test` ve `NS_Fountain`, `/Game/MonolithTests/FixValidation_20260906_1155/` altında **2/2 Editor API üzerinden silindi**. Asset yokluğu kontrol edildi.
-- Açılan test editörü kapatıldı. Kullanıcının ayrı oyun projeleri değiştirilmedi; global MCP istemci ayarları değiştirilmedi.
-- Kanıt dosyaları bilerek korundu. İlk geniş testin `C:\Users\PC\AppData\Local\Temp\RecycleCo-Monolith-20260906-111620` klasörü ayrı eski kayıttır; bu oturumda ona yönelik temizlik yapılmadı.
-- Source index gerektiren testler ve etkin olmayan GeometryScripting/Metasound/ücretli eklenti entegrasyonları açık kapsamdır.
-- UI–GAS / BT–GAS / Audio–AI stimulus binding için gerçek paket davranışı açık. Sadece oyunda kullanılacak özelliklere göre önceliklendir; genel eklenti kapsamını genişletmek başlı başına hedef değil.
-- CommonUI kullanılacaksa gerçek input yönlendirmesini ve sonraki paket çalışmasını doğrula. Bugünkü Editor log kontrolünü paket/input testi gibi sunma.
-- Sonraki iş başlamadan kullanıcı yönlendirmesini takip et; bu belge kendi başına yeni tam test/derleme/commit/push talimatı değildir.
-
-## Çalışma kuralları ve hızlı erişim
-
-Yalnızca RecycleCo test hedefini kullan; eski geçici validation projesine veya kullanıcının başka oyununa dönme. Aynı anda tek UE pipeline, derlemede `-MaxParallelActions=2`. Açık editörün ve paylaşılan DLL'lerin durumunu doğrula; kaydedilmemiş işi zorla kapatma. Çok adımlı MCP işlemlerinde proje kimliğini doğrula ve lease kullan.
-
-- Derleme rehberi: `Skills/unreal-build/SKILL.md`.
-- Test planı: `D:\UnrealProjects\RecycleCo\MONOLITH_TEST_PLANI.md` (kurulum anının planıdır; güncel sonuçlar için yukarıdaki sonuç raporu esas).
-- Python 3.12: `C:\Users\PC\AppData\Local\Programs\Python\Python312\python.exe`.
-- Gerekirse derleme: `D:\UE_5.7\Engine\Build\BatchFiles\Build.bat RecycleCoEditor Win64 Development -Project=D:\UnrealProjects\RecycleCo\RecycleCo.uproject -WaitMutex -NoHotReloadFromIDE -MaxParallelActions=2`.
+- [Ayrıntılı sonuç, sınırlar ve kanıtlar](COMPLETION_2026_09_06.md)
+- [Cook/runtime desteği ve migration](COOKED_BUILD_TODO.md)
+- [Fixture ve test runner kullanımı](../Scripts/fixtures/README.md)
+- [Blueprint/animasyon](testing/2026-09-06-blueprint-animation.md), [indeks/jobs](testing/2026-09-06-index-jobs.md), [UI](testing/2026-09-06-ui.md)

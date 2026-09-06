@@ -27,6 +27,17 @@
 #include "HAL/PlatformFileManager.h"
 #include "SQLiteDatabase.h"
 #include "MonolithIndexDatabase.h"
+#include "Indexers/AIIndexer.h"
+#include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/Composites/BTComposite_Sequence.h"
+#include "BehaviorTree/Tasks/BTTask_Wait.h"
+#include "BehaviorTree/BlackboardData.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Float.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
+#include "EnvironmentQuery/EnvQuery.h"
+#include "EnvironmentQuery/EnvQueryOption.h"
+#include "EnvironmentQuery/Generators/EnvQueryGenerator_CurrentLocation.h"
+#include "AssetRegistry/AssetData.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -479,6 +490,112 @@ bool FMonolithIndexRecoveryPoisonPillTest::RunTest(const FString& /*Parameters*/
 	}
 	TestEqual(TEXT("the attempt counter survives a close/reopen"), AfterRollback->DeepIndexAttempts, 1);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithSentinelOwnedRowsTest, "Monolith.Index.Recovery.SentinelOwnedRows",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMonolithSentinelOwnedRowsTest::RunTest(const FString&)
+{
+	using namespace MonolithIndexRecoveryTestDetail;
+	FFixture Fixture;
+	if (!TestTrue(TEXT("open"), Fixture.Open())) return false;
+	ON_SCOPE_EXIT { Fixture.Destroy(); };
+	auto& DB = Fixture.Database;
+	int64 BP = Fixture.InsertAsset(AssetPath, ContentHash);
+	FIndexedAsset Meta;
+	Meta.PackagePath = TEXT("/Game/Tests/Monolith/MS_Test"); Meta.AssetName = TEXT("MS_Test"); Meta.AssetClass = TEXT("MetaSoundSource");
+	int64 MS = DB.InsertAsset(Meta);
+	auto Add = [&](int64 Asset, const TCHAR* Type) { FIndexedNode N; N.AssetId = Asset; N.NodeName = Type; N.NodeType = Type; return DB.InsertNode(N); };
+	Add(BP, TEXT("Function"));
+	int64 Ability = Add(BP, TEXT("GameplayAbility"));
+	int64 Effect = Add(BP, TEXT("GameplayEffect"));
+	FIndexedConnection Edge; Edge.SourceNodeId = Ability; Edge.TargetNodeId = Effect; Edge.SourcePin = TEXT("CostEffect"); Edge.TargetPin = TEXT("Self"); DB.InsertConnection(Edge);
+	Add(MS, TEXT("Node")); Add(MS, TEXT("Metadata"));
+	FIndexedVariable V; V.AssetId = MS; V.VarName = TEXT("Gain"); V.VarType = TEXT("Float"); V.Category = TEXT("MetaSound"); DB.InsertVariable(V);
+	V.Category = TEXT("Other"); DB.InsertVariable(V);
+	TestTrue(TEXT("begin replacement"), DB.BeginTransaction());
+	TestTrue(TEXT("clear GAS"), DB.ClearGASIndexRows());
+	TestTrue(TEXT("clear MetaSound"), DB.ClearMetaSoundIndexRows());
+	TestEqual(TEXT("only BP graph preserved"), DB.GetNodesForAsset(BP).Num(), 1);
+	TestEqual(TEXT("only MetaSound metadata preserved"), DB.GetNodesForAsset(MS).Num(), 1);
+	TestEqual(TEXT("only unrelated variable preserved"), DB.GetVariablesForAsset(MS).Num(), 1);
+	TestEqual(TEXT("GAS connections cascade"), CountRows(DB, TEXT("connections")), int64(0));
+	DB.RollbackTransaction();
+	TestEqual(TEXT("rollback restores old GAS data"), DB.GetNodesForAsset(BP).Num(), 3);
+	TestEqual(TEXT("rollback restores edges"), CountRows(DB, TEXT("connections")), int64(1));
+	TestEqual(TEXT("rollback restores MetaSound data"), DB.GetNodesForAsset(MS).Num(), 2);
+	TestTrue(TEXT("repeat GAS clear"), DB.ClearGASIndexRows());
+	TestTrue(TEXT("idempotent GAS clear"), DB.ClearGASIndexRows());
+	TestEqual(TEXT("still preserves Blueprint"), DB.GetNodesForAsset(BP).Num(), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithAIStructureTest, "Monolith.Index.AI.Structure",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMonolithAIStructureTest::RunTest(const FString&)
+{
+	using namespace MonolithIndexRecoveryTestDetail;
+	FFixture Fixture;
+	if (!TestTrue(TEXT("open"), Fixture.Open())) return false;
+	ON_SCOPE_EXIT { Fixture.Destroy(); };
+	auto& DB = Fixture.Database;
+	int64 Id = Fixture.InsertAsset(AssetPath, ContentHash);
+	FMonolithAIAssetIndexer Indexer;
+	UBehaviorTree* Tree = NewObject<UBehaviorTree>();
+	Tree->RootNode = NewObject<UBTComposite_Sequence>(Tree);
+	FBTCompositeChild Child;
+	Child.ChildTask = NewObject<UBTTask_Wait>(Tree);
+	Tree->RootNode->Children.Add(Child);
+	TestTrue(TEXT("BT index succeeds"), Indexer.IndexAsset(FAssetData(), Tree, DB, Id));
+	TestEqual(TEXT("tree, root and task"), DB.GetNodesForAsset(Id).Num(), 3);
+	TestEqual(TEXT("root and ordered child edges"), CountRows(DB, TEXT("connections")), int64(2));
+	DB.DeleteChildDataForAsset(Id);
+	UBlackboardData* BB = NewObject<UBlackboardData>();
+	BB->Parent = NewObject<UBlackboardData>();
+	FBlackboardEntry Key;
+	Key.EntryName = TEXT("Speed"); Key.KeyType = NewObject<UBlackboardKeyType_Float>(BB); BB->Keys.Add(Key);
+	Key.KeyType = NewObject<UBlackboardKeyType_Int>(BB->Parent);
+	BB->Parent->Keys.Add(Key); // child Float overrides parent Int
+	Key.EntryName = TEXT("Distance"); BB->Parent->Keys.Add(Key);
+	TestTrue(TEXT("blackboard index succeeds"), Indexer.IndexAsset(FAssetData(), BB, DB, Id));
+	const auto Vars = DB.GetVariablesForAsset(Id);
+	// UE creates the persistent SelfActor key in PostInitProperties. Include
+	// engine-supplied keys rather than treating them as duplicate user keys.
+	TSet<FString> ExpectedNames;
+	for (const auto& Entry : BB->Keys) ExpectedNames.Add(Entry.EntryName.ToString());
+	for (const auto& Entry : BB->Parent->Keys) ExpectedNames.Add(Entry.EntryName.ToString());
+	TestEqual(TEXT("all inherited/local/engine keys deduplicated"), Vars.Num(), ExpectedNames.Num());
+	TSet<FString> ActualNames;
+	int32 SpeedCount = 0, DistanceCount = 0;
+	for (const auto& Var : Vars)
+	{
+		TestFalse(TEXT("no duplicate key identity"), ActualNames.Contains(Var.VarName));
+		ActualNames.Add(Var.VarName);
+		TestTrue(TEXT("every key belongs to the fixture or its engine defaults"), ExpectedNames.Contains(Var.VarName));
+		if (Var.VarName == TEXT("Speed"))
+		{
+			++SpeedCount;
+			TestEqual(TEXT("override uses child Float type"), Var.VarType, UBlackboardKeyType_Float::StaticClass()->GetName());
+			TestEqual(TEXT("override belongs to child"), Var.Category, FString(TEXT("Blackboard")));
+		}
+		if (Var.VarName == TEXT("Distance"))
+		{
+			++DistanceCount;
+			TestEqual(TEXT("inherited key keeps parent Int type"), Var.VarType, UBlackboardKeyType_Int::StaticClass()->GetName());
+			TestEqual(TEXT("inherited key belongs to parent"), Var.Category, FString(TEXT("BlackboardInherited")));
+		}
+	}
+	TestEqual(TEXT("one Speed override"), SpeedCount, 1);
+	TestEqual(TEXT("one inherited Distance"), DistanceCount, 1);
+	DB.DeleteChildDataForAsset(Id);
+	UEnvQuery* Query = NewObject<UEnvQuery>();
+	UEnvQueryOption* Option = NewObject<UEnvQueryOption>(Query);
+	Option->Generator = NewObject<UEnvQueryGenerator_CurrentLocation>(Option);
+	Query->GetOptionsMutable().Add(Option);
+	TestTrue(TEXT("EQS index succeeds"), Indexer.IndexAsset(FAssetData(), Query, DB, Id));
+	TestEqual(TEXT("query, option, generator"), DB.GetNodesForAsset(Id).Num(), 3);
+	TestEqual(TEXT("option and generator edges"), CountRows(DB, TEXT("connections")), int64(2));
 	return true;
 }
 

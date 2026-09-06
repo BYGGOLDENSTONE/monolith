@@ -6,11 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Personal game-development completion
+
+- Move content-referenced GAS widget bindings, BT tasks and BT controller into `MonolithRuntime`, preserving old reflected paths with redirects. Repair synchronous ability completion, abort cleanup, late widget owners, game-thread tick registration during async loading, smoothing and runtime hearing delivery. Keep BehaviorTree runtime nodes owned by their asset so they survive cooking.
+- Implement editable graph-node properties, strict write preflight, structured animation transitions and typed linked-layer inputs.
+- Complete GAS/MetaSound/AI index passes with transactional recovery, AI structure indexing and native EQS/StateTree type discovery.
+- Add asynchronous GIF encoder jobs and editor undo/redo; author CommonUI menu layers/focus/navigation, resolver graphs and compilable Enhanced Input persistence scaffolds.
+- Keep implementation evidence, test fixtures and current handoff in Monolith `Docs`; RecycleCo is a temporary validation host. See `Docs/COMPLETION_2026_09_06.md` for exact validation and limitations.
+
 ### RecycleCo validation follow-ups
 
 - Persistent Niagara sequence capture preserves the requested camera transform when registering its preview capture component.
 - PIE smoke activity and lifecycle reports track their own world identity, so closed sessions remain inactive when a later PIE session starts.
-- Cooked-build documentation distinguishes the verified `MonolithAudioRuntime` module/subsystem loading in RecycleCo Win64 Development from still-unverified binding and stimulus behavior.
+- Initial cooked-build documentation recorded `MonolithAudioRuntime` loading; the completion report now adds verified binding and hearing behavior in Development and Shipping.
 
 ### Phase 1 asset round trips
 

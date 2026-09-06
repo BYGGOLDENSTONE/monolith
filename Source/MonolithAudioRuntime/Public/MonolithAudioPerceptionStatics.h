@@ -17,7 +17,7 @@ class AActor;
  *
  * Project authors who need perception coverage on fire-and-forget plays should swap
  * Play Sound At Location for Play Sound And Report Noise — same playback, plus an
- * AActor::MakeNoise dispatch driven from the design-time UMonolithSoundPerceptionUserData binding.
+ * UAISense_Hearing::ReportNoiseEvent dispatch driven from the design-time UMonolithSoundPerceptionUserData binding.
  */
 UCLASS(MinimalAPI)
 class UMonolithAudioPerceptionStatics : public UBlueprintFunctionLibrary
@@ -27,12 +27,12 @@ class UMonolithAudioPerceptionStatics : public UBlueprintFunctionLibrary
 public:
 	/**
 	 * Plays a sound at a world location AND, if the sound has a Monolith perception binding,
-	 * fires AActor::MakeNoise from Instigator (or UAISense_Hearing::ReportNoiseEvent if Instigator is null).
+	 * reports a hearing event at Location with the optional Instigator.
 	 *
-	 * Honors the binding's Loudness/MaxRange/Tag/bEnabled flags. LoudnessOverride > 0 wins over the binding.
+	 * Honors the binding's Loudness/MaxRange/Tag/bEnabled flags. LoudnessOverride >= 0 wins over the binding.
 	 * TagOverride != NAME_None wins over the binding.
 	 *
-	 * Authority: AActor::MakeNoise is BlueprintAuthorityOnly. On clients, the noise dispatch is skipped
+	 * Authority: On clients, the noise dispatch is skipped
 	 * but the audio still plays locally (audio is not authority-gated).
 	 *
 	 * Coverage: Use this whenever you'd reach for Play Sound At Location and you care about

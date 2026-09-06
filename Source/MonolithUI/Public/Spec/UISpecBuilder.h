@@ -67,6 +67,10 @@ struct MONOLITHUI_API FUISpecBuilderInputs
 
     /** Optional caller-supplied request id; echoed back in the response. */
     FString RequestId;
+
+    /** Optional menu authoring pass, inside the build transaction and before compile/save.
+     * The caller must preflight its inputs; dry runs never invoke this mutating callback. */
+    TFunction<bool(UWidgetBlueprint*, FString&)> BeforeCompile;
 };
 
 /**

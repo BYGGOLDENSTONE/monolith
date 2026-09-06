@@ -4,6 +4,7 @@
 #include "MonolithJsonUtils.h"
 #include "MonolithParamSchema.h"
 #include "MonolithAssetUtils.h"
+#include "Misc/ScopeExit.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "Engine/SCS_Node.h"
 #include "Engine/SkinnedAsset.h"
@@ -490,13 +491,10 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleSetComponentProp
 	if (CompName.IsEmpty()) return FMonolithActionResult::Error(TEXT("component_name is required"));
 	if (PropName.IsEmpty()) return FMonolithActionResult::Error(TEXT("property_name is required"));
 
-	// One resolver for the whole module — see MonolithBlueprintComponentResolver.h. Write intent
-	// (bCreateIchOverride=true): a component inherited from a parent Blueprint gets THIS
-	// Blueprint's own Inheritable Component Handler override so the write lands on the child
-	// rather than mutating the parent's template.
-	const MonolithBlueprintComponentResolver::FResult Resolved =
+	// Resolve read-only first; only a fully validated write may create a child override.
+	MonolithBlueprintComponentResolver::FResult Resolved =
 		MonolithBlueprintComponentResolver::Resolve(
-			BP, CompName, UActorComponent::StaticClass(), /*bCreateIchOverride=*/true);
+			BP, CompName, UActorComponent::StaticClass(), /*bCreateIchOverride=*/false);
 
 	if (!Resolved.IsValid())
 	{
@@ -514,15 +512,26 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleSetComponentProp
 			TEXT("Property '%s' not found on %s"), *PropName, *Template->GetClass()->GetName()));
 	}
 
-	void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(Template);
-
-	// Read old value for reporting
+	// Validate on independent property storage before creating an inherited override or dirtying
+	// any object. ImportText may partially write its destination even when it returns failure.
+	// SkinnedAsset is the engine's private alias, deliberately routed through its setter below.
+	const bool bSkinnedAlias = Template->IsA<USkinnedMeshComponent>() &&
+		(PropName.Equals(TEXT("SkinnedAsset"), ESearchCase::IgnoreCase) ||
+		 PropName.Equals(TEXT("SkeletalMesh"), ESearchCase::IgnoreCase) ||
+		 PropName.Equals(TEXT("SkeletalMeshAsset"), ESearchCase::IgnoreCase));
+	if (!bSkinnedAlias && (!Prop->HasAnyPropertyFlags(CPF_Edit) ||
+		Prop->HasAnyPropertyFlags(CPF_EditConst | CPF_DisableEditOnTemplate)))
+	{
+		return FMonolithActionResult::Error(FString::Printf(TEXT("Property '%s' is not editable on a component template"), *PropName));
+	}
+	void* Scratch = FMemory::Malloc(Prop->GetSize(), Prop->GetMinAlignment());
+	Prop->InitializeValue(Scratch);
+	ON_SCOPE_EXIT { Prop->DestroyValue(Scratch); FMemory::Free(Scratch); };
+	Prop->CopyCompleteValue(Scratch, Prop->ContainerPtrToValuePtr<void>(Template));
 	FString OldValue;
-	Prop->ExportText_Direct(OldValue, ValuePtr, ValuePtr, Template, PPF_None);
-
-	// Record the change for undo + ensure the CDO subobject is serialized on save.
-	Template->Modify();
-
+	Prop->ExportText_Direct(OldValue, Scratch, Scratch, Template, PPF_None);
+	UObject* NewObject = nullptr;
+	bool bIsNone = false;
 	// For FObjectProperty, resolve the path → load the object → assign the pointer
 	// directly. ImportText is fragile for TObjectPtrs on a CDO subobject — it may
 	// silently no-op if the value string isn't in the exact canonical form the
@@ -542,8 +551,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleSetComponentProp
 				Path = Path.Mid(QuoteStart + 1, QuoteEnd - QuoteStart - 1);
 			}
 		}
-		const bool bIsNone = Path.Equals(TEXT("None"), ESearchCase::IgnoreCase) || Path.IsEmpty();
-		UObject* NewObject = nullptr;
+		bIsNone = Path.Equals(TEXT("None"), ESearchCase::IgnoreCase) || Path.IsEmpty();
 		if (!bIsNone)
 		{
 			// Load without class constraint — ObjProp->PropertyClass may be an
@@ -564,6 +572,24 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleSetComponentProp
 			}
 		}
 
+	}
+	else
+	{
+		const TCHAR* End = Prop->ImportText_Direct(*Value, Scratch, Template, PPF_None);
+		if (!End || !FString(End).TrimStartAndEnd().IsEmpty())
+		{
+			return FMonolithActionResult::Error(FString::Printf(TEXT("Failed to set property '%s' to value '%s' — check format"), *PropName, *Value));
+		}
+	}
+
+	Resolved = MonolithBlueprintComponentResolver::Resolve(
+		BP, CompName, UActorComponent::StaticClass(), /*bCreateIchOverride=*/true);
+	if (!Resolved.IsValid()) return FMonolithActionResult::Error(Resolved.Error);
+	Template = Resolved.Template;
+	void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(Template);
+	Template->Modify();
+	if (ObjProp)
+	{
 		// Route the write through the canonical setter when one exists. The
 		// engine contract: a UPROPERTY with `Setter=` metadata or a deprecated/
 		// aliased pair (USkinnedMeshComponent::SkinnedAsset ↔ SkeletalMesh,
@@ -619,12 +645,7 @@ FMonolithActionResult FMonolithBlueprintComponentActions::HandleSetComponentProp
 	}
 	else
 	{
-		const TCHAR* ImportResult = Prop->ImportText_Direct(*Value, ValuePtr, Template, PPF_None);
-		if (!ImportResult)
-		{
-			return FMonolithActionResult::Error(FString::Printf(
-				TEXT("Failed to set property '%s' to value '%s' — check format"), *PropName, *Value));
-		}
+		Prop->CopyCompleteValue(ValuePtr, Scratch);
 	}
 
 	// Fire property-change notifications so setter-driven side effects run

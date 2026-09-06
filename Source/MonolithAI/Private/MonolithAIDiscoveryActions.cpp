@@ -10,11 +10,17 @@
 #include "BehaviorTree/BTDecorator.h"
 #include "BehaviorTree/BTService.h"
 #include "EnvironmentQuery/EnvQuery.h"
+#include "EnvironmentQuery/EnvQueryGenerator.h"
+#include "EnvironmentQuery/EnvQueryTest.h"
+#include "EnvironmentQuery/EnvQueryContext.h"
 
 #if WITH_STATETREE
 #include "StateTree.h"
 #include "StateTreeEditorData.h"
 #include "StateTreeState.h"
+#include "StateTreeTaskBase.h"
+#include "StateTreeEvaluatorBase.h"
+#include "StateTreeConditionBase.h"
 #endif
 
 #if WITH_SMARTOBJECTS
@@ -55,11 +61,11 @@ void FMonolithAIDiscoveryActions::RegisterActions(FMonolithToolRegistry& Registr
 
 	// 204. list_ai_node_types
 	Registry.RegisterAction(TEXT("ai"), TEXT("list_ai_node_types"),
-		TEXT("Enumerate available Behavior Tree node classes. State Tree and EQS enumeration currently return an explicit not_implemented error, not an empty node list."),
+		TEXT("Enumerate loaded Behavior Tree/EQS node classes and StateTree task/evaluator/condition structs. StateTree requires its optional dependency; this is not schema-specific node-picker filtering."),
 		FMonolithActionHandler::CreateStatic(&HandleListAINodeTypes),
 		FParamSchemaBuilder()
 			.Required(TEXT("system"), TEXT("string"), TEXT("System to query: bt, st, or eqs"))
-			.Optional(TEXT("category"), TEXT("string"), TEXT("Category filter (system-specific, e.g. composite/task/decorator/service for BT)"))
+			.Optional(TEXT("category"), TEXT("string"), TEXT("Category filter: BT composite/task/decorator/service; ST task/evaluator/condition; EQS generator/test/context"))
 			.Build());
 
 	// 217. search_ai_assets
@@ -223,6 +229,53 @@ namespace
 		}
 	}
 
+	/** Reflect loaded EQS classes without constructing default objects or loading assets. */
+	void CollectEQSClasses(UClass* Base, const FString& Category, TArray<TSharedPtr<FJsonValue>>& Out)
+	{
+		TArray<UClass*> Classes;
+		GetDerivedClasses(Base, Classes, true);
+		Classes.Sort([](const UClass& A, const UClass& B) { return A.GetPathName() < B.GetPathName(); });
+		for (UClass* Class : Classes)
+		{
+			if (Class->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists)
+				|| Class->GetName().StartsWith(TEXT("SKEL_")) || Class->GetName().StartsWith(TEXT("REINST_"))) continue;
+			auto Entry = MakeShared<FJsonObject>();
+			Entry->SetStringField(TEXT("class_name"), Class->GetName());
+			Entry->SetStringField(TEXT("class_path"), Class->GetPathName());
+			Entry->SetStringField(TEXT("display_name"), Class->GetDisplayNameText().ToString());
+			Entry->SetStringField(TEXT("category"), Category);
+			Entry->SetStringField(TEXT("kind"), TEXT("class"));
+			Out.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+	}
+
+#if WITH_STATETREE
+	void CollectSTStructs(UScriptStruct* Base, const FString& Category, TArray<TSharedPtr<FJsonValue>>& Out)
+	{
+		TArray<UScriptStruct*> Structs;
+		for (TObjectIterator<UScriptStruct> It; It; ++It)
+		{
+			UScriptStruct* Struct = *It;
+			if (Struct == Base || !Struct->IsChildOf(Base) || Struct->HasMetaData(TEXT("Hidden"))
+				|| Struct->HasMetaData(TEXT("Deprecated")) || Struct->GetName().StartsWith(TEXT("REINST_"))) continue;
+			Structs.Add(Struct);
+		}
+		Structs.Sort([](const UScriptStruct& A, const UScriptStruct& B) { return A.GetPathName() < B.GetPathName(); });
+		for (UScriptStruct* Struct : Structs)
+		{
+			auto Entry = MakeShared<FJsonObject>();
+			// Preserve the common discovery naming field while explicitly identifying structs.
+			Entry->SetStringField(TEXT("class_name"), Struct->GetName());
+			Entry->SetStringField(TEXT("struct_name"), Struct->GetName());
+			Entry->SetStringField(TEXT("struct_path"), Struct->GetPathName());
+			Entry->SetStringField(TEXT("display_name"), Struct->GetDisplayNameText().ToString());
+			Entry->SetStringField(TEXT("category"), Category);
+			Entry->SetStringField(TEXT("kind"), TEXT("struct"));
+			Out.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+	}
+#endif
+
 	/** Search assets of a given class for matching names */
 	void SearchAssetsOfClass(IAssetRegistry& AR, const FTopLevelAssetPath& ClassPath, const FString& Query, const FString& TypeLabel, TArray<TSharedPtr<FJsonValue>>& OutArr)
 	{
@@ -344,15 +397,25 @@ FMonolithActionResult FMonolithAIDiscoveryActions::HandleListAINodeTypes(const T
 			CollectBTNodeClasses(UBTService::StaticClass(), TEXT("service"), NodeTypes);
 		}
 	}
-	else if (System == TEXT("st") || System == TEXT("eqs"))
+	else if (System == TEXT("eqs"))
 	{
-		auto Data = MakeShared<FJsonObject>();
-		Data->SetStringField(TEXT("reason"), TEXT("not_implemented"));
-		Data->SetStringField(TEXT("system"), System);
-		Data->SetBoolField(TEXT("implemented"), false);
-		return FMonolithActionResult::Error(FString::Printf(
-			TEXT("Node type enumeration for system '%s' is not implemented. Inspect the installed engine source or the corresponding editor node picker; use system='bt' only for Behavior Tree node discovery. This does not mean no node types exist."),
-			*System), FMonolithJsonUtils::ErrNotImplemented).WithErrorData(Data);
+		if (!CategoryFilter.IsEmpty() && CategoryFilter != TEXT("generator") && CategoryFilter != TEXT("test") && CategoryFilter != TEXT("context"))
+			return FMonolithActionResult::InvalidParam(TEXT("category"), TEXT("EQS categories: generator, test, context; omit for all."));
+		if (CategoryFilter.IsEmpty() || CategoryFilter == TEXT("generator")) CollectEQSClasses(UEnvQueryGenerator::StaticClass(), TEXT("generator"), NodeTypes);
+		if (CategoryFilter.IsEmpty() || CategoryFilter == TEXT("test")) CollectEQSClasses(UEnvQueryTest::StaticClass(), TEXT("test"), NodeTypes);
+		if (CategoryFilter.IsEmpty() || CategoryFilter == TEXT("context")) CollectEQSClasses(UEnvQueryContext::StaticClass(), TEXT("context"), NodeTypes);
+	}
+	else if (System == TEXT("st"))
+	{
+		if (!CategoryFilter.IsEmpty() && CategoryFilter != TEXT("task") && CategoryFilter != TEXT("evaluator") && CategoryFilter != TEXT("condition"))
+			return FMonolithActionResult::InvalidParam(TEXT("category"), TEXT("StateTree categories: task, evaluator, condition; omit for all."));
+#if WITH_STATETREE
+		if (CategoryFilter.IsEmpty() || CategoryFilter == TEXT("task")) CollectSTStructs(FStateTreeTaskBase::StaticStruct(), TEXT("task"), NodeTypes);
+		if (CategoryFilter.IsEmpty() || CategoryFilter == TEXT("evaluator")) CollectSTStructs(FStateTreeEvaluatorBase::StaticStruct(), TEXT("evaluator"), NodeTypes);
+		if (CategoryFilter.IsEmpty() || CategoryFilter == TEXT("condition")) CollectSTStructs(FStateTreeConditionBase::StaticStruct(), TEXT("condition"), NodeTypes);
+#else
+		return FMonolithActionResult::OptionalDepUnavailable(TEXT("StateTree"));
+#endif
 	}
 	else
 	{

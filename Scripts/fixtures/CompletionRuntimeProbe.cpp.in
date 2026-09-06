@@ -1,0 +1,269 @@
+#include "CompletionRuntimeProbe.h"
+#include "AbilitySystemComponent.h"
+#include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/BehaviorTreeComponent.h"
+#include "BehaviorTree/Composites/BTComposite_Sequence.h"
+#include "BehaviorTreeTasks/BTTask_TryActivateAbility.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Components/AudioComponent.h"
+#include "Components/ProgressBar.h"
+#include "Components/SceneComponent.h"
+#include "Components/WidgetComponent.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
+#include "MonolithGASAttributeBindingClassExtension.h"
+#include "MonolithAudioPerceptionSubsystem.h"
+#include "MonolithSoundPerceptionUserData.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISenseConfig_Hearing.h"
+#include "Sound/SoundBase.h"
+#include "HAL/PlatformMisc.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "UObject/CoreRedirects.h"
+#include "GeneratedKeyPersistenceProbe.inl"
+#include "GeneratedMenuRuntimeProbe.inl"
+
+namespace CompletionGASDiagnostics
+{
+void DumpClass(UClass* Class)
+{
+    auto* Generated = Cast<UWidgetBlueprintGeneratedClass>(Class);
+    if (!Generated) { UE_LOG(LogTemp, Display, TEXT("MONOLITH_GAS_DIAG no generated widget class: %s"), *GetNameSafe(Class)); return; }
+    int32 Extensions = 0, Rows = 0;
+    Generated->ForEachExtension([&](UWidgetBlueprintGeneratedClassExtension* Extension)
+    {
+        ++Extensions;
+        auto* GAS = Cast<UMonolithGASAttributeBindingClassExtension>(Extension);
+        UE_LOG(LogTemp, Display, TEXT("MONOLITH_GAS_DIAG extension=%s class=%s flags=%u template=%d GAS=%d"),
+            *GetPathNameSafe(Extension), *GetPathNameSafe(Extension->GetClass()), static_cast<uint32>(Extension->GetFlags()), Extension->IsTemplate(), GAS != nullptr);
+        if (!GAS) return;
+        Rows += GAS->Bindings.Num();
+        for (const auto& Spec : GAS->Bindings)
+            UE_LOG(LogTemp, Display, TEXT("MONOLITH_GAS_DIAG row widget=%s property=%s owner=%d tag=%s update=%d class=%s soft=%s attr=%s maxclass=%s maxsoft=%s max=%s"),
+                *Spec.TargetWidgetName.ToString(), *Spec.TargetPropertyName.ToString(), static_cast<int32>(Spec.Owner), *Spec.OwnerSocketTag.ToString(), static_cast<int32>(Spec.UpdatePolicy),
+                *Spec.AttributeSetClassPath, *Spec.AttributeSetClass.ToString(), *Spec.AttributePropertyName.ToString(),
+                *Spec.MaxAttributeSetClassPath, *Spec.MaxAttributeSetClass.ToString(), *Spec.MaxAttributePropertyName.ToString());
+    });
+    UE_LOG(LogTemp, Display, TEXT("MONOLITH_GAS_DIAG generated=%s extensions=%d bindingrows=%d"), *Generated->GetPathName(), Extensions, Rows);
+}
+void DumpWidget(UUserWidget* Widget, const TCHAR* Stage)
+{
+    auto* Bar = Widget ? Cast<UProgressBar>(Widget->GetWidgetFromName(TEXT("HealthBar"))) : nullptr;
+    UE_LOG(LogTemp, Display, TEXT("MONOLITH_GAS_DIAG stage=%s widget=%s class=%s world=%s gameworld=%d designtime=%d cached=%d viewport=%d tree=%s bar=%s percent=%f"),
+        Stage, *GetPathNameSafe(Widget), *GetPathNameSafe(Widget ? Widget->GetClass() : nullptr),
+        *GetNameSafe(Widget ? Widget->GetWorld() : nullptr), Widget && Widget->GetWorld() && Widget->GetWorld()->IsGameWorld(),
+        Widget && Widget->IsDesignTime(), Widget && Widget->GetCachedWidget().IsValid(), Widget && Widget->IsInViewport(),
+        *GetPathNameSafe(Widget ? Widget->WidgetTree.Get() : nullptr), *GetPathNameSafe(Bar), Bar ? Bar->GetPercent() : -1.f);
+}
+}
+
+UCompletionInstantAbility::UCompletionInstantAbility() { InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor; }
+void UCompletionInstantAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* Info,
+    const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData*)
+{
+    EndAbility(Handle, Info, ActivationInfo, true, false);
+}
+UCompletionLatentAbility::UCompletionLatentAbility() { InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor; }
+void UCompletionLatentAbility::ActivateAbility(const FGameplayAbilitySpecHandle, const FGameplayAbilityActorInfo*,
+    const FGameplayAbilityActivationInfo, const FGameplayEventData*) {}
+
+ACompletionPawn::ACompletionPawn()
+{
+    RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+    ASC = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("ASC"));
+    Vitals = CreateDefaultSubobject<UCompletionVitals>(TEXT("Vitals"));
+    Audio = CreateDefaultSubobject<UAudioComponent>(TEXT("Audio"));
+    Audio->SetupAttachment(RootComponent);
+    Audio->bAutoActivate = false;
+}
+ACompletionController::ACompletionController()
+{
+    auto* Perception = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("Perception"));
+    SetPerceptionComponent(*Perception);
+    auto* Hearing = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("Hearing"));
+    Hearing->HearingRange = 5000;
+    Hearing->DetectionByAffiliation.bDetectEnemies = true;
+    Hearing->DetectionByAffiliation.bDetectFriendlies = true;
+    Hearing->DetectionByAffiliation.bDetectNeutrals = true;
+    Perception->ConfigureSense(*Hearing);
+    Perception->SetDominantSense(Hearing->GetSenseImplementation());
+    Perception->OnTargetPerceptionUpdated.AddDynamic(this, &ACompletionController::Heard);
+    auto* BT = CreateDefaultSubobject<UBehaviorTreeComponent>(TEXT("BT"));
+    BrainComponent = BT;
+}
+void ACompletionController::Heard(AActor* Source, FAIStimulus Stimulus)
+{
+    if (Stimulus.WasSuccessfullySensed() && Stimulus.Tag == TEXT("CompletionNoise"))
+    {
+        ++HeardCount;
+        if (Source && Source->ActorHasTag(TEXT("CompletionLateAudioOwner"))) Tags.AddUnique(TEXT("CompletionHeardLateAudio"));
+    }
+}
+ACompletionRuntimeProbe::ACompletionRuntimeProbe() { PrimaryActorTick.bCanEverTick = true; }
+void ACompletionRuntimeProbe::Check(bool Condition, const TCHAR* Name)
+{
+    ++Checks;
+    if (!Condition) ++Failures;
+    UE_LOG(LogTemp, Display, TEXT("MONOLITH_RUNTIME_CHECK %s %s"), Name, Condition ? TEXT("PASS") : TEXT("FAIL"));
+}
+void ACompletionRuntimeProbe::BeginPlay()
+{
+    Super::BeginPlay(); Start = GetWorld()->GetTimeSeconds();
+    const FString KeysResult = TestGeneratedKeyPersistence(GetWorld());
+    UE_LOG(LogTemp, Display, TEXT("MONOLITH_KEYS_DETAIL %s"), *KeysResult);
+    Check(KeysResult == TEXT("ok"), TEXT("generated_key_persistence"));
+    const FString MenuResult = TestGeneratedMenuRuntime(GetWorld(), MenuClass);
+    UE_LOG(LogTemp, Display, TEXT("MONOLITH_MENU_DETAIL %s"), *MenuResult);
+    Check(MenuResult == TEXT("ok"), TEXT("cooked_commonui_focus_navigation_layers"));
+    if (WidgetClass)
+    {
+        RetryWidget = CreateWidget<UUserWidget>(GetWorld()->GetFirstPlayerController(), WidgetClass);
+        if (RetryWidget) { RetryWidget->AddToViewport(); RetryWidget->TakeWidget(); }
+    }
+    Pawn = GetWorld()->SpawnActor<ACompletionPawn>();
+    Pawn->Tags.Add(TEXT("CompletionOwner"));
+    Controller = GetWorld()->SpawnActor<ACompletionController>();
+    Controller->Possess(Pawn);
+    Pawn->ASC->InitAbilityActorInfo(Pawn, Pawn);
+    Pawn->ASC->AddAttributeSetSubobject(Pawn->Vitals.Get());
+    const FGameplayAttribute Health(FindFProperty<FProperty>(UCompletionVitals::StaticClass(), TEXT("Health")));
+    const FGameplayAttribute Max(FindFProperty<FProperty>(UCompletionVitals::StaticClass(), TEXT("MaxHealth")));
+    Pawn->ASC->SetNumericAttributeBase(Max, 100);
+    Pawn->ASC->SetNumericAttributeBase(Health, 25);
+    Check(WidgetClass != nullptr, TEXT("cooked_widget_class"));
+    CompletionGASDiagnostics::DumpClass(WidgetClass);
+    if (WidgetClass)
+    {
+        Widget = CreateWidget<UUserWidget>(GetWorld()->GetFirstPlayerController(), WidgetClass);
+        if (Widget) { Widget->AddToViewport(); Widget->TakeWidget(); }
+        auto* Bar = Widget ? Cast<UProgressBar>(Widget->GetWidgetFromName(TEXT("HealthBar"))) : nullptr;
+        CompletionGASDiagnostics::DumpWidget(Widget, TEXT("initial"));
+        Check(Bar && FMath::IsNearlyEqual(Bar->GetPercent(), .25f), TEXT("gas_initial_value"));
+        Pawn->ASC->SetNumericAttributeBase(Health, 75);
+        CompletionGASDiagnostics::DumpWidget(Widget, TEXT("after_attribute_change"));
+        Check(Bar && FMath::IsNearlyEqual(Bar->GetPercent(), .75f), TEXT("gas_attribute_delegate"));
+    }
+    if (WidgetClass)
+    {
+        auto* Hosted = NewObject<UWidgetComponent>(Pawn);
+        Pawn->AddInstanceComponent(Hosted);
+        Hosted->SetupAttachment(Pawn->GetRootComponent());
+        Hosted->SetWidgetClass(WidgetClass);
+        Hosted->RegisterComponent();
+        Hosted->InitWidget();
+        UUserWidget* HostedWidget = Hosted->GetUserWidgetObject();
+        auto* HostedBar = HostedWidget ? Cast<UProgressBar>(HostedWidget->GetWidgetFromName(TEXT("HealthBar"))) : nullptr;
+        auto* ProbeExtension = NewObject<UMonolithGASAttributeBindingClassExtension>(this);
+        FMonolithGASAttributeBindingSpec Spec;
+        Spec.TargetWidgetName = TEXT("HealthBar");
+        Spec.TargetPropertyName = TEXT("RenderOpacity");
+        Spec.Owner = EMonolithAttrBindOwner::SelfActor;
+        Spec.AttributeSetClass = UCompletionVitals::StaticClass();
+        Spec.MaxAttributeSetClass = UCompletionVitals::StaticClass();
+        // Deliberately stale strings prove the cook-visible references are authoritative.
+        Spec.AttributeSetClassPath = TEXT("/Script/CompletionOldModule.RenamedVitals");
+        Spec.MaxAttributeSetClassPath = Spec.AttributeSetClassPath;
+        Spec.AttributePropertyName = TEXT("Health");
+        Spec.MaxAttributePropertyName = TEXT("MaxHealth");
+        ProbeExtension->Bindings.Add(Spec);
+        ProbeExtension->Construct(HostedWidget);
+        Check(HostedBar && FMath::IsNearlyEqual(HostedBar->GetRenderOpacity(), .75f), TEXT("gas_widget_component_self_owner_and_soft_class"));
+        ProbeExtension->Destruct(HostedWidget);
+        Hosted->DestroyComponent();
+    }
+
+    Check(Tree && Tree->RootNode && Tree->RootNode->Children.Num() > 0, TEXT("cooked_behavior_tree"));
+    auto* Task = Tree && Tree->RootNode && Tree->RootNode->Children.Num() ? Cast<UBTTask_TryActivateAbility>(Tree->RootNode->Children[0].ChildTask) : nullptr;
+    Check(Task && Task->GetClass()->GetOutermost()->GetName() == TEXT("/Script/MonolithRuntime"), TEXT("task_runtime_module"));
+    if (Task)
+    {
+        auto* BT = Cast<UBehaviorTreeComponent>(Controller->BrainComponent);
+        const auto Instant = Pawn->ASC->GiveAbility(FGameplayAbilitySpec(UCompletionInstantAbility::StaticClass(), 1));
+        FBTTaskTryActivateAbilityMemory Memory;
+        Check(Task->ExecuteTask(*BT, reinterpret_cast<uint8*>(&Memory)) == EBTNodeResult::Succeeded, TEXT("instant_ability_completes"));
+        Check(!Memory.EndedHandle.IsValid(), TEXT("instant_delegate_removed"));
+        const auto Latent = Pawn->ASC->GiveAbility(FGameplayAbilitySpec(UCompletionLatentAbility::StaticClass(), 1));
+        auto* LatentTask = NewObject<UBTTask_TryActivateAbility>();
+        LatentTask->AbilityClass = UCompletionLatentAbility::StaticClass();
+        Check(LatentTask->ExecuteTask(*BT, reinterpret_cast<uint8*>(&Memory)) == EBTNodeResult::InProgress, TEXT("latent_ability_waits"));
+        Check(LatentTask->AbortTask(*BT, reinterpret_cast<uint8*>(&Memory)) == EBTNodeResult::Aborted, TEXT("latent_abort"));
+        Check(!Pawn->ASC->FindAbilitySpecFromHandle(Latent)->IsActive() && !Memory.EndedHandle.IsValid(), TEXT("abort_cancels_and_unsubscribes"));
+        Controller->BehaviorTreeToRun = Tree;
+        Check(Controller->StartBehaviorTree(), TEXT("runtime_controller_starts_tree"));
+        BT->StopTree(EBTStopMode::Safe);
+    }
+    Check(Sound && Sound->GetAssetUserDataOfClass(UMonolithSoundPerceptionUserData::StaticClass()), TEXT("cooked_sound_binding"));
+    Check(GetWorld()->GetSubsystem<UMonolithAudioPerceptionSubsystem>() != nullptr, TEXT("audio_subsystem"));
+    const auto Redirect = FCoreRedirects::GetRedirectedName(ECoreRedirectFlags::Type_Class,
+        FCoreRedirectObjectName(TEXT("/Script/MonolithAI.BTTask_TryActivateAbility")));
+    Check(Redirect.PackageName == TEXT("/Script/MonolithRuntime"), TEXT("legacy_class_redirect"));
+}
+void ACompletionRuntimeProbe::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+    const double Elapsed = GetWorld()->GetTimeSeconds() - Start;
+    if (Stage == 0 && Elapsed > 1)
+    {
+        CompletionGASDiagnostics::DumpWidget(RetryWidget, TEXT("owner_retry"));
+        auto* RetryBar = RetryWidget ? Cast<UProgressBar>(RetryWidget->GetWidgetFromName(TEXT("HealthBar"))) : nullptr;
+        auto* SmoothBar = Widget ? Cast<UProgressBar>(Widget->GetWidgetFromName(TEXT("SmoothBar"))) : nullptr;
+        Check(RetryBar && FMath::IsNearlyEqual(RetryBar->GetPercent(), .75f), TEXT("gas_owner_retry"));
+        Check(SmoothBar && FMath::IsNearlyEqual(SmoothBar->GetPercent(), .75f, .01f), TEXT("gas_smoothing_ticks"));
+        // Direct attribute mutation does not broadcast; every-frame mode must poll it.
+        Pawn->Vitals->Health.SetCurrentValue(50);
+        Pawn->Audio->SetSound(Sound);
+        Pawn->Audio->Play();
+        Stage = 1;
+    }
+    if (Stage == 1 && Elapsed > 3)
+    {
+        auto* TickBar = Widget ? Cast<UProgressBar>(Widget->GetWidgetFromName(TEXT("TickBar"))) : nullptr;
+        Check(TickBar && FMath::IsNearlyEqual(TickBar->GetPercent(), .50f), TEXT("gas_every_frame_polls"));
+        Check(Controller->HeardCount > 0, TEXT("audio_delivers_hearing_stimulus"));
+        Pawn->Audio->Stop();
+        Stage = 2;
+    }
+    if (Stage == 2 && Elapsed > 3.5)
+    {
+        Pawn->Audio->Play();
+        Stage = 3;
+    }
+    if (Stage == 3 && Elapsed > 5.5)
+    {
+        Check(Controller->HeardCount >= 2, TEXT("audio_replay_stimulus"));
+        Pawn->Audio->Stop();
+        AActor* LateOwner = GetWorld()->SpawnActor<AActor>();
+        LateOwner->Tags.Add(TEXT("CompletionLateAudioOwner"));
+        auto* LateAudio = NewObject<UAudioComponent>(LateOwner);
+        LateOwner->AddInstanceComponent(LateAudio);
+        LateOwner->SetRootComponent(LateAudio);
+        LateAudio->bAutoActivate = false;
+        LateAudio->SetSound(Sound);
+        LateAudio->RegisterComponent();
+        LateAudio->Play();
+        Check(LateAudio->GetPlayState() == EAudioComponentPlayState::Playing, TEXT("late_audio_is_playing_before_registration"));
+        if (auto* AudioSubsystem = GetWorld()->GetSubsystem<UMonolithAudioPerceptionSubsystem>())
+        {
+            AudioSubsystem->RegisterAudioComponent(LateAudio);
+            AudioSubsystem->RegisterAudioComponent(LateAudio); // idempotent registration
+        }
+        Stage = 4;
+    }
+    if (Stage == 4 && Elapsed > 7.5)
+    {
+        Check(Controller->ActorHasTag(TEXT("CompletionHeardLateAudio")), TEXT("already_playing_registered_nonpawn_audio_stimulus"));
+        if (Widget) Widget->RemoveFromParent();
+        if (RetryWidget) RetryWidget->RemoveFromParent();
+        const FString Result = FString::Printf(TEXT("{\"failures\":%d,\"heard\":%d,\"checks\":%d}"), Failures, Controller->HeardCount, Checks);
+        FFileHelper::SaveStringToFile(Result, *(FPaths::ProjectSavedDir() / TEXT("MonolithCompletionRuntime.json")));
+        UE_LOG(LogTemp, Display, TEXT("MONOLITH_RUNTIME_RESULT %s"), *Result);
+        Stage = 5;
+        // The root runner stops PIE through the editor API; exiting the whole editor
+        // from a PIE actor tick can destroy Slate while its viewport is still active.
+        if (GetWorld()->WorldType != EWorldType::PIE)
+            FPlatformMisc::RequestExitWithStatus(false, Failures == 0 ? 0 : 1);
+    }
+}

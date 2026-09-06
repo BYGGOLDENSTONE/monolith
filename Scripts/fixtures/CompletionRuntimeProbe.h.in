@@ -1,0 +1,88 @@
+#pragma once
+#include "CoreMinimal.h"
+#include "AttributeSet.h"
+#include "Abilities/GameplayAbility.h"
+#include "Controllers/MonolithBehaviorTreeAIController.h"
+#include "GameFramework/Pawn.h"
+#include "Perception/AIPerceptionTypes.h"
+#include "CompletionRuntimeProbe.generated.h"
+
+class UAbilitySystemComponent;
+class UAudioComponent;
+class UUserWidget;
+class UBehaviorTree;
+class USoundBase;
+
+UCLASS()
+class UCompletionVitals : public UAttributeSet
+{
+    GENERATED_BODY()
+public:
+    UPROPERTY() FGameplayAttributeData Health;
+    UPROPERTY() FGameplayAttributeData MaxHealth;
+};
+
+UCLASS()
+class UCompletionInstantAbility : public UGameplayAbility
+{
+    GENERATED_BODY()
+public:
+    UCompletionInstantAbility();
+    virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+        const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
+};
+
+UCLASS()
+class UCompletionLatentAbility : public UGameplayAbility
+{
+    GENERATED_BODY()
+public:
+    UCompletionLatentAbility();
+    virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+        const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
+};
+
+UCLASS()
+class ACompletionPawn : public APawn
+{
+    GENERATED_BODY()
+public:
+    ACompletionPawn();
+    UPROPERTY() TObjectPtr<UAbilitySystemComponent> ASC;
+    UPROPERTY() TObjectPtr<UCompletionVitals> Vitals;
+    UPROPERTY() TObjectPtr<UAudioComponent> Audio;
+};
+
+UCLASS()
+class ACompletionController : public AMonolithBehaviorTreeAIController
+{
+    GENERATED_BODY()
+public:
+    ACompletionController();
+    UFUNCTION() void Heard(AActor* Actor, FAIStimulus Stimulus);
+    int32 HeardCount = 0;
+};
+
+UCLASS()
+class ACompletionRuntimeProbe : public AActor
+{
+    GENERATED_BODY()
+public:
+    ACompletionRuntimeProbe();
+    UPROPERTY(EditAnywhere) TSubclassOf<UUserWidget> WidgetClass;
+    UPROPERTY(EditAnywhere) TSubclassOf<UUserWidget> MenuClass;
+    UPROPERTY(EditAnywhere) TObjectPtr<UBehaviorTree> Tree;
+    UPROPERTY(EditAnywhere) TObjectPtr<USoundBase> Sound;
+    virtual void BeginPlay() override;
+    virtual void Tick(float DeltaSeconds) override;
+private:
+    void Check(bool Condition, const TCHAR* Name);
+    UPROPERTY() TObjectPtr<ACompletionPawn> Pawn;
+    UPROPERTY() TObjectPtr<ACompletionController> Controller;
+    UPROPERTY() TObjectPtr<UUserWidget> Widget;
+    UPROPERTY() TObjectPtr<UUserWidget> RetryWidget;
+    int32 Failures = 0;
+    int32 Checks = 0;
+    int32 Stage = 0;
+    double Start = 0;
+};

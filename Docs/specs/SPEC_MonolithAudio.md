@@ -151,3 +151,11 @@ Companion deep indexer: `FMetaSoundIndexer` lives in `MonolithIndex/Private/Inde
 > **Future phases (not yet implemented).** Phase 3-6 planned (~69 additional actions): Audio Scene & Environment (~18), Audio Modulation & Quartz (~18), Analysis & Automation (~20), Middleware Bridges (~13). See `Docs/specs/2026-04-08-monolith-audio-phase3-6-design.md`.
 
 ---
+
+### Perception runtime registration (2026-09-06)
+
+`MonolithAudioRuntime` reports hearing through `UAISense_Hearing::ReportNoiseEvent` on authority worlds. Sources may be non-pawn actors; this avoids the silent drop from `AActor::MakeNoise` when no pawn instigator exists. Ownerless sounds honor `bRequireOwningActor`. Client worlds do not report authoritative hearing events.
+
+Placed audio components and components present when an actor is discovered are registered automatically. Components created afterward, including results from `SpawnSoundAtLocation`/`SpawnSoundAttached`, need `RegisterAudioComponent`. Registering a component already in `Playing` or `FadingIn` catches up its current play once; registering it again is idempotent. Future transitions use the same per-play guard. Dead weak bookkeeping is pruned while registering new components. Fire-and-forget playback without an audio component uses `UMonolithAudioPerceptionStatics::PlaySoundAndReportNoise`.
+
+The runtime fixture includes an already-playing, dynamically registered non-pawn source check. Packaged results belong in the shared validation report; source implementation and editor automation are not substitutes for that check.

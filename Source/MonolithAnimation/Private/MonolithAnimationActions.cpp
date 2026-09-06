@@ -8440,6 +8440,12 @@ FMonolithActionResult FMonolithAnimationActions::HandleBuildStateMachine(const T
 				// shared ParseTransitionRule so build_state_machine matches set_transition_rule.
 				// (auto / bool string forms continue to use the legacy fast path below.)
 				FParsedTransitionRule Parsed = ParseTransitionRule(*TObj);
+				if (Parsed.Kind == FParsedTransitionRule::EKind::Invalid)
+				{
+					Rep->SetStringField(TEXT("rule_deferred"), Parsed.ParseError);
+					TransReport.Add(MakeShared<FJsonValueObject>(Rep));
+					continue;
+				}
 				if (Parsed.Kind == FParsedTransitionRule::EKind::Compare)
 				{
 					FString FoundCat;
@@ -8465,7 +8471,7 @@ FMonolithActionResult FMonolithAnimationActions::HandleBuildStateMachine(const T
 						const bool bCmpOk = ResultPin && AuthorCompareRuleNodes(
 							RuleGraph, ResultNode, ResultPin, Parsed.Variable, Parsed.bUseAbs, Parsed.Op, Parsed.Rhs, CmpErr);
 						const FString LhsDisplay = Parsed.bUseAbs ? FString::Printf(TEXT("Abs(%s)"), *Parsed.Variable) : Parsed.Variable;
-						Rep->SetStringField(TEXT("rule_applied"), bCmpOk
+						Rep->SetStringField(bCmpOk ? TEXT("rule_applied") : TEXT("rule_deferred"), bCmpOk
 							? FString::Printf(TEXT("compare %s %s %s"), *LhsDisplay, *Parsed.Op, *FString::SanitizeFloat(Parsed.Rhs))
 							: FString::Printf(TEXT("compare authoring failed: %s"), *CmpErr));
 					}
@@ -8474,10 +8480,30 @@ FMonolithActionResult FMonolithAnimationActions::HandleBuildStateMachine(const T
 				}
 				if (Parsed.Kind == FParsedTransitionRule::EKind::Expression)
 				{
-					// Inline expression authoring is intentionally DEFERRED here (parity decision):
-					// the standalone set_transition_rule action covers kind:expression. Call it after
-					// build_state_machine for any compound AND/OR transition rule.
-					Rep->SetStringField(TEXT("rule_deferred"), TEXT("kind:expression deferred in build_state_machine; use the standalone set_transition_rule action for compound AND/OR rules."));
+					FString RuleError;
+					for (const auto& Term : Parsed.Terms)
+					{
+						FString Category;
+						if (!IsUsableFloatOperand(ABP, Term.Variable, Category))
+						{
+							RuleError = FString::Printf(TEXT("Expression operand '%s' is not a usable numeric variable"), *Term.Variable);
+							break;
+						}
+					}
+					UEdGraph* RuleGraph = TransNode->GetBoundGraph();
+					UAnimGraphNode_TransitionResult* ResultNode = nullptr;
+					if (RuleGraph)
+					{
+						for (UEdGraphNode* N : RuleGraph->Nodes)
+						{
+							if ((ResultNode = Cast<UAnimGraphNode_TransitionResult>(N))) break;
+						}
+					}
+					UEdGraphPin* ResultPin = ResultNode ? ResultNode->FindPin(TEXT("bCanEnterTransition"), EGPD_Input) : nullptr;
+					if (RuleError.IsEmpty() && ResultPin && AuthorExpressionRuleNodes(ABP, RuleGraph, ResultNode, ResultPin, Parsed.Terms, Parsed.Combine, RuleError))
+						Rep->SetStringField(TEXT("rule_applied"), TEXT("expression"));
+					else
+						Rep->SetStringField(TEXT("rule_deferred"), RuleError.IsEmpty() ? TEXT("Expression rule graph or result pin is missing") : RuleError);
 					TransReport.Add(MakeShared<FJsonValueObject>(Rep));
 					continue;
 				}

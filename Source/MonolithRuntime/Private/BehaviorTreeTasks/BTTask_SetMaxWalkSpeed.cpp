@@ -3,7 +3,7 @@
 // Reusable BT task: set the possessed pawn's MaxWalkSpeed (literal or Blackboard float).
 
 #include "BehaviorTreeTasks/BTTask_SetMaxWalkSpeed.h"
-#include "MonolithAIInternal.h"
+#include "MonolithRuntimeModule.h"
 
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -51,7 +51,7 @@ EBTNodeResult::Type UBTTask_SetMaxWalkSpeed::ExecuteTask(UBehaviorTreeComponent&
 
 	if (!MoveComp)
 	{
-		UE_LOG(LogMonolithAI, Verbose,
+		UE_LOG(LogMonolithRuntime, Verbose,
 			TEXT("BTTask_SetMaxWalkSpeed[%s]: AI pawn has no CharacterMovementComponent"),
 			*GetNodeName());
 		return EBTNodeResult::Failed;

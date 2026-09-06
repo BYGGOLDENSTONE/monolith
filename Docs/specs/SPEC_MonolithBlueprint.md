@@ -55,9 +55,9 @@
 | `add_variable` | `asset_path`, `variable_name`, `variable_type` | Add a new variable to the Blueprint. `variable_type` is parsed strictly (`MonolithPinTypeGrammar::TryParsePinType`): an unresolvable `enum:` / `struct:` / `object:` / `class:` / `softobject:` / `softclass:` sub-object, an unknown base token, or a bad container value type is an error with a reason, not a silently mistyped variable. |
 | `remove_variable` | `asset_path`, `variable_name` | Remove a variable by name |
 | `rename_variable` | `asset_path`, `old_name`, `new_name` | Rename a variable |
-| `set_variable_type` | `asset_path`, `variable_name`, `variable_type` | Change a variable's type |
+| `set_variable_type` | `asset_path`, `variable_name`, `variable_type` | Change a variable's type. Invalid/unresolved types fail before mutation (including container element/value types). |
 | `set_variable_defaults` | `asset_path`, `variable_name`, `default_value` | Set a variable's default value |
-| `add_local_variable` | `asset_path`, `function_name`, `variable_name`, `variable_type` | Add a local variable inside a function graph |
+| `add_local_variable` | `asset_path`, `function_name`, `variable_name`, `variable_type` | Add a local variable inside a function graph. Pin type validation is strict and happens before creation. |
 | `remove_local_variable` | `asset_path`, `function_name`, `variable_name` | Remove a local variable from a function graph |
 
 **Variable Contract Reconciliation (2) — `MonolithBlueprintContractActions.cpp`**
@@ -76,7 +76,7 @@ Reconcile the member-variable surface of one class against another by name + typ
 | `remove_component` | `asset_path`, `component_name` | Remove a component by name |
 | `rename_component` | `asset_path`, `old_name`, `new_name` | Rename a component |
 | `reparent_component` | `asset_path`, `component_name`, `new_parent` | Change a component's parent in the hierarchy |
-| `set_component_property` | `asset_path`, `component_name`, `property_name`, `value` | Set a property on a component via reflection. Resolves through the shared component resolver (below) with **write intent**, so a component inherited from a parent Blueprint gets an Inheritable Component Handler override on *this* Blueprint rather than mutating the parent's template. Returns `source`, `resolved_component`, and `persisted`. `cdo_native` and `ich_override` writes use the structural-modify + `CompileBlueprint` persistence handshake so the override survives reload; SCS-template writes keep the lighter `MarkBlueprintAsModified` path. |
+| `set_component_property` | `asset_path`, `component_name`, `property_name`, `value` | Set a property on a component via reflection. First resolves read-only, checks template editability, and validates the complete text/object value in independent storage. Only then resolves with **write intent**, so a component inherited from a parent Blueprint gets an Inheritable Component Handler override on *this* Blueprint rather than mutating the parent's template. Returns `source`, `resolved_component`, and `persisted`. `cdo_native` and `ich_override` writes use the structural-modify + `CompileBlueprint` persistence handshake so the override survives reload; SCS-template writes keep the lighter `MarkBlueprintAsModified` path. |
 | `duplicate_component` | `asset_path`, `component_name`, `new_name` | Duplicate a component with all its settings |
 
 **Graph Management (10)**
@@ -93,9 +93,11 @@ Reconcile the member-variable surface of one class against another by name + typ
 | `remove_interface` | `asset_path`, `interface_class` | Remove an interface from the Blueprint |
 | `reparent_blueprint` | `asset_path`, `new_parent_class` | Change the Blueprint's parent class |
 
-**Node & Pin Operations (7)**
+**Node & Pin Operations (9)**
 | Action | Params | Description |
 |--------|--------|-------------|
+| `get_graph_node_properties` | `asset_path`, `graph_name`, `node_id` | Read editable node properties as Unreal text plus current pin IDs, names, types, direction, links, and orphan flags. Node resolution is scoped to the supplied Blueprint and graph. |
+| `set_graph_node_property` | `asset_path`, `graph_name`, `node_id`, `property_name`, `value`, `save?` | Edit a reflected editable scalar property (dotted struct leaf paths supported). Validates text in scratch storage before mutation, sends property notifications, reconstructs pins, and returns current properties/pins. Internal/read-only/transient fields, non-writable packages, object traversal, whole structs and containers are refused. Does not compile; `save` defaults to false. Save failure returns an error with `mutation_applied:true` and current node metadata. |
 | `add_node` | `asset_path`, `graph_name`, `node_class`, `position` (alias `pos`), `target_class?` (aliases `function_class`, `member_class`) | Add a node to a graph. Accepts common aliases (e.g. `CallFunction`, `VariableGet`, `ComponentBoundEvent`, `AddDelegate`, `RemoveDelegate`, `ClearDelegate`, `CallDelegate`) and tries `K2_` prefix fallback for function calls. `target_class` is the class to search for the CallFunction/delegate; it accepts `function_class` and `member_class` aliases (2026-05-23). The `position` param accepts a `pos` alias (2026-05-23, silences the prior `pos` unknown-param warning). v0.21.0 (#74): `K2Node_SwitchEnum` resolves user-defined `UENUM`s (short name, `/Script` path, or unloaded `UserDefinedEnum` asset) via new `enum` / `enum_path` aliases and the `k2node_switchenum` node-class alias; `K2Node_CallFunction` now also resolves Blueprint-defined functions (self and external BP), not just native/engine functions. See § "SwitchEnum / CallFunction resolution (v0.21.0)". |
 | `remove_node` | `asset_path`, `graph_name`, `node_id` | Remove a node by ID |
 | `connect_pins` | `asset_path`, `graph_name`, `source_node`, `source_pin`, `target_node`, `target_pin` | Connect two pins. v0.21.0 (#74): when the same node ID exists in more than one graph, the ambiguity is now detected and the error suggests passing `graph_name` to disambiguate, instead of silently binding the wrong node. |
@@ -298,3 +300,9 @@ An empty `component_name` means "the single component of `RequiredClass`" — ho
 - Cross-package `TObjectPtr` field writes inherit the v0.14.8 PR #43 `RF_Transient` fix — adapters do not need to defend against package-flag corruption.
 
 ---
+
+### Write preflight and aliases (2026-09-06)
+
+`set_variable_type`, `add_local_variable`, `add_replicated_variable`, and `create_user_defined_struct` use `TryParsePinType`; invalid types never silently become bool. Struct creation prevalidates every field name and type before creating its package. Component `Root` aliases respect the caller's required component class. Motion-matching scaffold `bp_path` inputs accept `asset_path`; `get_inherited_component_override.component` accepts `component_name`.
+
+Verification and limitations: [2026-09-06 Blueprint/Animation work](../testing/2026-09-06-blueprint-animation.md).

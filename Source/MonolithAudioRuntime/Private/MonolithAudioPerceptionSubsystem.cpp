@@ -54,6 +54,18 @@ void UMonolithAudioPerceptionSubsystem::PostInitialize()
 	}
 }
 
+void UMonolithAudioPerceptionSubsystem::OnWorldBeginPlay(UWorld& InWorld)
+{
+	Super::OnWorldBeginPlay(InWorld);
+	// PostInitialize can run before level actors have registered components.
+	HookAllExistingActors();
+}
+
+void UMonolithAudioPerceptionSubsystem::RegisterAudioComponent(UAudioComponent* Component)
+{
+	if (Component && Component->GetWorld() == GetWorld()) TryHookAudioComponent(Component);
+}
+
 void UMonolithAudioPerceptionSubsystem::Deinitialize()
 {
 	if (UWorld* World = GetWorld(); World && ActorSpawnedHandle.IsValid())
@@ -143,6 +155,13 @@ void UMonolithAudioPerceptionSubsystem::TryHookAudioComponent(UAudioComponent* A
 		return;
 	}
 
+	// Auto-destroy components do not survive until world teardown; discard their weak
+	// bookkeeping while registering new components so long-running levels stay bounded.
+	for (auto It = BoundComponents.CreateIterator(); It; ++It)
+		if (!It.Key().IsValid()) It.RemoveCurrent();
+	for (auto It = AlreadyFiredThisPlay.CreateIterator(); It; ++It)
+		if (!It->IsValid()) It.RemoveCurrent();
+
 	// Avoid double-hook (level-placed actors can be re-hit by OnActorSpawned during seamless travel).
 	const TWeakObjectPtr<const UAudioComponent> Key(AudioComp);
 	if (BoundComponents.Contains(Key))
@@ -156,20 +175,26 @@ void UMonolithAudioPerceptionSubsystem::TryHookAudioComponent(UAudioComponent* A
 		this, &UMonolithAudioPerceptionSubsystem::OnAudioPlayStateChanged);
 
 	BoundComponents.Add(Key, Handle);
+	// SpawnSound helpers return already-playing components. Catch up once when callers
+	// register those results, or when discovery runs after an auto-activated placed sound.
+	// The normal per-play guard prevents duplicate reports on subsequent transitions.
+	const EAudioComponentPlayState State = AudioComp->GetPlayState();
+	if (State == EAudioComponentPlayState::Playing || State == EAudioComponentPlayState::FadingIn)
+		OnAudioPlayStateChanged(AudioComp, State);
 }
 
 // ============================================================================
-// Dispatch — fire MakeNoise on Playing / FadingIn
+// Dispatch hearing on Playing / FadingIn
 // ============================================================================
 
 void UMonolithAudioPerceptionSubsystem::OnAudioPlayStateChanged(
 	const UAudioComponent* AudioComp,
 	EAudioComponentPlayState NewState)
 {
-	// H3 plan trap #1: never invoke MakeNoise on the audio thread.
+	// Hearing events must be delivered on the game thread.
 	// Header doesn't enforce game-thread; assert here for safety.
 	if (!ensureMsgf(IsInGameThread(),
-		TEXT("MonolithAudioPerceptionSubsystem::OnAudioPlayStateChanged invoked off the game thread — refusing to fire MakeNoise")))
+		TEXT("MonolithAudioPerceptionSubsystem::OnAudioPlayStateChanged invoked off the game thread — refusing to report hearing")))
 	{
 		return;
 	}
@@ -221,7 +246,7 @@ void UMonolithAudioPerceptionSubsystem::OnAudioPlayStateChanged(
 	AlreadyFiredThisPlay.Add(AudioComp);
 
 	UWorld* World = GetWorld();
-	if (!World)
+	if (!World || World->GetNetMode() == NM_Client)
 	{
 		return;
 	}
@@ -237,22 +262,10 @@ void UMonolithAudioPerceptionSubsystem::OnAudioPlayStateChanged(
 			return;
 		}
 
-		// Resolve noise instigator: prefer pawn, then controller's pawn.
-		APawn* InstigatorPawn = Cast<APawn>(Owner);
-		if (!InstigatorPawn)
-		{
-			if (AController* Ctrl = Cast<AController>(Owner))
-			{
-				InstigatorPawn = Ctrl->GetPawn();
-			}
-		}
-
-		Owner->MakeNoise(
-			Data->Loudness,
-			InstigatorPawn,
-			NoiseLocation,
-			Data->MaxRange,
-			Data->Tag);
+		// Report directly: AActor::MakeNoise silently drops non-pawn owners
+		// with no pawn instigator. Hearing supports any actor as the source.
+		UAISense_Hearing::ReportNoiseEvent(World, NoiseLocation, Data->Loudness,
+			Owner, Data->MaxRange, Data->Tag);
 	}
 	else
 	{

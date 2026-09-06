@@ -78,7 +78,7 @@ Counts re-verified against `RegisterAction(TEXT("ui"), ...)` call sites on 2026-
 | `FMonolithUIRegistryActions` | Registers `dump_property_allowlist` (Phase B diagnostic) |
 | `MonolithUI::FTextureIngestActions` / `FFontIngestActions` / `FAnimationCoreActions` / `FAnimationEventActions` / `FRoundedCornerActions` / `FShadowActions` / `FGradientActions` | Hoisted Design Import + Animation v2 verbs (Phase D, 2026-04-26) |
 | `MonolithUI::FEffectSurfaceActions` | EffectSurface sub-bag setters + preset (Phase F, 2026-04-26) |
-| `MonolithUI::FSpecActions` | `build_ui_from_spec` + `dump_ui_spec_schema` + `dump_ui_spec` (Phases H + J, 2026-04-26) + `build_menu_from_spec` (Phase 3 of the 2026-05-16 UI Gap Audit; embedded screen specs build, aggregation keys return `ErrNotImplemented`) |
+| `MonolithUI::FSpecActions` | `build_ui_from_spec` + `dump_ui_spec_schema` + `dump_ui_spec` (Phases H + J, 2026-04-26) + `build_menu_from_spec` (Phase 3 of the 2026-05-16 UI Gap Audit; screen specs/kind layouts plus layers, desired focus and explicit navigation) |
 | `MonolithCommonUITemplate::Register` | CommonUI headline scaffolders: `scaffold_main_menu` / `scaffold_settings_panel_with_tabs` / `scaffold_pause_menu` (Phase 3 of the 2026-05-16 UI Gap Audit). File-static handlers in `CommonUI/MonolithCommonUITemplateActions.cpp` — `WITH_COMMONUI` only |
 | `UMonolithUIRegistrySubsystem` (UEditorSubsystem) | Live type registry + per-type property allowlist (Phase B) |
 | `FUITypeRegistry` / `FUIPropertyAllowlist` / `FUIPropertyPathCache` / `FUIReflectionHelper` | Registry data model + safe reflection write surface (Phases B + C) |
@@ -154,7 +154,7 @@ Counts re-verified against `RegisterAction(TEXT("ui"), ...)` call sites on 2026-
 **Settings Scaffolding (5)**
 | Action | Params | Description |
 |--------|--------|-------------|
-| `scaffold_game_user_settings` | `save_path`, `class_name` | Scaffold a UGameUserSettings subclass with common settings properties |
+| `scaffold_game_user_settings` | `module_name`, `class_name`, `features?` | Generate a UGameUserSettings source pair; keybinding_support implements per-local-player Enhanced Input save/load. Requires EnhancedInput in the generated module. |
 | `scaffold_save_game` | `save_path`, `class_name` | Scaffold a USaveGame subclass with save slot infrastructure |
 | `scaffold_save_subsystem` | `save_path`, `class_name` | Scaffold a save game subsystem (UGameInstanceSubsystem) |
 | `scaffold_audio_settings` | `save_path`, `class_name` | Scaffold an audio settings manager with volume/mix controls |
@@ -216,7 +216,7 @@ Class-as-data: style creators (`create_common_button_style`, `create_common_text
 | `batch_retheme` | `asset_path`, `style_map` | Retheme multiple widgets in a single transaction |
 | `configure_common_text` | `asset_path`, `widget_name`, `properties` | Set `UCommonTextBlock` properties (style, scroll speed, auto-collapse) |
 | `configure_common_border` | `asset_path`, `widget_name`, `properties` | Set `UCommonBorder` properties (style, opacity, etc.) |
-| `apply_token_binding` | `wbp_path`, `widget_name`, `target_property`, `token_key` | **Not implemented beyond validation.** Validates the widget/property and probes `TokenforgeRuntime`. Returns `-32011 ErrTokenforgeRuntimeUnavailable` when the plugin is absent (see § Error Contract — Optional Tokenforge Provider Absence (-32011)); otherwise returns `-32004 ErrNotImplemented` with `reason:"not_implemented"`, `implemented:false`, `part:"apply_token_binding.NativeConstruct_graph"` — no BP-graph binding is written. Phase 2 Item #10 (2026-05-16 UI Gap Audit); honesty fix 2026-09-05. |
+| `apply_token_binding` | `wbp_path`, `widget_name`, `target_property`, `token_key`, `resolver_function` | Compile a Construct graph: static pure resolver to property setter, preserving existing Construct execution. Resolver takes one string/name and returns the setter value type. Explicit resolver works without Tokenforge; absent provider + absent resolver retains -32011. Asset remains dirty until saved. |
 | `convert_textblock_to_common` | `wbp_path`, `widget_name` | Replace a `UTextBlock` with a `UCommonTextBlock` while preserving the variable identity (FName + `bIsVariable`), parent slot, and authored text/font/colour/shadow state. Style left at engine default — chain `apply_style_to_widget` with a `UCommonTextStyle` reference to complete the rethemed migration. Mirrors the reconciliation pattern from `convert_button_to_common` (variable identity preserved Y). Phase 2 Item #12 (2026-05-16 UI Gap Audit). |
 | `set_action_bar_button_class` | `wbp_path`, `widget_name`, `button_class` | Set `UCommonBoundActionBar::ActionButtonClass` on an existing bar widget. Writes through BOTH the authoring tree (`Wbp->WidgetTree`) AND the generated class's archetype tree (`UWidgetBlueprintGeneratedClass::GetWidgetTreeArchetype()`) so the value survives subsequent `compile_blueprint` passes. `button_class` must resolve to a `UCommonButtonBase` subclass. Mirrors the FClassProperty reflection pattern from Phase 1 Bug #4 (`MonolithCommonUIInputActions.cpp:265-282`). Phase 2 Item #13 (2026-05-16 UI Gap Audit). |
 | `convert_border_to_common` | `wbp_path` (alias `asset_path`), `widget_name` | Replace a `UBorder` with a `UCommonBorder`, preserving the variable identity (FName + `bIsVariable`), parent slot (or tree-root position), and the single content child. `UCommonBorder` is concrete, so no `target_class` is needed. Style left at engine default — chain `apply_style_to_widget` with a `UCommonBorderStyle` to finish the rethemed migration. Mirrors the reconciliation pattern from `convert_button_to_common` / `convert_textblock_to_common`. Phase 3 (2026-05-23 UI Blueprint Gap Audit). |
@@ -472,26 +472,27 @@ ui::build_ui_from_spec({
 
 ### Menu Spec Builder (M5 — Phase 3 of the 2026-05-16 UI Gap Audit)
 
-**Status:** landed 2026-05-16; honesty fix 2026-09-05. Per-screen `spec` builds run **FULL** via `FUISpecBuilder`. Cross-screen aggregation (`layers[]` activatable-stack hierarchy, `focus_table[]` CDO writes, `nav_overrides[]` propagation) and kind-based screen scaffolding are **NOT IMPLEMENTED**. Requesting them (a non-empty aggregation array, or a screen without an embedded `spec`) returns `-32004 ErrNotImplemented` instead of a success; empty aggregation arrays are ignored. Caller-supplied aggregation entries still echo back under `deferred_aggregation` inside the error data so tooling can post-process.
+**Status:** implemented 2026-09-06. `ui::build_menu_from_spec` preflights the entire request before creating assets, then builds each screen through `FUISpecBuilder`. `layers` creates an Overlay host with real CommonUI stacks. `focus_table` authors a `BP_GetDesiredFocusTarget` override returning the named widget. `nav_overrides` persists explicit navigation targets by widget name.
 
-**Action surface:** `ui::build_menu_from_spec` (always-on — registered from `Actions/MonolithUISpecActions.cpp`, not WITH_COMMONUI-gated; per-screen builders may construct CommonUI widgets but the dispatch surface itself is engine-side).
-
-**Document shape:**
-
-```
+```jsonc
 {
-  layers:        [{ id, screens: ["..."] }, ...],
-  screens:       [{ id, asset_path, spec?, kind? }, ...],
-  focus_table:   [{ screen, target }, ...],
-  nav_overrides: [{ screen, widget, direction, target }, ...]
+  "screens": [{"id":"main", "asset_path":"/Game/UI/WBP_Main", "kind":"main_menu"}],
+  "menu_asset_path":"/Game/UI/WBP_MenuHost",
+  "layers":[{"id":"MainLayer", "screens":["main"]}],
+  "focus_table":[{"screen":"main", "target":"StartButton"}],
+  "nav_overrides":[{"screen":"main", "widget":"StartButton", "direction":"down", "target":"SettingsButton"}]
 }
 ```
 
-**Modes preserved from `build_ui_from_spec`:** `dry_run`, `treat_warnings_as_errors`, `raw_mode`, `overwrite`, `request_id`. Per-screen builds receive `<request_id>:<screen.id>` so consumers can correlate aggregate vs per-screen calls.
+Each screen accepts an embedded `spec`, or a starter `kind`: `main_menu` (Start/Settings/Quit), `pause_menu` (Resume/Settings/Quit), `settings_panel` (Video/Audio/Controls/Back). These create named Button/TextBlock layouts. Gameplay click handlers and actual settings controls remain project-specific; the starter layout does not invent a game session or settings model.
 
-**Response shape (success):** `{ bSuccess, status:"ok", request_id?, screens[], aggregate_node_counts, errors?, warnings? }` where each `screens[N]` entry includes a full `build_result` object (same shape as `build_ui_from_spec`'s response). `validation_failed` is returned on structural errors.
+Layer order is Overlay order, bottom to top. During `Construct` (after Slate is ready), each layer clears its stack and pushes the listed screen classes in order, so its final entry is active. Reconstructing the host resets those stacks to their declared initial screens. Layer/focus screens must derive from `CommonActivatableWidget`; plain embedded UserWidget screens and explicit navigation work without CommonUI. `menu_asset_path` defaults to the first screen path plus `_Menu`, and cannot collide with a screen path. Host and screen assets obey `overwrite` (default true). Host initialization and desired-focus graphs authored by Monolith are replaced when regenerating; unrelated focus overrides are refused.
 
-**Error data (`-32004 ErrNotImplemented`):** the same object plus `reason:"not_implemented"`, `implemented:false`, `status:"not_implemented"`, `unimplemented_parts[]` (`layers`, `focus_table`, `nav_overrides`, `screens[N].kind_scaffolding`), `partial` (true only when at least one screen spec was actually built and saved), `applied_keys[]` (`screens[N].spec` for each built screen) and `deferred_aggregation?`. Completed per-screen `build_result` objects are retained so callers can inspect partial work before retrying.
+Navigation directions: `up`, `down`, `left`, `right`, `next`, `previous` (case insensitive). References, duplicate ids, duplicate widget/direction pairs and invalid directions are rejected. Empty aggregation arrays are valid. `dry_run`, `treat_warnings_as_errors`, `raw_mode`, `overwrite` and `request_id` propagate to the screen builders. Dry runs create no packages or graphs.
+
+Success: `{bSuccess:true,status:"ok",screens[],applied_keys[],aggregate_node_counts,menu_asset_path?,menu_build_result?}`. Counts describe the screen widgets. Structural/preflight errors return `-32602` with `status:"validation_failed",partial:false,applied_keys:[]`. A later build/compile/save failure returns `-32603`, `status:"build_failed"`, completed screen results and `applied_keys`; already saved screens remain reported as partial work. The menu is not an all-assets transaction. Graph authoring runs before the screen's compile/save boundary; a compile error prevents saving that asset.
+
+Automation: `Monolith.UI.Honesty.MenuAggregation`, `MenuMissingSpec`, `MenuPartialBuild`, `MenuSupportedBuild`, and `Monolith.UI.Menu.FocusNavigationLayers` cover validation side effects, kind output, saved assets, dry run, navigation target serialization, real focus override and connected stack class initialization. Execution results belong in the completion report; test presence alone is not runtime validation.
 
 ### Spec Serializer (M5 — Phase J, landed 2026-04-26)
 
@@ -983,7 +984,7 @@ The code is inline (not yet promoted to a `FMonolithJsonUtils::Err*` constant) b
 
 ### Action-handler contract — LOUD
 
-Trigger: `ui::apply_token_binding` invoked when `IPluginManager::Get().FindPlugin("TokenforgeRuntime")` returns null OR `->IsEnabled() == false`.
+Trigger: `ui::apply_token_binding` invoked without an explicit `resolver_function`, when `IPluginManager::Get().FindPlugin("TokenforgeRuntime")` returns null OR `->IsEnabled() == false`.
 
 Behaviour: probe runs FIRST in `HandleApplyTokenBinding` (before parsing `widget_name`, `target_property`, or `token_key`). On unavailable, returns a structured error inline-built in the handler.
 
@@ -1009,30 +1010,19 @@ Invariants: NEVER a crash. NEVER a silent success. NEVER a different code. The l
 
 ### Implementation status (validation only)
 
-The Tokenforge availability probe and the structured -32011 error path are **FULL** as of 2026-05-16. The action's full responsibility — writing BP-graph nodes into the WBP's `NativeConstruct` event graph that call `UUISubsystem::GetColor` / `GetFont` / etc. and pipe the result into the target property's setter — is **NOT IMPLEMENTED** (tracked as issue #2-10b in the Phase 2 plan).
+The provider probe and -32011 error path remain available when no explicit resolver is supplied. Since 2026-09-06 an explicit `resolver_function` authors a real Blueprint `Construct` graph. The resolver is a static BlueprintPure UFunction with exactly one string/name input and a return type matching the widget property's callable single-input setter. The generated sequence preserves existing Construct execution, then resolves the token and invokes the setter. Existing bindings for the same widget/property are rejected before mutation to avoid duplicate callbacks. The graph is compiled, with `implemented:true,compiled:true,saved:false,lifecycle:"Construct"` on success; use the normal save action after review.
 
-Since 2026-09-05 the action never returns success. When Tokenforge IS available and the widget/property validate, it returns `-32004 ErrNotImplemented` so callers cannot mistake a validated request for an applied binding:
+Example runtime resolver path: `/Script/MyRuntime.MyTokenLibrary:ResolveColor`. The function's actual contract is validated by reflection. This avoids guessing undocumented provider APIs or linking an editor-only helper into gameplay. Tokenforge automatic resolver discovery is not provided; install/enable its runtime module and supply its compatible resolver or a project wrapper. Values are applied each Construct, not subscribed to live theme-change notifications.
 
-```jsonc
-{
-  "bSuccess": false,
-  "ErrorCode": -32004,
-  "ErrorMessage": "Token binding graph construction in NativeConstruct is not implemented; no binding was applied.",
-  "ErrorData": {
-    "wbp_path": "/Game/UI/WBP_MainMenu",
-    "widget_name": "Title",
-    "target_property": "ColorAndOpacity",
-    "token_key": "color.surface.default",
-    "tokenforge_available": true,
-    "tokenforge_version": "<version>",
-    "reason": "not_implemented",
-    "implemented": false,
-    "part": "apply_token_binding.NativeConstruct_graph"
-  }
-}
-```
+`Monolith.UI.Menu.TokenBindingGraph` uses the engine's `KismetTextLibrary:Conv_StringToText` as a deterministic resolver, compiles the graph, initializes an instance and executes Construct, asserting the actual TextBlock value changes. `Monolith.UI.Honesty.TokenBindingProviderState` verifies invalid resolver/property requests add no graph nodes; `TokenBindingLiveProbe` covers the absent-provider branch.
 
-The action stays registered so downstream tooling can discover the surface and validate inputs end-to-end. When the follow-up ships, the success payload gains a `bindings_written[]` array. Automation coverage: `Monolith.UI.Honesty.TokenBindingProviderState` (controlled provider state, asserts no graph nodes are added) and `Monolith.UI.Honesty.TokenBindingLiveProbe` (real absent-provider path).
+### Generated keybinding persistence
+
+`scaffold_game_user_settings` with `features:["keybinding_support"]` generates `bool SaveKeyBindings(ULocalPlayer*)` and `bool LoadKeyBindings(ULocalPlayer*)`. Save writes the local player's current Enhanced Input user settings to the engine's per-player save slot. Load reads that slot, rejects class mismatches, serializes the saved mappings into the existing active settings object, reapplies settings, and rebuilds control mappings. Existing subsystem delegates and registered IMCs are retained. Both methods reject null players, unavailable settings/player input and I/O failures.
+
+The generated module needs `EnhancedInput`; enable Enhanced Input User Settings and register player-mappable IMCs. The scaffold result includes `required_modules` and setup text. Source paths must use C++ identifiers; either existing file blocks the whole `.h/.cpp` pair, preventing accidental overwrite. A failed `.cpp` write removes the newly created header. Class U-prefix normalization and `GameUserSettingsClassName` now use the proper reflected class name.
+
+`Monolith.UI.Settings.SourcePairSafety` verifies collision preservation, identifier validation, pair generation and fixture cleanup. `Scripts/fixtures/GeneratedKeyPersistenceProbe.cpp.in` provides a separate integration probe for compiling the actual generated source and testing a real save/change/load key roundtrip; it snapshots/restores both active settings and any existing save bytes.
 
 ### Pattern reusability
 

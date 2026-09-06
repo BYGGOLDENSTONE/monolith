@@ -14,6 +14,7 @@
 #include "UObject/WeakObjectPtrTemplates.h"
 #include "Delegates/IDelegateInstance.h"
 #include "GameplayEffectTypes.h"
+#include "Tickable.h"
 
 #include "MonolithGASAttributeBindingClassExtension.generated.h"
 
@@ -22,8 +23,8 @@ class UUserWidget;
 class UWidget;
 class FProperty;
 
-UCLASS(MinimalAPI)
-class UMonolithGASAttributeBindingClassExtension : public UWidgetBlueprintGeneratedClassExtension
+UCLASS()
+class MONOLITHRUNTIME_API UMonolithGASAttributeBindingClassExtension : public UWidgetBlueprintGeneratedClassExtension
 {
     GENERATED_BODY()
 
@@ -36,9 +37,17 @@ public:
     virtual void Initialize(UUserWidget* UserWidget) override;
     virtual void Construct(UUserWidget* UserWidget) override;
     virtual void Destruct(UUserWidget* UserWidget) override;
+    virtual void BeginDestroy() override;
     //~ End UWidgetBlueprintGeneratedClassExtension interface
 
+    /** Called by the game-thread tick helper, never registered during UObject loading. */
+    void Tick(float DeltaTime);
+    bool IsTickable() const { return !IsTemplate() && Instances.Num() > 0; }
+
 private:
+    /** Lazily registered in Construct; UObject creation can happen on the async loading thread. */
+    TUniquePtr<FTickableGameObject> TickHelper;
+
     /** Per-binding-row, per-instance subscription state. */
     struct FActiveSub
     {
@@ -68,10 +77,12 @@ private:
     struct FInstanceState
     {
         TArray<FActiveSub> SubsByRow;
+        double NextOwnerCheckTime = 0.0;
     };
 
     /** Strong-ish keyed by raw ptr; we only touch on Construct/Destruct of that exact UW. */
     TMap<TWeakObjectPtr<UUserWidget>, FInstanceState> Instances;
+    static void Unsubscribe(FInstanceState& State);
 
     /** Resolve the ASC for a given owner mode. Returns nullptr if not yet available. */
     UAbilitySystemComponent* ResolveASC(UUserWidget* UW, const FMonolithGASAttributeBindingSpec& Spec) const;

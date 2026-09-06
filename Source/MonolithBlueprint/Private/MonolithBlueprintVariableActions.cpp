@@ -480,7 +480,12 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleSetVariableType(c
 		return FMonolithActionResult::NotFound(TEXT("Variable"), Name).WithErrorMessage(FString::Printf(TEXT("Variable not found: %s"), *Name));
 	}
 
-	FEdGraphPinType NewType = MonolithPinTypeGrammar::ParsePinTypeFromString(TypeStr);
+	FEdGraphPinType NewType;
+	FString TypeError;
+	if (!MonolithPinTypeGrammar::TryParsePinType(TypeStr, NewType, TypeError))
+	{
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TypeError);
+	}
 	FBlueprintEditorUtils::ChangeMemberVariableType(BP, VarName, NewType);
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
@@ -607,7 +612,12 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleAddLocalVariable(
 			TEXT("Graph '%s' is not a function graph — local variables are only supported in functions"), *FunctionName));
 	}
 
-	FEdGraphPinType PinType = MonolithPinTypeGrammar::ParsePinTypeFromString(TypeStr);
+	FEdGraphPinType PinType;
+	FString TypeError;
+	if (!MonolithPinTypeGrammar::TryParsePinType(TypeStr, PinType, TypeError))
+	{
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TypeError);
+	}
 	FString DefaultValue = Params->GetStringField(TEXT("default_value"));
 
 	FBlueprintEditorUtils::AddLocalVariable(BP, FuncGraph, FName(*Name), PinType, DefaultValue);
@@ -733,7 +743,12 @@ FMonolithActionResult FMonolithBlueprintVariableActions::HandleAddReplicatedVari
 	}
 
 	FName VarName(*VarNameStr);
-	FEdGraphPinType PinType = MonolithPinTypeGrammar::ParsePinTypeFromString(TypeStr);
+	FEdGraphPinType PinType;
+	FString TypeError;
+	if (!MonolithPinTypeGrammar::TryParsePinType(TypeStr, PinType, TypeError))
+	{
+		return FMonolithActionResult::InvalidParam(TEXT("type"), TypeError);
+	}
 
 	// Check for name collision
 	for (const FBPVariableDescription& Existing : BP->NewVariables)

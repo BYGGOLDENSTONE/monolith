@@ -232,6 +232,11 @@ namespace Private
 		{
 			if (USceneComponent* RootComp = CDO ? CDO->GetRootComponent() : nullptr)
 			{
+				if (!RootComp->IsA(FallbackClass))
+				{
+					Result.Error = FString::Printf(TEXT("Root component is %s, not compatible with required class %s"), *RootComp->GetClass()->GetName(), *FallbackClass->GetName());
+					return Result;
+				}
 				Result.Template     = RootComp;
 				Result.ResolvedName = RootComp->GetFName();
 				Result.Source       = ESource::CdoNative;
@@ -260,6 +265,11 @@ namespace Private
 				{
 					if (Node && Node->ComponentTemplate && Node->ComponentTemplate->IsA(USceneComponent::StaticClass()))
 					{
+						if (!Node->ComponentTemplate->IsA(FallbackClass))
+						{
+							Result.Error = FString::Printf(TEXT("Root component is not compatible with required class %s"), *FallbackClass->GetName());
+							return Result;
+						}
 						Result.Template      = Node->ComponentTemplate;
 						Result.Source        = ESource::Scs;
 						Result.DefiningNode  = Node;
@@ -459,6 +469,11 @@ namespace Private
 		{
 			if (USceneComponent* RootComp = ParentCDO->GetRootComponent())
 			{
+				if (!RootComp->IsA(FallbackClass))
+				{
+					Result.Error = FString::Printf(TEXT("Root component is %s, not compatible with required class %s"), *RootComp->GetClass()->GetName(), *FallbackClass->GetName());
+					return Result;
+				}
 				Result.Template     = RootComp;
 				Result.ResolvedName = RootComp->GetFName();
 			}

@@ -1,24 +1,4 @@
-// Copyright Monolith. All Rights Reserved.
-//
-// MonolithAI Phase I2: BT-to-GAS direct ability activation task.
-//
-// Drop-in BT task that activates a Gameplay Ability on the AI controller's
-// possessed pawn ASC. Uses the OnAbilityEndedWithData multicast delegate to
-// finalize InProgress -> Succeeded/Failed without per-tick polling.
-//
-// UHT scrapcode-aversion: UnrealHeaderTool 5.7 forbids UCLASS/UPROPERTY inside
-// any preprocessor block other than WITH_EDITORONLY_DATA. To stay compatible
-// with projects that do not enable the GameplayAbilities engine plugin, the
-// reflection surface (UCLASS + every UPROPERTY) is declared UNCONDITIONALLY.
-// We type-erase the only GAS-typed property (TSubclassOf<UGameplayAbility>)
-// down to TSubclassOf<UObject> and cast inside the .cpp. All implementation
-// includes and method bodies remain gated behind WITH_GAMEPLAYABILITIES so
-// builds without GAS still link cleanly. The handler that registers the
-// `add_bt_use_ability_task` action is also gated, so this class is never
-// instantiated when the GameplayAbilities plugin is absent.
-//
-// Plan: Docs/plans/2026-04-26-bt-gas-ability-task.md
-
+// Runtime BT-to-GAS task. GameplayAbilities is a required Monolith dependency.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -26,21 +6,16 @@
 #include "GameplayTagContainer.h"
 #include "Templates/SubclassOf.h"
 
-#if WITH_GAMEPLAYABILITIES
 #include "GameplayAbilitySpec.h"   // FGameplayAbilitySpecHandle (used by-value in BT memory struct)
-#endif
 
 #include "BTTask_TryActivateAbility.generated.h"   // MUST be last include — UE clobbers CURRENT_FILE_ID via subsequent .generated.h transitives
 
 class UBehaviorTreeComponent;
 class UAbilitySystemComponent;
 
-#if WITH_GAMEPLAYABILITIES
 class UGameplayAbility;
 struct FAbilityEndedData;
-#endif
 
-#if WITH_GAMEPLAYABILITIES
 /**
  * Per-instance BT memory for UBTTask_TryActivateAbility.
  *
@@ -65,8 +40,10 @@ struct FBTTaskTryActivateAbilityMemory
 	FDelegateHandle EndedHandle;
 	bool bAwaitingEnd = false;
 	bool bWasCancelled = false;
+	bool bInsideExecute = false;
+	bool bEndedDuringExecute = false;
 };
-#endif // WITH_GAMEPLAYABILITIES
+
 
 /**
  * BT task that activates a Gameplay Ability on the AI pawn's ASC.
@@ -76,8 +53,8 @@ struct FBTTaskTryActivateAbilityMemory
  * ExecuteTask returns Failed immediately and the action handler refuses to
  * register a node of this class.
  */
-UCLASS(MinimalAPI, meta = (DisplayName = "Try Activate Gameplay Ability"))
-class UBTTask_TryActivateAbility : public UBTTaskNode
+UCLASS(meta = (DisplayName = "Try Activate Gameplay Ability"))
+class MONOLITHRUNTIME_API UBTTask_TryActivateAbility : public UBTTaskNode
 {
 	GENERATED_UCLASS_BODY()
 
@@ -120,7 +97,6 @@ public:
 	virtual uint16 GetInstanceMemorySize() const override;
 	virtual FString GetStaticDescription() const override;
 
-#if WITH_GAMEPLAYABILITIES
 protected:
 	/** Bound to ASC->OnAbilityEndedWithData. Filters by spec handle then resolves Succeeded/Failed. */
 	void HandleAbilityEnded(const FAbilityEndedData& EndedData,
@@ -132,5 +108,5 @@ protected:
 
 	/** Detach our delegate from ASC->OnAbilityEndedWithData (idempotent). */
 	void UnbindEnded(FBTTaskTryActivateAbilityMemory& Mem) const;
-#endif // WITH_GAMEPLAYABILITIES
+
 };

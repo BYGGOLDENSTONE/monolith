@@ -33,6 +33,7 @@
 #include "Indexers/DataAssetIndexer.h"
 #include "Indexers/MeshCatalogIndexer.h"
 #include "Indexers/GASIndexer.h"
+#include "Indexers/AIIndexer.h"
 #include "Indexers/MetaSoundIndexer.h"
 
 // ============================================================
@@ -348,6 +349,8 @@ void UMonolithIndexSubsystem::RegisterDefaultIndexers()
 		RegisterIndexer(MakeShared<FDataAssetIndexer>());
 	if (Settings->bIndexMeshCatalog)
 		RegisterIndexer(MakeShared<FMeshCatalogIndexer>());
+	if (Settings->bEnableAI && Settings->bIndexAI)
+		RegisterIndexer(MakeShared<FMonolithAIAssetIndexer>());
 	if (Settings->bIndexGAS)
 		RegisterIndexer(MakeShared<FGASIndexer>());
 #if WITH_METASOUND
@@ -1240,7 +1243,13 @@ uint32 UMonolithIndexSubsystem::FIndexingTask::Run()
 		}
 
 		FAssetData DummyData;
-		InIndexer->IndexAsset(DummyData, nullptr, *InDB, 0);
+		if (!InIndexer->IndexAsset(DummyData, nullptr, *InDB, 0))
+		{
+			InDB->RollbackTransaction();
+			bTransactionFailure = true;
+			UE_LOG(LogMonolithIndex, Error, TEXT("Post-pass %s failed; rolled back and leaving index resumable"), *InIndexer->GetName());
+			return;
+		}
 
 		if (!InDB->CommitTransaction())
 		{
@@ -1475,6 +1484,23 @@ uint32 UMonolithIndexSubsystem::FIndexingTask::Run()
 			UE_LOG(LogMonolithIndex, Log, TEXT("Mesh catalog indexer completed in %.2fs"), FPlatformTime::Seconds() - SentinelStart);
 			GCBetweenIndexers();
 		}
+	}
+
+	// These registered sentinels were previously never dispatched by a full index.
+	// Run on the compiler-idle game thread: all traverse/load UObjects.
+	for (const FString& Sentinel : { FString(TEXT("__GAS__")), FString(TEXT("__MetaSound__")), FString(TEXT("__AI__")) })
+	{
+		if (CheckCancellation()) break;
+		const TSharedPtr<IMonolithIndexer>* Found = Owner->ClassToIndexer.Find(Sentinel);
+		if (!Found || !Found->IsValid()) continue;
+		TSharedPtr<IMonolithIndexer> Indexer = *Found;
+		Owner->IndexingStatusMessage = FString::Printf(TEXT("Running %s..."), *Indexer->GetName());
+		FEvent* Event = FPlatformProcess::GetSynchEventFromPool(true);
+		FMonolithCompilerSafeDispatch::RunOnGameThreadWhenCompilerIdle(
+			[DB, Indexer, &RunSentinelInTransaction]() { RunSentinelInTransaction(DB, Indexer); }, Event);
+		Event->Wait();
+		FPlatformProcess::ReturnSynchEventToPool(Event);
+		GCBetweenIndexers();
 	}
 
 	UE_LOG(LogMonolithIndex, Log, TEXT("Post-pass indexers complete"));

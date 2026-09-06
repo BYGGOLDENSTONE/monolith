@@ -30,7 +30,11 @@ namespace MonolithUI::HonestyTests
 
         ~FScopedWidget()
         {
-            if (UWidgetBlueprint* Widget = FindObject<UWidgetBlueprint>(nullptr, *ObjectPath()))
+            UWidgetBlueprint* Widget = FindObject<UWidgetBlueprint>(nullptr, *ObjectPath());
+            // Failed builder authoring can already have deleted/marked this
+            // object and package garbage. FindObject still sees those objects
+            // until GC; ForceDeleteObjects must not receive their weak handles.
+            if (IsValid(Widget) && IsValid(Widget->GetPackage()))
             {
                 // Save and deletion happen in the same Automation tick. Deliver
                 // queued file-add notifications before AssetDeleted marks the

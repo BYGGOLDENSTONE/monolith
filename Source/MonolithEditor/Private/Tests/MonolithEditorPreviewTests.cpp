@@ -36,6 +36,16 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
+#include "Misc/ScopeExit.h"
+#include "UObject/Package.h"
+#include "UObject/StrongObjectPtr.h"
+#include "WidgetBlueprint.h"
+#include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Blueprint/WidgetTree.h"
+#include "Blueprint/UserWidget.h"
+#include "Components/TextBlock.h"
+#include "Kismet2/KismetEditorUtilities.h"
+#include "ObjectTools.h"
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -193,14 +203,10 @@ bool FMonolithEditorPreviewCaptureSkeletalMeshTest::RunTest(const FString& /*Par
 // ============================================================================
 // Test 3 — widget branch
 //
-// Constructs a bare UUserWidget in-process via NewObject — avoids any asset
-// load. Validates FWidgetRenderer path end-to-end against a real RT + PNG
-// export. Gracefully exits when FApp::CanEverRender() is false.
-//
-// NOTE: This test bypasses the action's UWidgetBlueprint::LoadObject path —
-// it cannot fake an asset_path that resolves to a real WBP. The branch's
-// asset-load + GeneratedClass guards are covered by the offline action being
-// callable; we exercise the renderer + RT + PNG-export pipeline directly here.
+// Creates and compiles its own Widget Blueprint in a GUID-named transient package.
+// The real capture action loads that in-memory asset by path, constructs an
+// instance, renders it and exports a PNG. No optional engine asset or other test
+// supplies the fixture. Only a renderer-less process may skip the render branch.
 // ============================================================================
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -217,52 +223,52 @@ bool FMonolithEditorPreviewCaptureWidgetTest::RunTest(const FString& /*Parameter
 		return true;
 	}
 
-	// We need a real UWidgetBlueprint asset to hit the action's load path. Probe
-	// for any plausible engine WBP; if none exists, log and skip with a note.
-	static const TCHAR* WBPCandidates[] =
-	{
-		// No canonical engine-shipped widget BP path is guaranteed; this list
-		// keeps the test optimistic and SKIPs gracefully on stock engines.
-		TEXT("/Engine/Tutorial/Customization/WidgetCustomization/WBP_DefaultWidget")
-	};
+    const FString Id = FGuid::NewGuid().ToString(EGuidFormats::Digits);
+    const FString PackagePath = TEXT("/Temp/MonolithEditorPreview_") + Id;
+    const FString AssetName = TEXT("WBP_Capture_") + Id;
+    const FString OutputPath = MonolithEditorPreviewTests::GetTestOutputDir() / (TEXT("widget_") + Id + TEXT(".png"));
+    TStrongObjectPtr<UPackage> Package(CreatePackage(*PackagePath));
+    Package->SetFlags(RF_Transient);
+    TStrongObjectPtr<UWidgetBlueprint> Blueprint(Cast<UWidgetBlueprint>(FKismetEditorUtilities::CreateBlueprint(
+        UUserWidget::StaticClass(), Package.Get(), FName(*AssetName), BPTYPE_Normal,
+        UWidgetBlueprint::StaticClass(), UWidgetBlueprintGeneratedClass::StaticClass())));
+    ON_SCOPE_EXIT
+    {
+        MonolithEditorPreviewTests::CleanupPng(OutputPath);
+        TestFalse(TEXT("Capture fixture PNG removed"), FPaths::FileExists(OutputPath));
+        if (IsValid(Blueprint.Get()))
+        {
+            // No package is saved. Remove the exact fixture asset's editor/registry
+            // identity and allow its transient package to be collected.
+            TestTrue(TEXT("Transient capture Blueprint removed"), ObjectTools::DeleteSingleObject(Blueprint.Get(), false));
+            Blueprint->MarkAsGarbage();
+        }
+        Package->SetDirtyFlag(false);
+        Package->MarkAsGarbage();
+    };
+    if (!TestNotNull(TEXT("Capture fixture Blueprint created"), Blueprint.Get())) return false;
+    if (!Blueprint->WidgetTree)
+        Blueprint->WidgetTree = NewObject<UWidgetTree>(Blueprint.Get(), TEXT("WidgetTree"));
+    UTextBlock* Label = Blueprint->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CaptureLabel"));
+    Label->SetText(FText::FromString(TEXT("MONOLITH\nWidget capture\n256 x 256")));
+    Label->SetColorAndOpacity(FSlateColor(FLinearColor(0.1f, 0.7f, 1.f, 1.f)));
+    FSlateFontInfo Font = Label->GetFont();
+    Font.Size = 24;
+    Label->SetFont(Font);
+    Blueprint->WidgetTree->RootWidget = Label;
+    Blueprint->OnVariableAdded(Label->GetFName());
+    Blueprint->bCanCallInitializedWithoutPlayerContext = true;
+    FKismetEditorUtilities::CompileBlueprint(Blueprint.Get());
+    if (!TestTrue(TEXT("Capture fixture compiled"), Blueprint->GeneratedClass && Blueprint->Status != BS_Error)) return false;
 
-	FString FoundPath;
-	for (const TCHAR* Candidate : WBPCandidates)
-	{
-		UObject* Probe = LoadObject<UObject>(nullptr, Candidate);
-		if (Probe)
-		{
-			FoundPath = Candidate;
-			break;
-		}
-	}
-
-	if (FoundPath.IsEmpty())
-	{
-		AddInfo(TEXT("Skipped — no engine UWidgetBlueprint asset found. "
-			"Widget branch is covered by claudedesign::capture_widget sibling tests + live smoke."));
-		return true;
-	}
-
-	const FString OutputPath = MonolithEditorPreviewTests::GetTestOutputDir() / TEXT("widget.png");
-	MonolithEditorPreviewTests::CleanupPng(OutputPath);
-
-	TSharedPtr<FJsonObject> Params = MonolithEditorPreviewTests::MakeParams(
-		TEXT("widget"), FoundPath, OutputPath);
-
-	FMonolithActionResult Result = FMonolithEditorActions::HandleCaptureScenePreview(Params);
-
-	TestTrue(TEXT("Capture action returned success"), Result.bSuccess);
-	TestTrue(TEXT("Output PNG exists on disk"), FPaths::FileExists(OutputPath));
-
-	if (FPaths::FileExists(OutputPath))
-	{
-		const int64 FileSize = IFileManager::Get().FileSize(*OutputPath);
-		TestTrue(TEXT("Output PNG is non-empty (>= 1KB)"), FileSize >= 1024);
-	}
-
-	MonolithEditorPreviewTests::CleanupPng(OutputPath);
-	return true;
+    const auto Params = MonolithEditorPreviewTests::MakeParams(TEXT("widget"), Blueprint->GetPathName(), OutputPath);
+    const FMonolithActionResult Result = FMonolithEditorActions::HandleCaptureScenePreview(Params);
+    TestTrue(TEXT("Capture action returned success"), Result.bSuccess);
+    if (!Result.bSuccess) AddError(Result.ErrorMessage);
+    TestTrue(TEXT("Output PNG exists on disk"), FPaths::FileExists(OutputPath));
+    if (FPaths::FileExists(OutputPath))
+        TestTrue(TEXT("Output PNG is non-empty (>= 1KB)"), IFileManager::Get().FileSize(*OutputPath) >= 1024);
+    return true;
 }
 
 // ============================================================================

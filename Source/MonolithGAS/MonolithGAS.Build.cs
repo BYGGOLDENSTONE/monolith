@@ -10,7 +10,7 @@ public class MonolithGAS : ModuleRules
 		// Always-available engine GAS modules
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
-			"Core", "CoreUObject", "Engine",
+			"Core", "CoreUObject", "Engine", "MonolithRuntime",
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 			// UMG: needed publicly because MonolithGASAttributeBindingClassExtension subclasses
 			// UWidgetBlueprintGeneratedClassExtension (UMG) and exposes USTRUCTs referenced by other modules.

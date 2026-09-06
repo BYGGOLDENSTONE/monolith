@@ -3,6 +3,14 @@
 #include "MonolithJsonUtils.h"
 #include "MonolithToolRegistry.h"
 #include "BehaviorTree/Tasks/BTTask_Wait.h"
+#include "EnvironmentQuery/Generators/EnvQueryGenerator_CurrentLocation.h"
+#include "EnvironmentQuery/Tests/EnvQueryTest_Distance.h"
+#include "EnvironmentQuery/Contexts/EnvQueryContext_Querier.h"
+#if WITH_STATETREE
+#include "Tasks/StateTreeRunParallelStateTreeTask.h"
+#include "Conditions/StateTreeCommonConditions.h"
+#include "Blueprint/StateTreeEvaluatorBlueprintBase.h"
+#endif
 
 #if WITH_DEV_AUTOMATION_TESTS
 namespace MonolithAIDiscoveryTest
@@ -20,25 +28,76 @@ namespace MonolithAIDiscoveryTest
 	}
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithAINodeDiscoveryUnavailableTest, "Monolith.AI.Discovery.UnimplementedSystems",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithAINodeDiscoveryEQSTest, "Monolith.AI.Discovery.EQSNativeTypes",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-bool FMonolithAINodeDiscoveryUnavailableTest::RunTest(const FString& Parameters)
+bool FMonolithAINodeDiscoveryEQSTest::RunTest(const FString& Parameters)
 {
 	using namespace MonolithAIDiscoveryTest;
-	for (const FString System : { FString(TEXT("st")), FString(TEXT("eqs")) })
+	const TArray<TPair<FString, UClass*>> Expected = {
+		{ TEXT("generator"), UEnvQueryGenerator_CurrentLocation::StaticClass() },
+		{ TEXT("test"), UEnvQueryTest_Distance::StaticClass() },
+		{ TEXT("context"), UEnvQueryContext_Querier::StaticClass() }
+	};
+	for (const auto& Pair : Expected)
 	{
-		const auto Result = Invoke(Params(System));
-		TestFalse(TEXT("Unimplemented enumeration is not a successful empty list"), Result.bSuccess);
-		TestEqual(TEXT("Capability unavailable error"), Result.ErrorCode, FMonolithJsonUtils::ErrNotImplemented);
-		TestFalse(TEXT("No successful node payload"), Result.Result.IsValid());
-		if (!TestTrue(TEXT("Structured error data present"), Result.ErrorData.IsValid())) { continue; }
-		const auto Data = Result.ErrorData->AsObject();
-		if (!TestTrue(TEXT("Structured data is an object"), Data.IsValid())) { continue; }
-		TestEqual(TEXT("Machine-readable reason"), Data->GetStringField(TEXT("reason")), FString(TEXT("not_implemented")));
-		TestEqual(TEXT("Requested system retained"), Data->GetStringField(TEXT("system")), System);
-		TestFalse(TEXT("Explicit implementation state"), Data->GetBoolField(TEXT("implemented")));
-		TestFalse(TEXT("Error is actionable"), Result.ErrorMessage.IsEmpty());
+		auto Args = Params(TEXT("eqs")); Args->SetStringField(TEXT("category"), Pair.Key);
+		const auto Result = Invoke(Args);
+		if (!TestTrue(TEXT("EQS category succeeds"), Result.bSuccess && Result.Result.IsValid())) continue;
+		const auto& Nodes = Result.Result->GetArrayField(TEXT("node_types"));
+		TestEqual(TEXT("count matches entries"), Result.Result->GetIntegerField(TEXT("count")), Nodes.Num());
+		bool bFound = false;
+		TSet<FString> Paths;
+		for (const auto& Node : Nodes)
+		{
+			const auto Entry = Node->AsObject();
+			TestEqual(TEXT("category filter excludes other types"), Entry->GetStringField(TEXT("category")), Pair.Key);
+			const FString Path = Entry->GetStringField(TEXT("class_path"));
+			TestFalse(TEXT("unique class path"), Paths.Contains(Path)); Paths.Add(Path);
+			UClass* Class = FindObject<UClass>(nullptr, *Path);
+			TestTrue(TEXT("entry resolves to concrete loaded class"), Class && !Class->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists));
+			bFound |= Path == Pair.Value->GetPathName();
+		}
+		TestTrue(FString::Printf(TEXT("native %s type discovered"), *Pair.Key), bFound);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMonolithAINodeDiscoveryStateTreeTest, "Monolith.AI.Discovery.StateTreeNativeTypes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMonolithAINodeDiscoveryStateTreeTest::RunTest(const FString& Parameters)
+{
+	using namespace MonolithAIDiscoveryTest;
+#if WITH_STATETREE
+	const TArray<TPair<FString, UScriptStruct*>> Expected = {
+		{ TEXT("task"), FStateTreeRunParallelStateTreeTask::StaticStruct() },
+		{ TEXT("condition"), FStateTreeCompareIntCondition::StaticStruct() },
+		{ TEXT("evaluator"), FStateTreeBlueprintEvaluatorWrapper::StaticStruct() }
+	};
+	for (const auto& Pair : Expected)
+	{
+		auto Args = Params(TEXT("st")); Args->SetStringField(TEXT("category"), Pair.Key);
+		const auto Result = Invoke(Args);
+		if (!TestTrue(TEXT("ST category succeeds"), Result.bSuccess && Result.Result.IsValid())) continue;
+		const auto& Nodes = Result.Result->GetArrayField(TEXT("node_types"));
+		TestEqual(TEXT("count matches entries"), Result.Result->GetIntegerField(TEXT("count")), Nodes.Num());
+		bool bFound = false;
+		for (const auto& Node : Nodes)
+		{
+			const auto Entry = Node->AsObject();
+			TestEqual(TEXT("ST category isolation"), Entry->GetStringField(TEXT("category")), Pair.Key);
+			TestEqual(TEXT("ST representation is struct"), Entry->GetStringField(TEXT("kind")), FString(TEXT("struct")));
+			const FString Path = Entry->GetStringField(TEXT("struct_path"));
+			UScriptStruct* Struct = FindObject<UScriptStruct>(nullptr, *Path);
+			TestTrue(TEXT("entry resolves to non-hidden struct"), Struct && !Struct->HasMetaData(TEXT("Hidden")));
+			bFound |= Path == Pair.Value->GetPathName();
+		}
+		TestTrue(FString::Printf(TEXT("native %s struct discovered"), *Pair.Key), bFound);
+	}
+#else
+	const auto Result = Invoke(Params(TEXT("st")));
+	TestFalse(TEXT("missing dependency is not successful empty enumeration"), Result.bSuccess);
+	TestEqual(TEXT("typed optional dependency error"), Result.ErrorCode, FMonolithJsonUtils::ErrOptionalDepUnavailable);
+#endif
 	return true;
 }
 
@@ -60,6 +119,11 @@ bool FMonolithAINodeDiscoveryInputsTest::RunTest(const FString& Parameters)
 	auto UnknownCategory = Params(TEXT("bt"));
 	UnknownCategory->SetStringField(TEXT("category"), TEXT("typo"));
 	Cases.Emplace(TEXT("unknown category"), UnknownCategory);
+	for (const FString& System : { FString(TEXT("eqs")), FString(TEXT("st")) })
+	{
+		auto InvalidCategory = Params(System); InvalidCategory->SetStringField(TEXT("category"), TEXT("typo"));
+		Cases.Emplace(System + TEXT(" unknown category"), InvalidCategory);
+	}
 	for (const auto& Case : Cases)
 	{
 		const auto Result = Invoke(Case.Value);

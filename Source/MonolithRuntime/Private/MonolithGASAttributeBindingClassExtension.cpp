@@ -1,7 +1,7 @@
 // MonolithGASAttributeBindingClassExtension.cpp
 
 #include "MonolithGASAttributeBindingClassExtension.h"
-#include "MonolithGASInternal.h"
+#include "MonolithRuntimeModule.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
@@ -9,6 +9,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Widget.h"
+#include "Components/WidgetComponent.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/RichTextBlock.h"
@@ -32,11 +33,40 @@
 #include "Styling/SlateColor.h"
 #include "UObject/UnrealType.h"
 
-// Phase J F9: file-static `LogMonolithGAS` retired in favor of the parent
-// LogMonolithGAS category (declared in MonolithGASInternal.h, defined in MonolithGASModule.cpp).
+// Runtime binding diagnostics use the runtime module category.
 
 namespace
 {
+    class FMonolithGASBindingTickHelper final : public FTickableGameObject
+    {
+    public:
+        explicit FMonolithGASBindingTickHelper(UMonolithGASAttributeBindingClassExtension* InOwner)
+            : Owner(InOwner)
+        {
+            check(IsInGameThread());
+        }
+
+        virtual void Tick(float DeltaTime) override
+        {
+            if (UMonolithGASAttributeBindingClassExtension* Extension = Owner.Get())
+                Extension->Tick(DeltaTime);
+        }
+
+        virtual bool IsTickable() const override
+        {
+            const UMonolithGASAttributeBindingClassExtension* Extension = Owner.Get();
+            return Extension && Extension->IsTickable();
+        }
+
+        virtual TStatId GetStatId() const override
+        {
+            RETURN_QUICK_DECLARE_CYCLE_STAT(MonolithGASBinding, STATGROUP_Tickables);
+        }
+
+    private:
+        TWeakObjectPtr<UMonolithGASAttributeBindingClassExtension> Owner;
+    };
+
     UClass* ResolveAttributeSetClass_AttrBinding(const FString& Path)
     {
         if (Path.IsEmpty()) return nullptr;
@@ -150,7 +180,26 @@ UAbilitySystemComponent* UMonolithGASAttributeBindingClassExtension::ResolveASC(
         }
         case EMonolithAttrBindOwner::SelfActor:
         {
-            return GetASCFromActorRuntime(Cast<AActor>(UW->GetOuter()));
+            if (AActor* OuterActor = UW->GetTypedOuter<AActor>())
+            {
+                if (UAbilitySystemComponent* ASC = GetASCFromActorRuntime(OuterActor)) return ASC;
+            }
+            // WidgetComponent creates its widget with the world as outer. Associate the
+            // actual hosted instance with its component owner instead of assuming an actor outer.
+            // Tick calls owner resolution only at the existing 0.25-second owner-check interval.
+            if (UWorld* World = UW->GetWorld())
+            {
+                for (TActorIterator<AActor> It(World); It; ++It)
+                {
+                    TInlineComponentArray<UWidgetComponent*> Components(*It);
+                    for (UWidgetComponent* Component : Components)
+                    {
+                        if (Component && Component->GetUserWidgetObject() == UW)
+                            return GetASCFromActorRuntime(Component->GetOwner());
+                    }
+                }
+            }
+            return nullptr;
         }
         case EMonolithAttrBindOwner::NamedSocket:
         {
@@ -182,7 +231,14 @@ void UMonolithGASAttributeBindingClassExtension::Initialize(UUserWidget* UserWid
 void UMonolithGASAttributeBindingClassExtension::Construct(UUserWidget* UserWidget)
 {
     Super::Construct(UserWidget);
-    if (!UserWidget) return;
+    if (!UserWidget || IsTemplate()) return;
+    check(IsInGameThread());
+
+    // Generated-class extensions are constructed by the async package loader in
+    // cooked games. Register only once actual widget instances exist on the game thread.
+    if (!TickHelper) TickHelper = MakeUnique<FMonolithGASBindingTickHelper>(this);
+
+    if (FInstanceState* Existing = Instances.Find(UserWidget)) Unsubscribe(*Existing);
 
     FInstanceState& State = Instances.FindOrAdd(UserWidget);
     State.SubsByRow.Reset();
@@ -218,7 +274,92 @@ void UMonolithGASAttributeBindingClassExtension::Destruct(UUserWidget* UserWidge
             Instances.Remove(UserWidget);
         }
     }
+    if (Instances.IsEmpty()) TickHelper.Reset();
     Super::Destruct(UserWidget);
+}
+
+void UMonolithGASAttributeBindingClassExtension::Unsubscribe(FInstanceState& State)
+{
+    for (FActiveSub& Sub : State.SubsByRow)
+    {
+        if (UAbilitySystemComponent* ASC = Sub.ASC.Get())
+        {
+            if (Sub.Attribute.IsValid()) ASC->GetGameplayAttributeValueChangeDelegate(Sub.Attribute).Remove(Sub.PrimaryHandle);
+            if (Sub.MaxAttribute.IsValid()) ASC->GetGameplayAttributeValueChangeDelegate(Sub.MaxAttribute).Remove(Sub.MaxHandle);
+        }
+        Sub.PrimaryHandle.Reset();
+        Sub.MaxHandle.Reset();
+    }
+}
+
+void UMonolithGASAttributeBindingClassExtension::BeginDestroy()
+{
+    TickHelper.Reset();
+    for (auto& Pair : Instances) Unsubscribe(Pair.Value);
+    Instances.Reset();
+    Super::BeginDestroy();
+}
+
+void UMonolithGASAttributeBindingClassExtension::Tick(float DeltaTime)
+{
+    for (auto It = Instances.CreateIterator(); It; ++It)
+    {
+        UUserWidget* UW = It.Key().Get();
+        if (!UW)
+        {
+            Unsubscribe(It.Value());
+            It.RemoveCurrent();
+            continue;
+        }
+        if (!UW->GetWorld() || !UW->GetWorld()->IsGameWorld()) continue;
+        FInstanceState& State = It.Value();
+        const double Now = FPlatformTime::Seconds();
+        const bool bCheckOwner = Now >= State.NextOwnerCheckTime;
+        if (bCheckOwner) State.NextOwnerCheckTime = Now + 0.25;
+        for (int32 Row = 0; Row < State.SubsByRow.Num() && Row < Bindings.Num(); ++Row)
+        {
+            FActiveSub& Sub = State.SubsByRow[Row];
+            const auto& Spec = Bindings[Row];
+            if (!Sub.TargetWidget.IsValid() || !Sub.Attribute.IsValid()) continue;
+            if (bCheckOwner && Sub.ASC.Get() != ResolveASC(UW, Spec))
+            {
+                if (UAbilitySystemComponent* OldASC = Sub.ASC.Get())
+                {
+                    if (Sub.Attribute.IsValid()) OldASC->GetGameplayAttributeValueChangeDelegate(Sub.Attribute).Remove(Sub.PrimaryHandle);
+                    if (Sub.MaxAttribute.IsValid()) OldASC->GetGameplayAttributeValueChangeDelegate(Sub.MaxAttribute).Remove(Sub.MaxHandle);
+                }
+                Sub = FActiveSub();
+                SubscribeRow(UW, Row, Spec, State);
+                continue;
+            }
+            if (!Sub.ASC.IsValid())
+            {
+                // Retry owner-spawn/possession races; malformed widget/attribute
+                // rows are not retried each frame (avoids warning floods).
+                if (bCheckOwner) SubscribeRow(UW, Row, Spec, State);
+                continue;
+            }
+            if (Spec.UpdatePolicy == EMonolithAttrBindUpdate::Tick)
+            {
+                bool Found = false;
+                const float Value = Sub.ASC->GetGameplayAttributeValue(Sub.Attribute, Found);
+                if (!Found) continue;
+                Sub.TargetValue = Value;
+                if (Sub.MaxAttribute.IsValid())
+                {
+                    const float MaxValue = Sub.ASC->GetGameplayAttributeValue(Sub.MaxAttribute, Found);
+                    if (Found) Sub.TargetMaxValue = MaxValue;
+                }
+                Sub.CurrentDisplayedValue = Sub.TargetValue;
+                ApplyValue(UW, Spec, Sub);
+            }
+            else if (Spec.UpdatePolicy == EMonolithAttrBindUpdate::OnChangeSmoothed)
+            {
+                Sub.CurrentDisplayedValue = FMath::FInterpTo(Sub.CurrentDisplayedValue, Sub.TargetValue, DeltaTime, Spec.SmoothingSpeed);
+                ApplyValue(UW, Spec, Sub);
+            }
+        }
+    }
 }
 
 void UMonolithGASAttributeBindingClassExtension::SubscribeRow(UUserWidget* UW, int32 RowIndex, const FMonolithGASAttributeBindingSpec& Spec, FInstanceState& State)
@@ -229,24 +370,40 @@ void UMonolithGASAttributeBindingClassExtension::SubscribeRow(UUserWidget* UW, i
     Sub.TargetWidget = FindNamedWidget(UW, Spec.TargetWidgetName);
     if (!Sub.TargetWidget.IsValid())
     {
-        UE_LOG(LogMonolithGAS, Warning,
+        UE_LOG(LogMonolithRuntime, Warning,
             TEXT("[GASBind] Widget '%s' not found in UserWidget '%s'"),
             *Spec.TargetWidgetName.ToString(), *UW->GetName());
         return;
     }
 
-    Sub.Attribute = ResolveAttribute(Spec.AttributeSetClassPath, Spec.AttributePropertyName);
+    auto ResolveBoundAttribute = [](const TSoftClassPtr<UAttributeSet>& ClassReference, const FString& LegacyPath, FName PropertyName)
+    {
+        // Soft references are cook dependencies and receive asset-rename/path fixups;
+        // the legacy FString does not. Prefer the authoritative serialized reference.
+        if (!ClassReference.IsNull())
+        {
+            if (UClass* Class = ClassReference.LoadSynchronous())
+            {
+                if (FProperty* Property = FindFProperty<FProperty>(Class, PropertyName))
+                    return FGameplayAttribute(Property);
+            }
+        }
+        return ResolveAttribute(LegacyPath, PropertyName);
+    };
+    Sub.Attribute = ResolveBoundAttribute(Spec.AttributeSetClass, Spec.AttributeSetClassPath, Spec.AttributePropertyName);
     if (!Sub.Attribute.IsValid())
     {
-        UE_LOG(LogMonolithGAS, Warning,
+        UE_LOG(LogMonolithRuntime, Warning,
             TEXT("[GASBind] Attribute %s.%s could not be resolved"),
             *Spec.AttributeSetClassPath, *Spec.AttributePropertyName.ToString());
         return;
     }
     if (!Spec.MaxAttributePropertyName.IsNone())
     {
-        Sub.MaxAttribute = ResolveAttribute(
-            Spec.MaxAttributeSetClassPath.IsEmpty() ? Spec.AttributeSetClassPath : Spec.MaxAttributeSetClassPath,
+        const bool bUsePrimaryClass = Spec.MaxAttributeSetClass.IsNull() && Spec.MaxAttributeSetClassPath.IsEmpty();
+        Sub.MaxAttribute = ResolveBoundAttribute(
+            bUsePrimaryClass ? Spec.AttributeSetClass : Spec.MaxAttributeSetClass,
+            bUsePrimaryClass ? Spec.AttributeSetClassPath : Spec.MaxAttributeSetClassPath,
             Spec.MaxAttributePropertyName);
     }
 
@@ -265,14 +422,14 @@ void UMonolithGASAttributeBindingClassExtension::SubscribeRow(UUserWidget* UW, i
         if (Elapsed > 1.0 && !Sub.bGraceEscalated)
         {
             Sub.bGraceEscalated = true;
-            UE_LOG(LogMonolithGAS, Warning,
+            UE_LOG(LogMonolithRuntime, Warning,
                 TEXT("[GASBind] ApplyValue: owner failed to resolve after grace for widget=%s (binding %s -> %s, elapsed=%.2fs)"),
                 *Spec.TargetWidgetName.ToString(),
                 *Spec.TargetWidgetName.ToString(), *Spec.AttributePropertyName.ToString(), Elapsed);
         }
         else
         {
-            UE_LOG(LogMonolithGAS, Verbose,
+            UE_LOG(LogMonolithRuntime, Verbose,
                 TEXT("[GASBind] ApplyValue: owner not yet resolved for widget=%s; deferring (binding %s -> %s)"),
                 *Spec.TargetWidgetName.ToString(),
                 *Spec.TargetWidgetName.ToString(), *Spec.AttributePropertyName.ToString());
@@ -355,11 +512,11 @@ void UMonolithGASAttributeBindingClassExtension::ApplyValue(UUserWidget* UW, con
     const float Mx = (Sub.TargetMaxValue > 0.f) ? Sub.TargetMaxValue : 1.f;
     const float Ratio = FMath::Clamp(V / Mx, 0.f, 1.f);
 
-    // Phase J F9: per-fire trace at Verbose (shipping-silent by default; enable LogMonolithGAS Verbose to surface).
+    // Phase J F9: per-fire trace at Verbose (shipping-silent by default; enable LogMonolithRuntime Verbose to surface).
     // `formatted=<s>` per spec is the post-format payload — for branches that compute it (Text), we'd ideally
     // log the final string. To keep the trace branch-agnostic and a single line, log the raw value pair plus
     // ratio; format-specific details can be derived from the format/payload fields if a deeper trace is needed.
-    UE_LOG(LogMonolithGAS, Verbose,
+    UE_LOG(LogMonolithRuntime, Verbose,
         TEXT("[GASBind] ApplyValue: widget=%s property=%s attr=%s.%s raw_value=%.4f max=%.4f ratio=%.4f"),
         *Target->GetName(),
         *Spec.TargetPropertyName.ToString(),
@@ -485,7 +642,7 @@ void UMonolithGASAttributeBindingClassExtension::ApplyValue(UUserWidget* UW, con
         return;
     }
 
-    UE_LOG(LogMonolithGAS, Warning,
+    UE_LOG(LogMonolithRuntime, Warning,
         TEXT("[GASBind] Apply: unhandled property '%s' on widget '%s' (%s)"),
         *Prop.ToString(), *Target->GetName(), *Target->GetClass()->GetName());
 }

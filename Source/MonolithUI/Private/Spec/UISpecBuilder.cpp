@@ -1098,9 +1098,33 @@ FUISpecBuilderResult FUISpecBuilder::Build(const FUISpecBuilderInputs& Inputs)
     // ---------- 11. Compile (skipped on dry-run) ------------------------
     if (!Inputs.bDryRun)
     {
+        FString CustomizationError;
+        if (Inputs.BeforeCompile && !Inputs.BeforeCompile(WBP, CustomizationError))
+        {
+            FUISpecError E;
+            E.Severity = EUISpecErrorSeverity::Error;
+            E.Category = TEXT("MenuAuthoring");
+            E.Message = CustomizationError;
+            Result.Errors.Add(MoveTemp(E));
+            Transaction.Cancel();
+            if (!bPreExisting) RollbackCreatedAsset(WBP, Package);
+            return Result;
+        }
         MonolithUI::ReconcileWidgetVariableGuids(WBP);
         FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
         FKismetEditorUtilities::CompileBlueprint(WBP);
+
+        if (WBP->Status == BS_Error)
+        {
+            FUISpecError E;
+            E.Severity = EUISpecErrorSeverity::Error;
+            E.Category = TEXT("Compile");
+            E.Message = TEXT("Widget Blueprint compilation failed; asset was not saved.");
+            Result.Errors.Add(MoveTemp(E));
+            Transaction.Cancel();
+            if (!bPreExisting) RollbackCreatedAsset(WBP, Package);
+            return Result;
+        }
 
         // ---------- 12. Rebuild widget-id map post-compile (H12/H13) ----
         // Compile recreates CDOs; pre-compile UWidget* pointers are now

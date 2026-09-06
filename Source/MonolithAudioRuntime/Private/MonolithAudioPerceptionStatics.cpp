@@ -62,7 +62,7 @@ void UMonolithAudioPerceptionStatics::PlaySoundAndReportNoise(
 	const FName EffectiveTag = (TagOverride != NAME_None) ? TagOverride : Data->Tag;
 
 	UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull) : nullptr;
-	if (!World)
+	if (!World || World->GetNetMode() == NM_Client)
 	{
 		return;
 	}
@@ -75,21 +75,8 @@ void UMonolithAudioPerceptionStatics::PlaySoundAndReportNoise(
 			return;
 		}
 
-		APawn* InstigatorPawn = Cast<APawn>(Instigator);
-		if (!InstigatorPawn)
-		{
-			if (AController* Ctrl = Cast<AController>(Instigator))
-			{
-				InstigatorPawn = Ctrl->GetPawn();
-			}
-		}
-
-		Instigator->MakeNoise(
-			EffectiveLoudness,
-			InstigatorPawn,
-			Location,
-			Data->MaxRange,
-			EffectiveTag);
+		UAISense_Hearing::ReportNoiseEvent(World, Location, EffectiveLoudness,
+			Instigator, Data->MaxRange, EffectiveTag);
 	}
 	else
 	{

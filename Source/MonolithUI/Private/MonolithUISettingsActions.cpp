@@ -6,6 +6,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/PlatformFileManager.h"
+#include "HAL/FileManager.h"
 
 // ============================================================================
 // Helpers
@@ -13,6 +14,19 @@
 
 FString FMonolithUISettingsActions::ResolveSourceDir(const FString& ModuleName, FMonolithActionResult& OutError)
 {
+    if (ModuleName.IsEmpty() || !FChar::IsAlpha(ModuleName[0]))
+    {
+        OutError = FMonolithActionResult::Error(TEXT("module_name must be a C++ identifier"));
+        return FString();
+    }
+    for (TCHAR C : ModuleName)
+    {
+        if (!FChar::IsAlnum(C) && C != TCHAR('_'))
+        {
+            OutError = FMonolithActionResult::Error(TEXT("module_name must be a C++ identifier"));
+            return FString();
+        }
+    }
     FString ProjectDir = FPaths::ProjectDir();
     FString SourceDir = FPaths::Combine(ProjectDir, TEXT("Source"), ModuleName);
 
@@ -31,11 +45,24 @@ bool FMonolithUISettingsActions::WriteSourceFiles(const FString& Dir, const FStr
     const FString& HeaderContent, const FString& CppContent,
     TSharedPtr<FJsonObject>& OutResult, FMonolithActionResult& OutError)
 {
+    if (ClassName.IsEmpty() || !FChar::IsAlpha(ClassName[0]))
+    {
+        OutError = FMonolithActionResult::Error(TEXT("class_name must be a C++ identifier"));
+        return false;
+    }
+    for (TCHAR C : ClassName)
+    {
+        if (!FChar::IsAlnum(C) && C != TCHAR('_'))
+        {
+            OutError = FMonolithActionResult::Error(TEXT("class_name must be a C++ identifier"));
+            return false;
+        }
+    }
     FString HeaderPath = FPaths::Combine(Dir, ClassName + TEXT(".h"));
     FString CppPath = FPaths::Combine(Dir, ClassName + TEXT(".cpp"));
 
     // Check for existing files
-    if (FPaths::FileExists(HeaderPath))
+    if (FPaths::FileExists(HeaderPath) || FPaths::FileExists(CppPath))
     {
         OutError = FMonolithActionResult::Error(
             FString::Printf(TEXT("File already exists: %s — delete or rename before scaffolding"), *HeaderPath));
@@ -51,6 +78,7 @@ bool FMonolithUISettingsActions::WriteSourceFiles(const FString& Dir, const FStr
 
     if (!FFileHelper::SaveStringToFile(CppContent, *CppPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
     {
+        IFileManager::Get().Delete(*HeaderPath);
         OutError = FMonolithActionResult::Error(
             FString::Printf(TEXT("Failed to write cpp: %s"), *CppPath));
         return false;
@@ -134,7 +162,8 @@ FMonolithActionResult FMonolithUISettingsActions::HandleScaffoldGameUserSettings
         return FMonolithActionResult::Error(TEXT("Missing required params: class_name, module_name"));
     }
 
-    // Strip leading U if present for file naming
+    if (!ClassName.StartsWith(TEXT("U"))) ClassName = TEXT("U") + ClassName;
+    // Strip leading U for file naming.
     FString CleanName = ClassName;
     if (CleanName.StartsWith(TEXT("U"))) CleanName = CleanName.RightChop(1);
 
@@ -172,6 +201,8 @@ FMonolithActionResult FMonolithUISettingsActions::HandleScaffoldGameUserSettings
     Header += TEXT("#include \"GameFramework/GameUserSettings.h\"\n");
     Header += FString::Printf(TEXT("#include \"%s.generated.h\"\n\n"), *CleanName);
 
+    if (Features.Contains(TEXT("keybinding_support"))) Header += TEXT("class ULocalPlayer;\n\n");
+
     if (Features.Contains(TEXT("accessibility_flags")))
     {
         Header += TEXT("UENUM(BlueprintType)\n");
@@ -184,7 +215,7 @@ FMonolithActionResult FMonolithUISettingsActions::HandleScaffoldGameUserSettings
         Header += TEXT("};\n\n");
     }
 
-    Header += FString::Printf(TEXT("UCLASS(config=Game, defaultconfig)\nclass %s %s : public UGameUserSettings\n{\n\tGENERATED_BODY()\n\npublic:\n"), *ApiMacro, *ClassName);
+    Header += FString::Printf(TEXT("UCLASS(config=GameUserSettings)\nclass %s %s : public UGameUserSettings\n{\n\tGENERATED_BODY()\n\npublic:\n"), *ApiMacro, *ClassName);
     Header += FString::Printf(TEXT("\t%s();\n\n"), *ClassName);
     Header += TEXT("\tvirtual void ApplyNonResolutionSettings() override;\n\n");
     Header += FString::Printf(TEXT("\tUFUNCTION(BlueprintCallable, Category = \"Settings\")\n\tstatic %s* Get%s();\n\n"), *ClassName, *CleanName);
@@ -228,9 +259,9 @@ FMonolithActionResult FMonolithUISettingsActions::HandleScaffoldGameUserSettings
     {
         Header += TEXT("\t// --- Keybinding ---\n");
         Header += TEXT("\tUFUNCTION(BlueprintCallable, Category = \"Settings|Input\")\n");
-        Header += TEXT("\tvoid SaveKeyBindings();\n\n");
+        Header += TEXT("\tbool SaveKeyBindings(ULocalPlayer* LocalPlayer);\n\n");
         Header += TEXT("\tUFUNCTION(BlueprintCallable, Category = \"Settings|Input\")\n");
-        Header += TEXT("\tvoid LoadKeyBindings();\n\n");
+        Header += TEXT("\tbool LoadKeyBindings(ULocalPlayer* LocalPlayer);\n\n");
     }
 
     Header += TEXT("};\n");
@@ -245,6 +276,11 @@ FMonolithActionResult FMonolithUISettingsActions::HandleScaffoldGameUserSettings
         Cpp += TEXT("#include \"Sound/SoundMix.h\"\n");
         Cpp += TEXT("#include \"Sound/SoundClass.h\"\n");
         Cpp += TEXT("#include \"Kismet/GameplayStatics.h\"\n");
+    }
+    if (Features.Contains(TEXT("keybinding_support")))
+    {
+        Cpp += TEXT("#include \"Engine/LocalPlayer.h\"\n#include \"EnhancedInputSubsystems.h\"\n#include \"EnhancedPlayerInput.h\"\n#include \"UserSettings/EnhancedInputUserSettings.h\"\n");
+        Cpp += TEXT("#include \"Kismet/GameplayStatics.h\"\n#include \"Serialization/MemoryReader.h\"\n#include \"Serialization/MemoryWriter.h\"\n#include \"Serialization/ObjectAndNameAsStringProxyArchive.h\"\n");
     }
     Cpp += TEXT("\n");
 
@@ -281,15 +317,22 @@ FMonolithActionResult FMonolithUISettingsActions::HandleScaffoldGameUserSettings
 
     if (Features.Contains(TEXT("keybinding_support")))
     {
-        Cpp += FString::Printf(TEXT("void %s::SaveKeyBindings()\n{\n"), *ClassName);
-        Cpp += TEXT("\t// TODO: Persist UEnhancedInputUserSettings mappings\n");
-        Cpp += TEXT("\t// See scaffold_input_remapping for the full wiring guide\n");
-        Cpp += TEXT("\tSaveSettings();\n");
-        Cpp += TEXT("}\n\n");
-
-        Cpp += FString::Printf(TEXT("void %s::LoadKeyBindings()\n{\n"), *ClassName);
-        Cpp += TEXT("\tLoadSettings();\n");
-        Cpp += TEXT("}\n\n");
+        Cpp += FString::Printf(TEXT("bool %s::SaveKeyBindings(ULocalPlayer* LocalPlayer)\n{\n"), *ClassName);
+        Cpp += TEXT("\tif (!LocalPlayer) return false;\n");
+        Cpp += TEXT("\tauto* Subsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();\n");
+        Cpp += TEXT("\tif (!Subsystem || !Subsystem->GetPlayerInput() || !Subsystem->GetUserSettings()) return false;\n");
+        Cpp += TEXT("\treturn UGameplayStatics::SaveGameToSlot(Subsystem->GetUserSettings(), Subsystem->GetPlayerInput()->GetUserSettingsSaveFileName(), LocalPlayer->GetLocalPlayerIndex());\n}\n\n");
+        Cpp += FString::Printf(TEXT("bool %s::LoadKeyBindings(ULocalPlayer* LocalPlayer)\n{\n"), *ClassName);
+        Cpp += TEXT("\tif (!LocalPlayer) return false;\n");
+        Cpp += TEXT("\tauto* Subsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();\n");
+        Cpp += TEXT("\tauto* Active = Subsystem && Subsystem->GetPlayerInput() ? Subsystem->GetUserSettings() : nullptr;\n");
+        Cpp += TEXT("\tif (!Active) return false;\n");
+        Cpp += TEXT("\tauto* Loaded = Cast<UEnhancedInputUserSettings>(UGameplayStatics::LoadGameFromSlot(Subsystem->GetPlayerInput()->GetUserSettingsSaveFileName(), LocalPlayer->GetLocalPlayerIndex()));\n");
+        Cpp += TEXT("\tif (!Loaded || Loaded->GetClass() != Active->GetClass()) return false;\n");
+        Cpp += TEXT("\t// Serialize the save into the EXISTING settings instance: subsystem delegates and registered IMCs survive.\n");
+        Cpp += TEXT("\tTArray<uint8> Bytes;\n\tFMemoryWriter Writer(Bytes);\n\tFObjectAndNameAsStringProxyArchive SaveArchive(Writer, false);\n\tSaveArchive.ArIsSaveGame = true;\n\tLoaded->Serialize(SaveArchive);\n\tif (SaveArchive.IsError()) return false;\n");
+        Cpp += TEXT("\tFMemoryReader Reader(Bytes);\n\tFObjectAndNameAsStringProxyArchive LoadArchive(Reader, true);\n\tLoadArchive.ArIsSaveGame = true;\n\tActive->Serialize(LoadArchive);\n\tif (LoadArchive.IsError()) return false;\n");
+        Cpp += TEXT("\tActive->Initialize(LocalPlayer);\n\tActive->ApplySettings();\n\tFModifyContextOptions Options;\n\tOptions.bForceImmediately = true;\n\tSubsystem->RequestRebuildControlMappings(Options, EInputMappingRebuildType::RebuildWithFlush);\n\treturn true;\n}\n\n");
     }
 
     // Write files
@@ -301,7 +344,7 @@ FMonolithActionResult FMonolithUISettingsActions::HandleScaffoldGameUserSettings
 
     // Add DefaultEngine.ini reminder
     FString IniLine = FString::Printf(
-        TEXT("[/Script/Engine.Engine]\nGameUserSettingsClassName=/Script/%s.%s"), *ModuleName, *ClassName);
+        TEXT("[/Script/Engine.Engine]\nGameUserSettingsClassName=/Script/%s.%s"), *ModuleName, *CleanName);
     Result->SetStringField(TEXT("default_engine_ini"), IniLine);
     Result->SetStringField(TEXT("note"), TEXT("Add the DefaultEngine.ini line to register this as the active GameUserSettings class"));
 
@@ -311,6 +354,11 @@ FMonolithActionResult FMonolithUISettingsActions::HandleScaffoldGameUserSettings
         FeatureList.Add(MakeShared<FJsonValueString>(F));
     }
     Result->SetArrayField(TEXT("features"), FeatureList);
+    if (Features.Contains(TEXT("keybinding_support")))
+    {
+        Result->SetArrayField(TEXT("required_modules"), {MakeShared<FJsonValueString>(TEXT("EnhancedInput"))});
+        Result->SetStringField(TEXT("input_setup"), TEXT("Enable Enhanced Input User Settings, register player-mappable IMCs with the local player's user settings, then pass that ULocalPlayer to SaveKeyBindings/LoadKeyBindings. Both return false on unavailable settings or save/load failure. Save slot uses Enhanced Input's per-player filename and index."));
+    }
 
     return FMonolithActionResult::Success(Result);
 }

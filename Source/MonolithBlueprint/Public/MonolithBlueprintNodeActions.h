@@ -6,6 +6,8 @@ class FMonolithBlueprintNodeActions
 {
 public:
 	static void RegisterActions(FMonolithToolRegistry& Registry);
+	static FMonolithActionResult HandleGetGraphNodeProperties(const TSharedPtr<FJsonObject>& Params);
+	static FMonolithActionResult HandleSetGraphNodeProperty(const TSharedPtr<FJsonObject>& Params);
 
 	static FMonolithActionResult HandleAddNode(const TSharedPtr<FJsonObject>& Params);
 	static FMonolithActionResult HandleRemoveNode(const TSharedPtr<FJsonObject>& Params);

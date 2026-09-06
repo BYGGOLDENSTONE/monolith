@@ -25,6 +25,12 @@
 #include "Spec/UISpecBuilder.h"
 // Phase J: dump_ui_spec serializer.
 #include "Spec/UISpecSerializer.h"
+#include "Spec/UIMenuAuthoring.h"
+#include "Misc/PackageName.h"
+#include "WidgetBlueprint.h"
+#if WITH_COMMONUI
+#include "CommonActivatableWidget.h"
+#endif
 
 #include "Registry/MonolithUIRegistrySubsystem.h"
 #include "Registry/UITypeRegistry.h"
@@ -994,233 +1000,246 @@ namespace MonolithUI::SpecActionsInternal
         return FMonolithActionResult::Success(PackDumpResponse(R));
     }
 
-    // ------------------------------------------------------------------
-    // Builds embedded screen specs. Cross-screen aggregation and kind-based
-    // scaffolding are not implemented; failures retain completed screen results
-    // so callers can inspect partial work before retrying.
-
+    // Menu-level structural and per-screen dry-run validation finishes before any writes.
+    // Each committed asset retains the builder's own save/rollback boundary.
     static FMonolithActionResult HandleBuildMenuFromSpec(const TSharedPtr<FJsonObject>& Params)
     {
-        if (!Params.IsValid())
+        if (!Params) return FMonolithActionResult::Error(TEXT("Missing params"), -32602);
+        auto Invalid = [](const FString& Message)
         {
-            return FMonolithActionResult::Error(TEXT("Missing params object"), -32602);
-        }
-
+            auto Data = MakeShared<FJsonObject>();
+            Data->SetBoolField(TEXT("bSuccess"), false);
+            Data->SetBoolField(TEXT("partial"), false);
+            Data->SetStringField(TEXT("status"), TEXT("validation_failed"));
+            Data->SetArrayField(TEXT("applied_keys"), {});
+            return FMonolithActionResult::Error(Message, -32602).WithErrorData(Data);
+        };
+        bool bDryRun = false, bOverwrite = true, bRawMode = false, bWarningsAreErrors = false;
+        Params->TryGetBoolField(TEXT("dry_run"), bDryRun);
+        Params->TryGetBoolField(TEXT("overwrite"), bOverwrite);
+        Params->TryGetBoolField(TEXT("raw_mode"), bRawMode);
+        Params->TryGetBoolField(TEXT("treat_warnings_as_errors"), bWarningsAreErrors);
         FString RequestId;
         Params->TryGetStringField(TEXT("request_id"), RequestId);
-
-        bool bDryRun = false, bTreatWarningsAsErrors = false, bRawMode = false, bOverwrite = true;
-        Params->TryGetBoolField(TEXT("dry_run"), bDryRun);
-        Params->TryGetBoolField(TEXT("treat_warnings_as_errors"), bTreatWarningsAsErrors);
-        Params->TryGetBoolField(TEXT("raw_mode"), bRawMode);
-        Params->TryGetBoolField(TEXT("overwrite"), bOverwrite);
-
-        // ---- Validator (Phase 3 Item #18 MVP clause) -------------------------
-        // The full FUISpecValidator extension lives in UISpecValidator.cpp;
-        // the MVP wires the menu-shape structural checks inline here so the
-        // action surface is unblocked without dragging FUISpecValidator into
-        // a partial refactor.
-        TArray<TSharedPtr<FJsonValue>> StructuralErrors;
-        TArray<TSharedPtr<FJsonValue>> StructuralWarnings;
-
-        auto AddError = [&StructuralErrors](const FString& Category, const FString& JsonPath, const FString& Message)
-        {
-            TSharedPtr<FJsonObject> E = MakeShared<FJsonObject>();
-            E->SetStringField(TEXT("category"), Category);
-            E->SetStringField(TEXT("json_path"), JsonPath);
-            E->SetStringField(TEXT("message"), Message);
-            StructuralErrors.Add(MakeShared<FJsonValueObject>(E));
-        };
-
-        // Embedded screen specs are supported; aggregation keys are not.
         const TArray<TSharedPtr<FJsonValue>>* Screens = nullptr;
-        if (!Params->TryGetArrayField(TEXT("screens"), Screens) || !Screens || Screens->Num() == 0)
+        if (!Params->TryGetArrayField(TEXT("screens"), Screens) || Screens->IsEmpty())
+            return Invalid(TEXT("screens must be a nonempty array"));
+        struct FScreen
         {
-            AddError(TEXT("MenuShape"), TEXT("screens"),
-                TEXT("`screens` array is required and must contain at least one entry. "
-                     "Each entry needs {id, asset_path} and either an embedded `spec` "
-                     "(FUISpecDocument) or a `kind` token for scaffolder dispatch (kind dispatch "
-                     "is not implemented)."));
-        }
-
-        const TArray<TSharedPtr<FJsonValue>>* Layers = nullptr;
-        // An empty array requests nothing, so only populated aggregation keys
-        // count as unimplemented work.
-        const bool bHasLayers = Params->TryGetArrayField(TEXT("layers"), Layers) && Layers && Layers->Num() > 0;
-
-        const TArray<TSharedPtr<FJsonValue>>* FocusTable = nullptr;
-        const bool bHasFocusTable = Params->TryGetArrayField(TEXT("focus_table"), FocusTable) && FocusTable && FocusTable->Num() > 0;
-
-        const TArray<TSharedPtr<FJsonValue>>* NavOverrides = nullptr;
-        const bool bHasNavOverrides = Params->TryGetArrayField(TEXT("nav_overrides"), NavOverrides) && NavOverrides && NavOverrides->Num() > 0;
-
-        TArray<TSharedPtr<FJsonValue>> UnimplementedParts;
-        TArray<TSharedPtr<FJsonValue>> AppliedKeys;
-        if (bHasLayers) UnimplementedParts.Add(MakeShared<FJsonValueString>(TEXT("layers")));
-        if (bHasFocusTable) UnimplementedParts.Add(MakeShared<FJsonValueString>(TEXT("focus_table")));
-        if (bHasNavOverrides) UnimplementedParts.Add(MakeShared<FJsonValueString>(TEXT("nav_overrides")));
-
-        // Hard-fail on structural errors. The result payload mirrors
-        // PackResponse so consumers can dispatch on bSuccess uniformly.
-        if (StructuralErrors.Num() > 0)
-        {
-            TSharedPtr<FJsonObject> Out = MakeShared<FJsonObject>();
-            Out->SetBoolField(TEXT("bSuccess"), false);
-            if (!RequestId.IsEmpty()) Out->SetStringField(TEXT("request_id"), RequestId);
-            Out->SetArrayField(TEXT("errors"), StructuralErrors);
-            Out->SetArrayField(TEXT("warnings"), StructuralWarnings);
-            Out->SetStringField(TEXT("status"), TEXT("validation_failed"));
-            return FMonolithActionResult::Success(Out);
-        }
-
-        // ---- Per-screen dispatch into FUISpecBuilder -------------------------
-        TArray<TSharedPtr<FJsonValue>> ScreenResults;
-        int32 TotalCreated = 0, TotalModified = 0, TotalRemoved = 0;
-        bool bAllSucceeded = true;
-
-        for (int32 i = 0; i < Screens->Num(); ++i)
-        {
-            const TSharedPtr<FJsonValue>& V = (*Screens)[i];
-            const TSharedPtr<FJsonObject>* ScreenObj = nullptr;
-            if (!V.IsValid() || !V->TryGetObject(ScreenObj) || !ScreenObj)
-            {
-                AddError(TEXT("MenuShape"),
-                    FString::Printf(TEXT("screens[%d]"), i),
-                    TEXT("screen entry must be an object"));
-                bAllSucceeded = false;
-                continue;
-            }
-
-            FString ScreenId, ScreenAssetPath, ScreenKind;
-            (*ScreenObj)->TryGetStringField(TEXT("id"), ScreenId);
-            (*ScreenObj)->TryGetStringField(TEXT("asset_path"), ScreenAssetPath);
-            (*ScreenObj)->TryGetStringField(TEXT("kind"), ScreenKind);
-
-            if (ScreenAssetPath.IsEmpty())
-            {
-                AddError(TEXT("MenuShape"),
-                    FString::Printf(TEXT("screens[%d].asset_path"), i),
-                    TEXT("each screen entry requires `asset_path`"));
-                bAllSucceeded = false;
-                continue;
-            }
-
-            // Per-screen result block — populated below.
-            TSharedPtr<FJsonObject> ScreenOut = MakeShared<FJsonObject>();
-            ScreenOut->SetStringField(TEXT("id"), ScreenId);
-            ScreenOut->SetStringField(TEXT("asset_path"), ScreenAssetPath);
-            if (!ScreenKind.IsEmpty())
-            {
-                ScreenOut->SetStringField(TEXT("kind"), ScreenKind);
-            }
-
-            const TSharedPtr<FJsonObject>* EmbeddedSpec = nullptr;
-            if (!(*ScreenObj)->TryGetObjectField(TEXT("spec"), EmbeddedSpec) || !EmbeddedSpec)
-            {
-                const FString Part = FString::Printf(TEXT("screens[%d].kind_scaffolding"), i);
-                UnimplementedParts.Add(MakeShared<FJsonValueString>(Part));
-                bAllSucceeded = false;
-                ScreenOut->SetBoolField(TEXT("bSuccess"), false);
-                ScreenOut->SetBoolField(TEXT("implemented"), false);
-                ScreenOut->SetStringField(TEXT("status"), TEXT("not_implemented"));
-                ScreenOut->SetStringField(TEXT("reason"), TEXT("not_implemented"));
-                ScreenOut->SetStringField(TEXT("part"), Part);
-                ScreenOut->SetStringField(TEXT("message"),
-                    TEXT("Kind-based screen scaffolding is not implemented. Pass an embedded spec to build this screen."));
-                ScreenResults.Add(MakeShared<FJsonValueObject>(ScreenOut));
-                continue;
-            }
-
+            FString Id, Path, Focus;
             FUISpecDocument Document;
-            FUISpecValidationResult ParseValidation;
-            if (!ParseDocument(*EmbeddedSpec, Document, ParseValidation))
+            TSet<FString> WidgetIds;
+            TArray<TSharedPtr<FJsonObject>> Navigation;
+        };
+        TArray<FScreen> Parsed;
+        TMap<FString, int32> Indices;
+        TMap<FString, FString> Paths;
+        TSet<FString> UniquePaths;
+        TFunction<void(const TSharedPtr<FUISpecNode>&, TSet<FString>&)> CollectIds;
+        CollectIds = [&CollectIds](const TSharedPtr<FUISpecNode>& Node, TSet<FString>& Ids)
+        {
+            if (!Node) return;
+            Ids.Add(Node->Id.ToString());
+            for (const auto& Child : Node->Children) CollectIds(Child, Ids);
+        };
+        for (const auto& Value : *Screens)
+        {
+            const TSharedPtr<FJsonObject>* Object = nullptr;
+            if (!Value || !Value->TryGetObject(Object)) return Invalid(TEXT("Each screen must be an object"));
+            FScreen Screen;
+            (*Object)->TryGetStringField(TEXT("id"), Screen.Id);
+            (*Object)->TryGetStringField(TEXT("asset_path"), Screen.Path);
+            if (Screen.Id.IsEmpty() || Screen.Path.IsEmpty() || Indices.Contains(Screen.Id) || UniquePaths.Contains(Screen.Path))
+                return Invalid(TEXT("Screens require unique nonempty ids and asset paths"));
+            const TSharedPtr<FJsonObject>* Spec = nullptr;
+            TSharedPtr<FJsonObject> Scaffold;
+            if (!(*Object)->TryGetObjectField(TEXT("spec"), Spec))
             {
-                ScreenOut->SetBoolField(TEXT("bSuccess"), false);
-                ScreenOut->SetStringField(TEXT("status"), TEXT("parse_failed"));
-                ScreenOut->SetStringField(TEXT("llm_report"), ParseValidation.ToLLMReport());
-                ScreenResults.Add(MakeShared<FJsonValueObject>(ScreenOut));
-                bAllSucceeded = false;
-                continue;
-            }
-
-            FUISpecBuilderInputs In;
-            In.Document  = &Document;
-            In.AssetPath = ScreenAssetPath;
-            In.bOverwrite             = bOverwrite;
-            In.bDryRun                = bDryRun;
-            In.bTreatWarningsAsErrors = bTreatWarningsAsErrors;
-            In.bRawMode               = bRawMode;
-            In.RequestId              = FString::Printf(TEXT("%s:%s"), *RequestId, *ScreenId);
-            if (Document.bTreatWarningsAsErrors)
-            {
-                In.bTreatWarningsAsErrors = true;
-            }
-
-            {
-                FString WritableError;
-                if (!MonolithCore::EnsureWritablePackagePath(ScreenAssetPath, WritableError))
+                FString Kind;
+                (*Object)->TryGetStringField(TEXT("kind"), Kind);
+                if (Kind != TEXT("main_menu") && Kind != TEXT("pause_menu") && Kind != TEXT("settings_panel"))
+                    return Invalid(TEXT("Screen requires spec or kind=main_menu|pause_menu|settings_panel"));
+                Scaffold = MakeShared<FJsonObject>();
+                Scaffold->SetStringField(TEXT("name"), Screen.Id);
+                Scaffold->SetStringField(TEXT("parentClass"), TEXT("CommonActivatableWidget"));
+                auto Root = MakeShared<FJsonObject>();
+                Root->SetStringField(TEXT("type"), TEXT("VerticalBox"));
+                Root->SetStringField(TEXT("id"), TEXT("RootBox"));
+                const TArray<FString> Labels = Kind == TEXT("main_menu") ? TArray<FString>{TEXT("Start"), TEXT("Settings"), TEXT("Quit")}
+                    : Kind == TEXT("pause_menu") ? TArray<FString>{TEXT("Resume"), TEXT("Settings"), TEXT("Quit")}
+                    : TArray<FString>{TEXT("Video"), TEXT("Audio"), TEXT("Controls"), TEXT("Back")};
+                TArray<TSharedPtr<FJsonValue>> Children;
+                for (const FString& Label : Labels)
                 {
-                    return MonolithCore::WritablePathError(ScreenAssetPath, WritableError);
+                    auto Button = MakeShared<FJsonObject>();
+                    Button->SetStringField(TEXT("type"), TEXT("Button"));
+                    Button->SetStringField(TEXT("id"), Label + TEXT("Button"));
+                    auto Text = MakeShared<FJsonObject>();
+                    Text->SetStringField(TEXT("type"), TEXT("TextBlock"));
+                    Text->SetStringField(TEXT("id"), Label + TEXT("Label"));
+                    auto Content = MakeShared<FJsonObject>();
+                    Content->SetStringField(TEXT("text"), Label);
+                    Text->SetObjectField(TEXT("content"), Content);
+                    Button->SetArrayField(TEXT("children"), {MakeShared<FJsonValueObject>(Text)});
+                    Children.Add(MakeShared<FJsonValueObject>(Button));
+                }
+                Root->SetArrayField(TEXT("children"), Children);
+                Scaffold->SetObjectField(TEXT("rootWidget"), Root);
+                Spec = &Scaffold;
+            }
+            FUISpecValidationResult Validation;
+            if (!ParseDocument(*Spec, Screen.Document, Validation)) return Invalid(Validation.ToLLMReport());
+            CollectIds(Screen.Document.Root, Screen.WidgetIds);
+            Indices.Add(Screen.Id, Parsed.Num());
+            Paths.Add(Screen.Id, Screen.Path);
+            UniquePaths.Add(Screen.Path);
+            Parsed.Add(MoveTemp(Screen));
+        }
+        TArray<TSharedPtr<FJsonObject>> Layers;
+        TSet<FString> LayerIds;
+        TSet<FString> NavKeys;
+        auto IsActivatable = [](const FUISpecDocument& Document)
+        {
+#if WITH_COMMONUI
+            if (Document.ParentClass == TEXT("CommonActivatableWidget") || Document.ParentClass == TEXT("UCommonActivatableWidget")) return true;
+            UClass* Class = LoadObject<UClass>(nullptr, *Document.ParentClass);
+            return Class && Class->IsChildOf(UCommonActivatableWidget::StaticClass());
+#else
+            return false;
+#endif
+        };
+        for (const TCHAR* Key : {TEXT("layers"), TEXT("focus_table"), TEXT("nav_overrides")})
+        {
+            const TArray<TSharedPtr<FJsonValue>>* Entries = nullptr;
+            if (!Params->HasField(Key)) continue;
+            if (!Params->TryGetArrayField(Key, Entries)) return Invalid(FString(Key) + TEXT(" must be an array"));
+            for (const auto& Value : *Entries)
+            {
+                const TSharedPtr<FJsonObject>* Entry = nullptr;
+                if (!Value || !Value->TryGetObject(Entry)) return Invalid(FString(Key) + TEXT(" entries must be objects"));
+                if (FString(Key) == TEXT("layers"))
+                {
+                    FString Id;
+                    const TArray<TSharedPtr<FJsonValue>>* Members = nullptr;
+                    (*Entry)->TryGetStringField(TEXT("id"), Id);
+                    if (Id.IsEmpty() || Id == TEXT("MenuRoot") || LayerIds.Contains(Id) || !(*Entry)->TryGetArrayField(TEXT("screens"), Members) || Members->IsEmpty())
+                        return Invalid(TEXT("Layers require unique ids and nonempty screens arrays"));
+                    for (TCHAR C : Id) if (!(FChar::IsAlnum(C) || C == TCHAR('_'))) return Invalid(TEXT("Layer ids must use letters, digits or underscores"));
+                    for (const auto& Member : *Members)
+                    {
+                        FString Name;
+                        if (!Member->TryGetString(Name) || !Indices.Contains(Name) || !IsActivatable(Parsed[Indices[Name]].Document))
+                            return Invalid(TEXT("Layer references must name CommonActivatableWidget screens"));
+                    }
+                    LayerIds.Add(Id);
+                    Layers.Add(*Entry);
+                    continue;
+                }
+                FString Id, Target;
+                (*Entry)->TryGetStringField(TEXT("screen"), Id);
+                (*Entry)->TryGetStringField(TEXT("target"), Target);
+                if (!Indices.Contains(Id)) return Invalid(TEXT("Unknown screen reference: ") + Id);
+                FScreen& Screen = Parsed[Indices[Id]];
+                if (Target.IsEmpty() || !Screen.WidgetIds.Contains(Target)) return Invalid(TEXT("Unknown target widget: ") + Target);
+                if (FString(Key) == TEXT("focus_table"))
+                {
+                    if (!Screen.Focus.IsEmpty() || !IsActivatable(Screen.Document)) return Invalid(TEXT("Focus requires one entry per CommonActivatableWidget screen"));
+                    Screen.Focus = Target;
+                }
+                else
+                {
+                    FString Widget, Direction;
+                    (*Entry)->TryGetStringField(TEXT("widget"), Widget);
+                    (*Entry)->TryGetStringField(TEXT("direction"), Direction);
+                    Direction = Direction.ToLower();
+                    const TSet<FString> Directions = {TEXT("up"), TEXT("down"), TEXT("left"), TEXT("right"), TEXT("next"), TEXT("previous")};
+                    const FString NavKey = Id + TEXT(":") + Widget + TEXT(":") + Direction;
+                    if (!Screen.WidgetIds.Contains(Widget) || !Directions.Contains(Direction) || NavKeys.Contains(NavKey))
+                        return Invalid(TEXT("Navigation requires a known widget, valid direction and unique widget/direction pair"));
+                    NavKeys.Add(NavKey);
+                    Screen.Navigation.Add(*Entry);
                 }
             }
-            const FUISpecBuilderResult R = FUISpecBuilder::Build(In);
-            TotalCreated  += R.NodesCreated;
-            TotalModified += R.NodesModified;
-            TotalRemoved  += R.NodesRemoved;
-            if (!R.bSuccess) bAllSucceeded = false;
-            else if (!bDryRun)
-            {
-                AppliedKeys.Add(MakeShared<FJsonValueString>(FString::Printf(TEXT("screens[%d].spec"), i)));
-            }
-
-            // Each screen reuses the shared PackResponse shape for symmetry
-            // with build_ui_from_spec callers.
-            TSharedPtr<FJsonObject> Packed = PackResponse(R, bDryRun);
-            ScreenOut->SetObjectField(TEXT("build_result"), Packed);
-            ScreenResults.Add(MakeShared<FJsonValueObject>(ScreenOut));
         }
-
-        // ---- Deferred aggregation echo -------------------------------------
-        // Capture caller-supplied layers / focus_table / nav_overrides so
-        // downstream tooling can post-process them in user-space until the
-        // full builder pipeline lands.
-        TSharedPtr<FJsonObject> DeferredAgg = MakeShared<FJsonObject>();
-        if (bHasLayers)        DeferredAgg->SetArrayField(TEXT("layers"),        *Layers);
-        if (bHasFocusTable)    DeferredAgg->SetArrayField(TEXT("focus_table"),   *FocusTable);
-        if (bHasNavOverrides)  DeferredAgg->SetArrayField(TEXT("nav_overrides"), *NavOverrides);
-
-        // ---- Response ------------------------------------------------------
-        TSharedPtr<FJsonObject> Out = MakeShared<FJsonObject>();
-        Out->SetBoolField(TEXT("bSuccess"), bAllSucceeded && StructuralErrors.Num() == 0 && UnimplementedParts.Num() == 0);
+        FString MenuPath;
+        FUISpecDocument Host;
+        if (!Layers.IsEmpty())
+        {
+            Params->TryGetStringField(TEXT("menu_asset_path"), MenuPath);
+            if (MenuPath.IsEmpty()) MenuPath = Parsed[0].Path + TEXT("_Menu");
+            if (UniquePaths.Contains(MenuPath)) return Invalid(TEXT("menu_asset_path cannot overwrite a screen"));
+            Host.Name = TEXT("MenuHost");
+            Host.ParentClass = TEXT("UserWidget");
+            Host.Root = MakeShared<FUISpecNode>();
+            Host.Root->Type = TEXT("Overlay");
+            Host.Root->Id = TEXT("MenuRoot");
+        }
+        auto InputsFor = [&](const FUISpecDocument& Doc, const FString& Path)
+        {
+            FUISpecBuilderInputs In;
+            In.Document = &Doc; In.AssetPath = Path; In.bOverwrite = bOverwrite;
+            In.bRawMode = bRawMode; In.bTreatWarningsAsErrors = bWarningsAreErrors || Doc.bTreatWarningsAsErrors;
+            In.RequestId = RequestId;
+            return In;
+        };
+        // Preflight ALL screens and the host to prevent malformed later entries causing partial writes.
+        for (const FScreen& Screen : Parsed)
+        {
+            auto In = InputsFor(Screen.Document, Screen.Path);
+            In.bDryRun = true;
+            const auto Check = FUISpecBuilder::Build(In);
+            if (!Check.bSuccess) return Invalid(TEXT("Screen preflight failed: ") + Screen.Id + TEXT(" ") + Check.Validation.ToLLMReport()
+                + (Check.Errors.IsEmpty() ? FString() : Check.Errors[0].Message));
+        }
+        if (!Layers.IsEmpty())
+        {
+            auto In = InputsFor(Host, MenuPath); In.bDryRun = true;
+            const auto Check = FUISpecBuilder::Build(In);
+            if (!Check.bSuccess) return Invalid(TEXT("Menu host preflight failed: ") + MenuPath);
+        }
+        TArray<TSharedPtr<FJsonValue>> Results, Applied;
+        int32 Created = 0, Modified = 0, Removed = 0;
+        bool bSuccess = true;
+        for (int32 Index = 0; Index < Parsed.Num(); ++Index)
+        {
+            const FScreen& Screen = Parsed[Index];
+            auto In = InputsFor(Screen.Document, Screen.Path); In.bDryRun = bDryRun;
+            In.BeforeCompile = [&Screen](UWidgetBlueprint* WBP, FString& Error)
+            { return MonolithUI::MenuAuthoring::ApplyScreen(WBP, Screen.Focus, Screen.Navigation, Error); };
+            const auto Built = FUISpecBuilder::Build(In);
+            auto Out = MakeShared<FJsonObject>();
+            Out->SetStringField(TEXT("id"), Screen.Id); Out->SetStringField(TEXT("asset_path"), Screen.Path);
+            Out->SetObjectField(TEXT("build_result"), PackResponse(Built, bDryRun));
+            Results.Add(MakeShared<FJsonValueObject>(Out));
+            Created += Built.NodesCreated; Modified += Built.NodesModified; Removed += Built.NodesRemoved;
+            if (!Built.bSuccess) { bSuccess = false; break; }
+            if (!bDryRun) Applied.Add(MakeShared<FJsonValueString>(FString::Printf(TEXT("screens[%d].spec"), Index)));
+        }
+        TSharedPtr<FJsonObject> HostResult;
+        if (bSuccess && !Layers.IsEmpty())
+        {
+            auto In = InputsFor(Host, MenuPath); In.bDryRun = bDryRun;
+            In.BeforeCompile = [&Layers, &Paths](UWidgetBlueprint* WBP, FString& Error)
+            { return MonolithUI::MenuAuthoring::ApplyLayers(WBP, Layers, Paths, Error); };
+            const auto Built = FUISpecBuilder::Build(In);
+            HostResult = PackResponse(Built, bDryRun);
+            bSuccess = Built.bSuccess;
+            if (bSuccess && !bDryRun) Applied.Add(MakeShared<FJsonValueString>(TEXT("layers")));
+        }
+        auto Out = MakeShared<FJsonObject>();
+        Out->SetBoolField(TEXT("bSuccess"), bSuccess);
+        Out->SetBoolField(TEXT("partial"), !bSuccess && !Applied.IsEmpty());
+        Out->SetStringField(TEXT("status"), bSuccess ? TEXT("ok") : TEXT("build_failed"));
+        Out->SetArrayField(TEXT("screens"), Results); Out->SetArrayField(TEXT("applied_keys"), Applied);
         if (!RequestId.IsEmpty()) Out->SetStringField(TEXT("request_id"), RequestId);
-        Out->SetStringField(TEXT("status"), UnimplementedParts.Num() > 0 ? TEXT("not_implemented") : TEXT("ok"));
-        Out->SetArrayField(TEXT("screens"), ScreenResults);
-
-        TSharedPtr<FJsonObject> Counts = MakeShared<FJsonObject>();
-        Counts->SetNumberField(TEXT("created"),  TotalCreated);
-        Counts->SetNumberField(TEXT("modified"), TotalModified);
-        Counts->SetNumberField(TEXT("removed"),  TotalRemoved);
+        if (HostResult) { Out->SetStringField(TEXT("menu_asset_path"), MenuPath); Out->SetObjectField(TEXT("menu_build_result"), HostResult); }
+        auto Counts = MakeShared<FJsonObject>();
+        Counts->SetNumberField(TEXT("created"), Created); Counts->SetNumberField(TEXT("modified"), Modified); Counts->SetNumberField(TEXT("removed"), Removed);
         Out->SetObjectField(TEXT("aggregate_node_counts"), Counts);
-
-        if (StructuralErrors.Num() > 0)  Out->SetArrayField(TEXT("errors"),   StructuralErrors);
-        if (StructuralWarnings.Num() > 0) Out->SetArrayField(TEXT("warnings"), StructuralWarnings);
-        if (DeferredAgg->Values.Num() > 0)
-        {
-            Out->SetObjectField(TEXT("deferred_aggregation"), DeferredAgg);
-        }
-        if (UnimplementedParts.Num() > 0)
-        {
-            Out->SetStringField(TEXT("reason"), TEXT("not_implemented"));
-            Out->SetBoolField(TEXT("implemented"), false);
-            Out->SetBoolField(TEXT("partial"), AppliedKeys.Num() > 0);
-            Out->SetArrayField(TEXT("unimplemented_parts"), UnimplementedParts);
-            Out->SetArrayField(TEXT("applied_keys"), AppliedKeys);
-            return FMonolithActionResult::Error(
-                TEXT("Some requested menu features are not implemented. Inspect applied_keys and screen results before retrying."),
-                FMonolithJsonUtils::ErrNotImplemented).WithErrorData(Out);
-        }
+        if (!bSuccess) return FMonolithActionResult::Error(TEXT("Menu build failed; inspect completed assets in applied_keys"), -32603).WithErrorData(Out);
         return FMonolithActionResult::Success(Out);
     }
+
 } // namespace MonolithUI::SpecActionsInternal
 
 
@@ -1280,27 +1299,25 @@ void MonolithUI::FSpecActions::Register(FMonolithToolRegistry& Registry)
             .Optional(TEXT("request_id"), TEXT("string"), TEXT("Caller-supplied UUID echoed back in the response."))
             .Build());
 
-    // Embedded specs are built independently; unsupported menu features return
-    // a capability error with completed screen results and applied keys.
     Registry.RegisterAction(
         TEXT("ui"), TEXT("build_menu_from_spec"),
-        TEXT("Build each screen's embedded spec through FUISpecBuilder. Kind-based scaffolding and "
-             "layers / focus_table / nav_overrides are not implemented and return reason='not_implemented', "
-             "implemented=false, unimplemented_parts, partial and applied_keys in error data. Completed "
-             "screen build results and counts remain available there; partial is true only when a screen "
-             "was actually built. dry_run, treat_warnings_as_errors, raw_mode and overwrite propagate "
-             "to each screen. Supported-only requests retain the screens and aggregate_node_counts response."),
+        TEXT("Build validated screen specs or main_menu/pause_menu/settings_panel starter layouts. "
+             "focus_table authors CommonUI desired-focus overrides; nav_overrides persists explicit navigation. "
+             "layers creates a separate Overlay host with CommonUI stacks and Construct initialization that clears then pushes "
+             "screens in array order (last is active). Full preflight precedes writes; a later runtime build failure "
+             "reports partial/applied_keys. Starter layouts expose buttons; gameplay click handlers remain caller-owned."),
         FMonolithActionHandler::CreateStatic(&HandleBuildMenuFromSpec),
         FParamSchemaBuilder()
             .Required(TEXT("screens"), TEXT("array"),
-                TEXT("[{ id, asset_path, spec?, kind? }, ...] — each entry triggers a per-screen FUISpecBuilder "
-                     "dispatch when `spec` is set. Without `spec`, kind-based scaffolding returns a not_implemented error."))
+                TEXT("[{id,asset_path,spec?,kind?}] - unique screen ids/paths; kind: main_menu, pause_menu, settings_panel."))
+            .Optional(TEXT("menu_asset_path"), TEXT("string"),
+                TEXT("Host WBP asset path when layers requested; defaults to first screen asset path + _Menu."))
             .Optional(TEXT("layers"), TEXT("array"),
-                TEXT("[{ id, screens[] }, ...] — activatable-stack layer hierarchy. Not implemented (not applied)."))
+                TEXT("[{id,screens:[screenId,...]}] - bottom-to-top Overlay stacks; CommonActivatableWidget screens."))
             .Optional(TEXT("focus_table"), TEXT("array"),
-                TEXT("[{ screen, target }, ...] — per-screen DesiredFocusTargetName CDO writes. Not implemented (not applied)."))
+                TEXT("[{screen,target}] - author BP_GetDesiredFocusTarget override returning the named widget."))
             .Optional(TEXT("nav_overrides"), TEXT("array"),
-                TEXT("[{ screen, widget, direction, target }, ...] — per-widget nav overrides. Not implemented (not applied)."))
+                TEXT("[{screen,widget,direction,target}] - explicit navigation: up/down/left/right/next/previous."))
             .Optional(TEXT("overwrite"), TEXT("boolean"),
                 TEXT("Replace existing WBPs at each screen's asset_path. Default true."), TEXT("true"))
             .Optional(TEXT("dry_run"), TEXT("boolean"),

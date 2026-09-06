@@ -10,7 +10,8 @@ coverage. See [multi-agent setup](Docs/MULTI_AGENT.md), [audit and production ga
 and [validation results](Docs/VALIDATION_UE57.md).
 
 **Current local handoff (2026-09-06):** see [continuation status](Docs/DEVAM_DURUMU.md)
-for the RecycleCo validation, camera/PIE fixes, uncommitted changes and remaining coverage.
+for the personal game-development improvements, UE 5.7.4 validation and test-host cleanup.
+Current results live in this repository: [completion report](Docs/COMPLETION_2026_09_06.md).
 
 Build the Windows proxy with `powershell -File Scripts/build_proxy.ps1`; rebuild
 the plugin against your engine before use. Update the host's MCP executable path
